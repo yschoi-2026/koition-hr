@@ -1,0 +1,8091 @@
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { Users, Settings, FileText, BarChart3, Save, Download, Upload, Search, AlertCircle, Award, Wallet, Trash2, Printer, History, PieChart as PieIcon, LogIn, LogOut, Sparkles, Mail, UserCheck, CheckCircle2, ChevronRight, TrendingUp, Building2, Plus, Pencil, X, StickyNote, ChevronDown, Calendar, Briefcase, MessageSquare, Clock, Tag, Calculator } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+
+// ============================================================
+// 디자인 토큰 시스템
+// ============================================================
+const T = {
+  // 코이션 로고 기반 컬러 팔레트
+  brand: '#1B3A6F',          // 메인 딥 블루 (로고 K 색)
+  brandLight: '#2E5BA0',     // 보조 블루 (로고 그라데이션 밝은 부분)
+  brandDark: '#0F2547',      // 진한 네이비 (헤더 배경용)
+  accent: '#D63838',         // 레드 액센트 (로고 우상단 점)
+  accentSoft: '#F4D4D4',     // 연한 레드 (배경용)
+  
+  // 중성 컬러
+  ink: '#1A1A1A',            // 본문 텍스트
+  text: '#2C3540',           // 일반 텍스트
+  textMute: '#6B7280',       // 보조 텍스트
+  textLight: '#9CA3AF',      // 비활성 텍스트
+  
+  // 배경 & 보더
+  bg: '#F8F9FB',             // 페이지 배경
+  surface: '#FFFFFF',        // 카드 배경
+  surfaceAlt: '#F1F3F7',     // 보조 배경
+  border: '#E5E7EB',         // 일반 보더
+  borderStrong: '#CBD2DB',   // 강조 보더
+  divider: '#F0F2F5',        // 구분선
+  
+  // 등급 컬러
+  S: '#1B7F4F',  // 진한 그린
+  A: '#4A9D6E',  // 그린
+  B: '#1B3A6F',  // 브랜드 블루
+  C: '#D97706',  // 앰버
+  D: '#B91C1C',  // 레드
+  
+  // 직무군 컬러 (Archive·Tech·Biz·PM 4종)
+  groupArchive: '#4A9D6E',  // Archive - 그린 (기록·보존의 안정감)
+  groupTech: '#1556C9',     // Tech - 코발트 블루 (기술의 첨단성)
+  groupBiz: '#D63838',      // Biz - 레드 액센트 (영업의 적극성)
+  groupPM: '#7C3AED',       // PM - 퍼플 (사업 수행의 통합성)
+  
+  // 의미 컬러
+  success: '#1B7F4F',
+  warning: '#D97706',
+  danger: '#B91C1C',
+  info: '#1B3A6F',
+  
+  // Shadow
+  shadow1: '0 1px 2px rgba(15, 37, 71, 0.04)',
+  shadow2: '0 2px 8px rgba(15, 37, 71, 0.06)',
+  shadow3: '0 4px 16px rgba(15, 37, 71, 0.08)',
+  shadowHeader: '0 1px 0 rgba(15, 37, 71, 0.06)',
+};
+
+// 사이드바 너비 상수 - 헤더 로고 영역과 통일
+const SIDEBAR_W = 240;
+
+// Spacing scale (8px grid)
+const S = { 1: 4, 2: 8, 3: 12, 4: 16, 5: 20, 6: 24, 7: 32, 8: 40, 9: 48, 10: 64 };
+
+// Typography
+const FONT = '"Pretendard", "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif';
+const FONT_DISPLAY = '"Cormorant Garamond", "Georgia", serif';
+
+// ============================================================
+// 코이션 로고 (SVG 인라인 - 외부 파일 불필요)
+// ============================================================
+function KoitionLogo({ size = 32, showText = true, variant = 'dark' }) {
+  // size는 K심볼의 높이 기준 (예: 32 → K심볼 32px, 텍스트는 비율로 자동 계산)
+  const textColor = variant === 'dark' ? T.brand : '#FFFFFF';
+  const subTextColor = variant === 'dark' ? T.brand : 'rgba(255,255,255,0.9)';
+  const redColor = '#E60012';  // 강렬한 코이션 레드
+  const uid = `${variant}-${Math.random().toString(36).slice(2, 8)}`;
+  
+  // K 심볼 SVG 컴포넌트 (재사용)
+  const KSymbol = () => (
+    <svg width={size} height={size} viewBox="0 0 70 90" xmlns="http://www.w3.org/2000/svg" 
+      style={{ flexShrink: 0, display: 'block' }}>
+      <defs>
+        {/* 메인 그라데이션 - 좌측 큰 기둥 (어두운 남색 → 밝은 코발트) */}
+        <linearGradient id={`kMain-${uid}`} x1="50%" y1="0%" x2="50%" y2="100%">
+          <stop offset="0%" stopColor={variant === 'dark' ? '#1B3A8F' : '#FFFFFF'} />
+          <stop offset="35%" stopColor={variant === 'dark' ? '#1556C9' : '#FFFFFF'} />
+          <stop offset="70%" stopColor={variant === 'dark' ? '#0B2C7A' : '#E6EEF8'} />
+          <stop offset="100%" stopColor={variant === 'dark' ? '#0A1F5C' : '#D6E0F0'} />
+        </linearGradient>
+        
+        {/* 우측 중간 작은 사각형 - 밝은 코발트 */}
+        <linearGradient id={`kMid-${uid}`} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor={variant === 'dark' ? '#1E70E0' : '#FFFFFF'} />
+          <stop offset="100%" stopColor={variant === 'dark' ? '#0B4FBF' : '#E6EEF8'} />
+        </linearGradient>
+        
+        {/* 우측 하단 큰 사각형 - 진한 남색 */}
+        <linearGradient id={`kBot-${uid}`} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor={variant === 'dark' ? '#0E2D7A' : '#E6EEF8'} />
+          <stop offset="100%" stopColor={variant === 'dark' ? '#091F5A' : '#C9D6E8'} />
+        </linearGradient>
+      </defs>
+      
+      {/* 좌측 큰 K 기둥 - 둥근 모서리 (위·아래는 둥글게, 우측은 직각) */}
+      <path 
+        d="M 4,12 
+           Q 4,4 12,4 
+           L 20,4 
+           Q 28,4 28,12 
+           L 28,82 
+           Q 28,90 20,90 
+           L 12,90 
+           Q 4,90 4,82 
+           Z" 
+        fill={`url(#kMain-${uid})`} 
+      />
+      
+      {/* 우측 상단 빨간 사각형 (액센트) - 살짝 둥근 모서리, 우측만 더 둥글게 */}
+      <path 
+        d="M 42,4 
+           L 58,4 
+           Q 66,4 66,12 
+           L 66,22 
+           L 42,22 
+           Z" 
+        fill={redColor} 
+      />
+      
+      {/* 우측 중간 작은 사각형 - 밝은 코발트 */}
+      <rect x="36" y="32" width="22" height="20" rx="2" fill={`url(#kMid-${uid})`} />
+      
+      {/* 우측 하단 큰 사각형 (K의 오른쪽 다리) - 우하단 둥글게 */}
+      <path 
+        d="M 36,60 
+           L 58,60 
+           Q 66,60 66,68 
+           L 66,82 
+           Q 66,90 58,90 
+           L 44,90 
+           Q 36,90 36,82 
+           Z" 
+        fill={`url(#kBot-${uid})`} 
+      />
+    </svg>
+  );
+  
+  // showText=false 또는 컴팩트 모드: K심볼만 표시
+  if (!showText) {
+    return <KSymbol />;
+  }
+  
+  // 가로형 풀 로고: K심볼 + KOREA / KOITION / INNOVATION
+  const koreaSize = size * 0.22;       // "KOREA" 작은 글씨
+  const koitionSize = size * 0.62;     // "KOITION" 메인
+  const innovSize = size * 0.22;       // "INNOVATION" 작은 글씨
+  
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: size * 0.4 }}>
+      <KSymbol />
+      
+      {/* 우측 텍스트 블록: KOREA / KOITION / INNOVATION */}
+      <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
+        {/* KOREA */}
+        <div style={{ 
+          fontSize: koreaSize, 
+          fontWeight: 500, 
+          color: subTextColor,
+          letterSpacing: '0.35em',
+          fontFamily: FONT,
+          marginBottom: koreaSize * 0.4,
+          paddingLeft: koreaSize * 0.3
+        }}>
+          KOREA
+        </div>
+        
+        {/* 상단 빨간 가로선 */}
+        <div style={{ 
+          height: 1.5, 
+          background: redColor, 
+          marginBottom: koitionSize * 0.15,
+          width: '100%'
+        }} />
+        
+        {/* KOITION (메인) */}
+        <div style={{ 
+          fontSize: koitionSize, 
+          fontWeight: 800, 
+          color: textColor,
+          letterSpacing: '0.02em',
+          fontFamily: FONT,
+          lineHeight: 0.95
+        }}>
+          KOITION
+        </div>
+        
+        {/* 하단 빨간 가로선 */}
+        <div style={{ 
+          height: 1.5, 
+          background: redColor, 
+          marginTop: koitionSize * 0.15,
+          marginBottom: innovSize * 0.4,
+          width: '100%'
+        }} />
+        
+        {/* INNOVATION */}
+        <div style={{ 
+          fontSize: innovSize, 
+          fontWeight: 500, 
+          color: subTextColor,
+          letterSpacing: '0.35em',
+          fontFamily: FONT,
+          paddingRight: innovSize * 0.3,
+          textAlign: 'right'
+        }}>
+          INNOVATION
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// HR Illustration · 팀 협업 SVG 일러스트 (Undraw 스타일, 톤다운)
+// ============================================================
+function HRIllustration() {
+  // 톤다운 컬러 팔레트 (채도 낮춤)
+  const C_skin = '#E8C9A8';        // 피부 톤 (덜 노란색)
+  const C_skinD = '#C9A485';       // 피부 음영
+  const C_hair1 = '#5C4A3A';       // 갈색 머리
+  const C_hair2 = '#3D3530';       // 진한 갈색
+  const C_hair3 = '#6B5840';       // 밝은 갈색
+  const C_navy = '#3D5A80';        // 톤다운 네이비 (셔츠/바지)
+  const C_navyD = '#2E4060';       // 더 진한 네이비
+  const C_red = '#A85D5D';         // 톤다운 레드 (자켓)
+  const C_redD = '#874A4A';        // 진한 레드
+  const C_beige = '#D4C5A9';       // 베이지 (셔츠)
+  const C_beigeD = '#B5A78B';      // 진한 베이지
+  const C_teal = '#5B7F8A';        // 톤다운 청록
+  const C_off = '#E8E4DC';         // 오프화이트
+  const C_line = 'rgba(255,255,255,0.5)';
+  
+  return (
+    <svg viewBox="0 0 420 220" xmlns="http://www.w3.org/2000/svg" 
+      style={{ width: '100%', maxWidth: 420, height: 'auto', display: 'block' }}>
+      
+      {/* 배경 부드러운 원형 */}
+      <circle cx="210" cy="130" r="110" fill="rgba(255,255,255,0.03)" />
+      <circle cx="210" cy="130" r="80" fill="rgba(255,255,255,0.025)" />
+      
+      {/* 바닥선 */}
+      <line x1="20" y1="200" x2="400" y2="200" stroke={C_line} strokeWidth="0.5" strokeDasharray="2 3" opacity="0.4" />
+      
+      {/* ============ 가운데 큰 화이트보드/스크린 ============ */}
+      <g transform="translate(160, 50)">
+        {/* 보드 */}
+        <rect x="0" y="0" width="100" height="70" rx="3" fill={C_off} />
+        <rect x="0" y="0" width="100" height="10" rx="3" fill={C_beigeD} />
+        
+        {/* 차트 - 막대그래프 */}
+        <rect x="12" y="42" width="9" height="18" fill={C_teal} rx="1" opacity="0.85" />
+        <rect x="24" y="32" width="9" height="28" fill={C_navy} rx="1" opacity="0.85" />
+        <rect x="36" y="22" width="9" height="38" fill={C_red} rx="1" opacity="0.85" />
+        <rect x="48" y="28" width="9" height="32" fill={C_navy} rx="1" opacity="0.85" />
+        <rect x="60" y="36" width="9" height="24" fill={C_teal} rx="1" opacity="0.85" />
+        
+        {/* 헤더 텍스트 라인 */}
+        <rect x="8" y="3" width="30" height="2" rx="1" fill="#fff" opacity="0.6" />
+        <rect x="42" y="3" width="20" height="2" rx="1" fill="#fff" opacity="0.4" />
+        
+        {/* 차트 베이스라인 */}
+        <line x1="10" y1="62" x2="78" y2="62" stroke={C_beigeD} strokeWidth="0.5" />
+        
+        {/* 보드 받침대 */}
+        <rect x="48" y="70" width="4" height="20" fill={C_beigeD} />
+        <ellipse cx="50" cy="92" rx="14" ry="2" fill={C_beigeD} opacity="0.7" />
+      </g>
+      
+      {/* ============ 인물 1 - 좌측: 차트 가리키는 여성 (빨간 자켓) ============ */}
+      <g transform="translate(95, 95)">
+        {/* 다리 */}
+        <rect x="14" y="80" width="9" height="30" fill={C_navy} />
+        <rect x="25" y="80" width="9" height="30" fill={C_navy} />
+        {/* 신발 */}
+        <ellipse cx="18" cy="112" rx="7" ry="2.5" fill={C_navyD} />
+        <ellipse cx="30" cy="112" rx="7" ry="2.5" fill={C_navyD} />
+        
+        {/* 몸통 - 빨간 자켓 */}
+        <path d="M 8,38 Q 8,28 18,26 L 30,26 Q 40,28 40,38 L 40,82 L 8,82 Z" fill={C_red} />
+        {/* 자켓 안쪽 셔츠 */}
+        <path d="M 20,26 L 24,40 L 28,26 Z" fill={C_off} />
+        {/* 자켓 단추 */}
+        <circle cx="24" cy="45" r="1" fill={C_redD} />
+        <circle cx="24" cy="55" r="1" fill={C_redD} />
+        
+        {/* 왼팔 */}
+        <path d="M 8,42 Q 0,55 4,72 L 11,72 L 11,42 Z" fill={C_red} />
+        <ellipse cx="7" cy="74" rx="4" ry="3.5" fill={C_skin} />
+        
+        {/* 오른팔 - 차트 가리키기 (확장) */}
+        <path d="M 40,42 Q 55,38 70,20 L 64,15 L 36,40 Z" fill={C_red} />
+        <ellipse cx="72" cy="17" rx="4" ry="4" fill={C_skin} />
+        
+        {/* 머리 */}
+        <circle cx="24" cy="14" r="13" fill={C_skin} />
+        {/* 단발 머리 */}
+        <path d="M 11,10 Q 12,0 24,-1 Q 37,0 38,10 L 36,14 Q 34,4 24,4 Q 14,4 12,14 Z" fill={C_hair2} />
+        {/* 귀 */}
+        <ellipse cx="11" cy="14" rx="1.5" ry="2" fill={C_skinD} />
+        <ellipse cx="37" cy="14" rx="1.5" ry="2" fill={C_skinD} />
+        {/* 눈 */}
+        <ellipse cx="20" cy="15" rx="1" ry="1.2" fill="#2C2416" />
+        <ellipse cx="28" cy="15" rx="1" ry="1.2" fill="#2C2416" />
+        {/* 입 */}
+        <path d="M 22,20 Q 24,21.5 26,20" stroke="#5C4A3A" strokeWidth="0.8" fill="none" strokeLinecap="round" />
+      </g>
+      
+      {/* ============ 인물 2 - 좌측 끝: 노트북 든 남성 ============ */}
+      <g transform="translate(30, 110)">
+        {/* 다리 */}
+        <rect x="12" y="70" width="8" height="22" fill={C_navyD} />
+        <rect x="22" y="70" width="8" height="22" fill={C_navyD} />
+        <ellipse cx="16" cy="94" rx="6" ry="2" fill="#1F2A3A" />
+        <ellipse cx="26" cy="94" rx="6" ry="2" fill="#1F2A3A" />
+        
+        {/* 몸통 - 셔츠 (베이지) */}
+        <path d="M 8,32 Q 8,22 17,20 L 25,20 Q 34,22 34,32 L 34,72 L 8,72 Z" fill={C_beige} />
+        {/* 셔츠 카라 */}
+        <path d="M 17,20 L 21,30 L 25,20 Z" fill={C_navy} />
+        
+        {/* 왼팔 - 노트북 받침 */}
+        <path d="M 8,36 Q -2,48 2,60 L 14,55 L 14,36 Z" fill={C_beige} />
+        <ellipse cx="6" cy="60" rx="3.5" ry="3" fill={C_skin} />
+        
+        {/* 오른팔 */}
+        <path d="M 34,36 Q 42,48 38,60 L 28,55 L 28,36 Z" fill={C_beige} />
+        <ellipse cx="36" cy="60" rx="3.5" ry="3" fill={C_skin} />
+        
+        {/* 노트북 */}
+        <rect x="2" y="48" width="36" height="18" rx="1.5" fill={C_navyD} />
+        <rect x="4" y="50" width="32" height="14" fill={C_teal} opacity="0.7" />
+        <rect x="0" y="65" width="40" height="3" rx="1" fill="#1F2A3A" />
+        
+        {/* 머리 */}
+        <circle cx="21" cy="10" r="11" fill={C_skin} />
+        {/* 짧은 머리 */}
+        <path d="M 10,7 Q 11,-2 21,-3 Q 32,-2 33,7 L 31,10 Q 28,2 21,2 Q 13,2 11,10 Z" fill={C_hair1} />
+        {/* 눈 */}
+        <ellipse cx="18" cy="11" rx="0.9" ry="1" fill="#2C2416" />
+        <ellipse cx="24" cy="11" rx="0.9" ry="1" fill="#2C2416" />
+        {/* 입 */}
+        <path d="M 19,15 Q 21,16 23,15" stroke="#5C4A3A" strokeWidth="0.8" fill="none" strokeLinecap="round" />
+      </g>
+      
+      {/* ============ 인물 3 - 우측: 책상에 앉은 남성 ============ */}
+      <g transform="translate(280, 100)">
+        {/* 의자 등받이 */}
+        <rect x="-2" y="30" width="40" height="60" rx="3" fill="rgba(255,255,255,0.1)" />
+        {/* 책상 */}
+        <rect x="-30" y="92" width="100" height="5" fill={C_beigeD} />
+        <rect x="-22" y="97" width="3" height="25" fill={C_beigeD} opacity="0.7" />
+        <rect x="60" y="97" width="3" height="25" fill={C_beigeD} opacity="0.7" />
+        
+        {/* 노트북 (책상 위) */}
+        <rect x="8" y="76" width="34" height="18" rx="1.5" fill={C_navyD} />
+        <rect x="11" y="78" width="28" height="14" fill={C_teal} opacity="0.6" />
+        <rect x="5" y="92" width="40" height="3" rx="1" fill="#1F2A3A" />
+        
+        {/* 몸통 (셔츠) */}
+        <path d="M 5,55 Q 5,43 16,40 L 24,40 Q 35,43 35,55 L 35,88 L 5,88 Z" fill={C_navy} />
+        {/* 셔츠 카라 */}
+        <path d="M 16,40 L 20,52 L 24,40 Z" fill={C_off} />
+        
+        {/* 왼팔 - 키보드 위 */}
+        <path d="M 5,58 Q -4,68 0,80 L 10,84 L 14,80 Z" fill={C_navy} />
+        <ellipse cx="11" cy="82" rx="4" ry="3" fill={C_skin} />
+        
+        {/* 오른팔 - 키보드 위 */}
+        <path d="M 35,58 Q 44,68 40,80 L 30,84 L 26,80 Z" fill={C_navy} />
+        <ellipse cx="29" cy="82" rx="4" ry="3" fill={C_skin} />
+        
+        {/* 머리 */}
+        <circle cx="20" cy="28" r="13" fill={C_skin} />
+        {/* 머리 */}
+        <path d="M 7,24 Q 8,14 20,13 Q 32,14 33,24 L 31,28 Q 28,18 20,18 Q 12,18 9,28 Z" fill={C_hair3} />
+        {/* 안경 */}
+        <circle cx="16" cy="29" r="3" fill="none" stroke={C_navyD} strokeWidth="0.8" />
+        <circle cx="24" cy="29" r="3" fill="none" stroke={C_navyD} strokeWidth="0.8" />
+        <line x1="19" y1="29" x2="21" y2="29" stroke={C_navyD} strokeWidth="0.6" />
+        {/* 눈 (안경 안) */}
+        <circle cx="16" cy="29" r="0.8" fill="#2C2416" />
+        <circle cx="24" cy="29" r="0.8" fill="#2C2416" />
+        {/* 입 */}
+        <path d="M 18,34 Q 20,35 22,34" stroke="#5C4A3A" strokeWidth="0.8" fill="none" strokeLinecap="round" />
+      </g>
+      
+      {/* ============ 인물 4 - 우측 끝: 서류 든 여성 ============ */}
+      <g transform="translate(355, 115)">
+        {/* 다리 - 스커트 아래 */}
+        <rect x="10" y="68" width="7" height="20" fill={C_skinD} opacity="0.7" />
+        <rect x="20" y="68" width="7" height="20" fill={C_skinD} opacity="0.7" />
+        <ellipse cx="13" cy="89" rx="5" ry="2" fill="#1F2A3A" />
+        <ellipse cx="23" cy="89" rx="5" ry="2" fill="#1F2A3A" />
+        
+        {/* 스커트 */}
+        <path d="M 6,55 L 31,55 L 33,72 L 4,72 Z" fill={C_navyD} />
+        
+        {/* 몸통 - 블라우스 */}
+        <path d="M 8,30 Q 8,20 17,18 L 22,18 Q 31,20 31,30 L 31,58 L 8,58 Z" fill={C_teal} opacity="0.9" />
+        {/* 블라우스 카라 */}
+        <path d="M 17,18 L 20,28 L 22,18 Z" fill={C_off} />
+        
+        {/* 왼팔 - 서류 들고 있음 */}
+        <path d="M 8,34 Q -2,42 0,55 L 9,55 L 12,42 Z" fill={C_teal} opacity="0.9" />
+        <ellipse cx="3" cy="56" rx="3.5" ry="3" fill={C_skin} />
+        
+        {/* 오른팔 */}
+        <path d="M 31,34 Q 38,42 35,52 L 28,52 L 26,42 Z" fill={C_teal} opacity="0.9" />
+        <ellipse cx="32" cy="54" rx="3.5" ry="3" fill={C_skin} />
+        
+        {/* 서류/클립보드 (왼손) */}
+        <rect x="-4" y="48" width="14" height="18" rx="1" fill={C_off} />
+        <rect x="-2" y="50" width="10" height="1.5" fill={C_beigeD} />
+        <rect x="-2" y="53" width="8" height="1" fill={C_beigeD} opacity="0.7" />
+        <rect x="-2" y="56" width="9" height="1" fill={C_beigeD} opacity="0.7" />
+        <rect x="-2" y="59" width="7" height="1" fill={C_beigeD} opacity="0.7" />
+        
+        {/* 머리 */}
+        <circle cx="19" cy="8" r="11" fill={C_skin} />
+        {/* 긴 머리 */}
+        <path d="M 7,5 Q 8,-5 19,-6 Q 31,-5 32,5 L 32,18 Q 30,8 28,8 L 19,8 L 10,8 Q 8,8 6,18 Z" fill={C_hair2} />
+        {/* 눈 */}
+        <ellipse cx="16" cy="9" rx="0.9" ry="1" fill="#2C2416" />
+        <ellipse cx="22" cy="9" rx="0.9" ry="1" fill="#2C2416" />
+        {/* 입 */}
+        <path d="M 17,13 Q 19,14 21,13" stroke="#5C4A3A" strokeWidth="0.8" fill="none" strokeLinecap="round" />
+      </g>
+      
+      {/* ============ 떠다니는 장식 요소 (톤다운) ============ */}
+      
+      {/* 체크 마크 - 평가 완료 (좌상단) */}
+      <g transform="translate(50, 50)" opacity="0.7">
+        <circle cx="9" cy="9" r="9" fill="rgba(255,255,255,0.15)" />
+        <circle cx="9" cy="9" r="9" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="0.5" />
+        <path d="M 5,9 L 8,12 L 14,6" stroke="#fff" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      </g>
+      
+      {/* 별 - S등급 (우상단) */}
+      <g transform="translate(360, 45)" opacity="0.7">
+        <path d="M 9,0 L 11,6 L 18,7 L 13,11 L 14,18 L 9,14 L 4,18 L 5,11 L 0,7 L 7,6 Z" fill="rgba(255,255,255,0.4)" />
+      </g>
+      
+      {/* 작은 점들 (배경 반짝임) */}
+      <circle cx="30" cy="80" r="1.5" fill="rgba(255,255,255,0.2)" />
+      <circle cx="400" cy="80" r="1" fill="rgba(255,255,255,0.2)" />
+      <circle cx="200" cy="25" r="1" fill="rgba(255,255,255,0.25)" />
+      <circle cx="380" cy="180" r="1.2" fill="rgba(255,255,255,0.2)" />
+      <circle cx="25" cy="170" r="1" fill="rgba(255,255,255,0.2)" />
+    </svg>
+  );
+}
+
+// ============================================================
+// Brand Identity Visual · AI + 기록관리 정체성 표현
+// ============================================================
+function BrandIdentityVisual() {
+  return (
+    <svg viewBox="0 0 320 280" xmlns="http://www.w3.org/2000/svg" 
+      style={{ width: '100%', maxWidth: 320, height: 'auto', display: 'block' }}>
+      
+      {/* 배경 원형 글로우 */}
+      <defs>
+        <radialGradient id="bgGlow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="rgba(214,56,56,0.12)" />
+          <stop offset="100%" stopColor="rgba(214,56,56,0)" />
+        </radialGradient>
+        <linearGradient id="archiveGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="rgba(255,255,255,0.95)" />
+          <stop offset="100%" stopColor="rgba(255,255,255,0.7)" />
+        </linearGradient>
+      </defs>
+      <circle cx="160" cy="140" r="120" fill="url(#bgGlow)" />
+      
+      {/* ========== 좌측: 아카이브 박스 스택 (기록관리) ========== */}
+      <g transform="translate(40, 110)">
+        {/* 박스 3개 적층 */}
+        {/* 박스 1 (맨 아래) */}
+        <g>
+          <rect x="0" y="80" width="100" height="40" rx="2" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
+          <rect x="0" y="80" width="100" height="6" fill="rgba(255,255,255,0.25)" />
+          <rect x="10" y="92" width="35" height="3" rx="1" fill="rgba(255,255,255,0.5)" />
+          <rect x="10" y="100" width="50" height="2" rx="1" fill="rgba(255,255,255,0.3)" />
+          <rect x="10" y="106" width="40" height="2" rx="1" fill="rgba(255,255,255,0.3)" />
+          {/* 라벨 */}
+          <rect x="75" y="92" width="18" height="14" rx="1" fill="#D63838" />
+          <text x="84" y="102" fontSize="7" fontWeight="700" fill="#fff" textAnchor="middle" fontFamily="monospace">M650</text>
+        </g>
+        
+        {/* 박스 2 (중간, 약간 우측 시프트) */}
+        <g transform="translate(8, -22)">
+          <rect x="0" y="80" width="100" height="40" rx="2" fill="rgba(255,255,255,0.22)" stroke="rgba(255,255,255,0.5)" strokeWidth="1" />
+          <rect x="0" y="80" width="100" height="6" fill="rgba(255,255,255,0.35)" />
+          <rect x="10" y="92" width="40" height="3" rx="1" fill="rgba(255,255,255,0.6)" />
+          <rect x="10" y="100" width="55" height="2" rx="1" fill="rgba(255,255,255,0.4)" />
+          <rect x="10" y="106" width="42" height="2" rx="1" fill="rgba(255,255,255,0.4)" />
+          <rect x="75" y="92" width="18" height="14" rx="1" fill="#D63838" />
+          <text x="84" y="102" fontSize="7" fontWeight="700" fill="#fff" textAnchor="middle" fontFamily="monospace">M650</text>
+        </g>
+        
+        {/* 박스 3 (맨 위) */}
+        <g transform="translate(16, -44)">
+          <rect x="0" y="80" width="100" height="40" rx="2" fill="url(#archiveGrad)" stroke="rgba(255,255,255,0.7)" strokeWidth="1.2" />
+          <rect x="0" y="80" width="100" height="6" fill="rgba(27,58,111,0.8)" />
+          <rect x="10" y="92" width="38" height="3" rx="1" fill="rgba(27,58,111,0.8)" />
+          <rect x="10" y="100" width="52" height="2" rx="1" fill="rgba(27,58,111,0.5)" />
+          <rect x="10" y="106" width="44" height="2" rx="1" fill="rgba(27,58,111,0.5)" />
+          <rect x="75" y="92" width="18" height="14" rx="1" fill="#D63838" />
+          <text x="84" y="102" fontSize="7" fontWeight="700" fill="#fff" textAnchor="middle" fontFamily="monospace">M650</text>
+        </g>
+        
+        {/* 박스 라벨 (ARCHIVE) */}
+        <text x="50" y="142" fontSize="7" fontWeight="600" fill="rgba(255,255,255,0.7)" textAnchor="middle" letterSpacing="0.3em">
+          ARCHIVE
+        </text>
+      </g>
+      
+      {/* ========== 우측: AI 뉴럴 네트워크 (인공지능) ========== */}
+      <g transform="translate(170, 60)">
+        {/* 연결선들 (먼저 그려서 노드 뒤에 위치) */}
+        <g stroke="rgba(255,255,255,0.25)" strokeWidth="0.8" fill="none">
+          {/* Layer 1 → Layer 2 */}
+          <line x1="20" y1="20" x2="60" y2="10" />
+          <line x1="20" y1="20" x2="60" y2="40" />
+          <line x1="20" y1="20" x2="60" y2="70" />
+          <line x1="20" y1="50" x2="60" y2="10" />
+          <line x1="20" y1="50" x2="60" y2="40" />
+          <line x1="20" y1="50" x2="60" y2="70" />
+          <line x1="20" y1="80" x2="60" y2="40" />
+          <line x1="20" y1="80" x2="60" y2="70" />
+          <line x1="20" y1="80" x2="60" y2="100" />
+          <line x1="20" y1="110" x2="60" y2="70" />
+          <line x1="20" y1="110" x2="60" y2="100" />
+          
+          {/* Layer 2 → Layer 3 */}
+          <line x1="60" y1="10" x2="100" y2="30" />
+          <line x1="60" y1="10" x2="100" y2="60" />
+          <line x1="60" y1="40" x2="100" y2="30" />
+          <line x1="60" y1="40" x2="100" y2="60" />
+          <line x1="60" y1="40" x2="100" y2="90" />
+          <line x1="60" y1="70" x2="100" y2="30" />
+          <line x1="60" y1="70" x2="100" y2="60" />
+          <line x1="60" y1="70" x2="100" y2="90" />
+          <line x1="60" y1="100" x2="100" y2="60" />
+          <line x1="60" y1="100" x2="100" y2="90" />
+        </g>
+        
+        {/* 활성화된 연결선 (강조) */}
+        <g stroke="#D63838" strokeWidth="1.2" fill="none" opacity="0.8">
+          <line x1="20" y1="50" x2="60" y2="40" />
+          <line x1="60" y1="40" x2="100" y2="60" />
+          <line x1="20" y1="80" x2="60" y2="70" />
+          <line x1="60" y1="70" x2="100" y2="60" />
+        </g>
+        
+        {/* Layer 1: 입력 노드 (4개) */}
+        <g>
+          <circle cx="20" cy="20" r="4.5" fill="rgba(255,255,255,0.6)" stroke="#fff" strokeWidth="0.8" />
+          <circle cx="20" cy="50" r="4.5" fill="#fff" stroke="#D63838" strokeWidth="1" />
+          <circle cx="20" cy="80" r="4.5" fill="#fff" stroke="#D63838" strokeWidth="1" />
+          <circle cx="20" cy="110" r="4.5" fill="rgba(255,255,255,0.6)" stroke="#fff" strokeWidth="0.8" />
+        </g>
+        
+        {/* Layer 2: 히든 노드 (4개) */}
+        <g>
+          <circle cx="60" cy="10" r="4.5" fill="rgba(255,255,255,0.6)" stroke="#fff" strokeWidth="0.8" />
+          <circle cx="60" cy="40" r="4.5" fill="#fff" stroke="#D63838" strokeWidth="1" />
+          <circle cx="60" cy="70" r="4.5" fill="#fff" stroke="#D63838" strokeWidth="1" />
+          <circle cx="60" cy="100" r="4.5" fill="rgba(255,255,255,0.6)" stroke="#fff" strokeWidth="0.8" />
+        </g>
+        
+        {/* Layer 3: 출력 노드 (3개) */}
+        <g>
+          <circle cx="100" cy="30" r="4.5" fill="rgba(255,255,255,0.6)" stroke="#fff" strokeWidth="0.8" />
+          <circle cx="100" cy="60" r="5.5" fill="#D63838" stroke="#fff" strokeWidth="1.2" />
+          <circle cx="100" cy="90" r="4.5" fill="rgba(255,255,255,0.6)" stroke="#fff" strokeWidth="0.8" />
+        </g>
+        
+        {/* AI 라벨 */}
+        <text x="60" y="140" fontSize="7" fontWeight="600" fill="rgba(255,255,255,0.7)" textAnchor="middle" letterSpacing="0.3em">
+          AI · NEURAL NET
+        </text>
+      </g>
+      
+      {/* ========== 중앙 연결: 아카이브 ↔ AI 데이터 흐름 ========== */}
+      <g stroke="rgba(214,56,56,0.5)" strokeWidth="1" strokeDasharray="3 2" fill="none">
+        <path d="M 145,100 Q 165,90 185,100" />
+      </g>
+      <circle cx="165" cy="92" r="2" fill="#D63838" />
+      
+      {/* ========== 하단: 데이터 흐름 표시 ========== */}
+      <g transform="translate(60, 200)">
+        {/* 데이터 막대그래프 미니 */}
+        <rect x="0" y="20" width="6" height="20" rx="1" fill="rgba(255,255,255,0.4)" />
+        <rect x="10" y="10" width="6" height="30" rx="1" fill="rgba(255,255,255,0.5)" />
+        <rect x="20" y="0" width="6" height="40" rx="1" fill="#D63838" />
+        <rect x="30" y="14" width="6" height="26" rx="1" fill="rgba(255,255,255,0.5)" />
+        <rect x="40" y="6" width="6" height="34" rx="1" fill="rgba(255,255,255,0.4)" />
+        <line x1="-2" y1="42" x2="50" y2="42" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5" />
+        <text x="24" y="55" fontSize="6.5" fontWeight="600" fill="rgba(255,255,255,0.6)" textAnchor="middle" letterSpacing="0.25em">
+          ANALYTICS
+        </text>
+      </g>
+      
+      {/* 하단 우측: 문서 아이콘 */}
+      <g transform="translate(200, 200)">
+        <rect x="0" y="0" width="28" height="36" rx="1.5" fill="rgba(255,255,255,0.9)" />
+        <path d="M 20,0 L 28,8 L 20,8 Z" fill="rgba(255,255,255,0.6)" />
+        <rect x="4" y="14" width="20" height="1.5" rx="0.5" fill="rgba(27,58,111,0.7)" />
+        <rect x="4" y="18" width="16" height="1.5" rx="0.5" fill="rgba(27,58,111,0.5)" />
+        <rect x="4" y="22" width="18" height="1.5" rx="0.5" fill="rgba(27,58,111,0.5)" />
+        <rect x="4" y="26" width="14" height="1.5" rx="0.5" fill="rgba(27,58,111,0.5)" />
+        <rect x="4" y="30" width="20" height="1.5" rx="0.5" fill="rgba(27,58,111,0.5)" />
+        
+        {/* 별 (S등급) */}
+        <g transform="translate(35, 22)">
+          <path d="M 6,0 L 7.4,4.3 L 12,4.5 L 8.3,7.2 L 9.6,11.5 L 6,8.8 L 2.4,11.5 L 3.7,7.2 L 0,4.5 L 4.6,4.3 Z" fill="#D63838" />
+        </g>
+        <text x="14" y="55" fontSize="6.5" fontWeight="600" fill="rgba(255,255,255,0.6)" textAnchor="middle" letterSpacing="0.25em">
+          RECORDS
+        </text>
+      </g>
+      
+      {/* 떠다니는 작은 점들 */}
+      <circle cx="40" cy="40" r="1.5" fill="rgba(214,56,56,0.6)" />
+      <circle cx="290" cy="50" r="1.2" fill="rgba(255,255,255,0.4)" />
+      <circle cx="280" cy="220" r="1" fill="rgba(214,56,56,0.5)" />
+      <circle cx="20" cy="200" r="1.5" fill="rgba(255,255,255,0.3)" />
+    </svg>
+  );
+}
+
+// ============================================================
+// Koition Visual Trio · 3개 핵심 가치 (텍스트 중심)
+// ============================================================
+function KoitionVisualTrio() {
+  const items = [
+    { 
+      num: '01', 
+      title: 'TARGETING', 
+      kr: '목표 적중', 
+      desc: '데이터 기반의 정확한 평가'
+    },
+    { 
+      num: '02', 
+      title: 'RECORDING', 
+      kr: '기록 관리', 
+      desc: '체계적인 기록물 보존·관리'
+    },
+    { 
+      num: '03', 
+      title: 'TRANSFORMATION', 
+      kr: '디지털 전환', 
+      desc: '아날로그에서 디지털 자산화'
+    },
+  ];
+  
+  return (
+    <div style={{ 
+      display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10,
+      width: '100%'
+    }}>
+      {items.map(item => (
+        <div key={item.num} style={{
+          padding: '12px 14px',
+          background: 'rgba(255,255,255,0.04)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          borderRadius: 6,
+          position: 'relative'
+        }}>
+          {/* 번호 */}
+          <div style={{ 
+            fontSize: 9, fontWeight: 700, color: '#D63838', 
+            letterSpacing: '0.15em', marginBottom: 6,
+            fontFamily: '"SF Mono", Monaco, monospace'
+          }}>
+            {item.num}
+          </div>
+          {/* 영문 타이틀 */}
+          <div style={{ 
+            fontSize: 11, fontWeight: 700, color: '#fff', 
+            letterSpacing: '0.15em', marginBottom: 2
+          }}>
+            {item.title}
+          </div>
+          {/* 한글 부제 */}
+          <div style={{ 
+            fontSize: 13, fontWeight: 600, color: '#fff', 
+            marginBottom: 4, letterSpacing: '-0.01em'
+          }}>
+            {item.kr}
+          </div>
+          {/* 설명 */}
+          <div style={{ 
+            fontSize: 10, color: 'rgba(255,255,255,0.6)', 
+            lineHeight: 1.5
+          }}>
+            {item.desc}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
+// 표지 이미지 표시 (admin이 URL로 교체 가능)
+// ============================================================
+function CoverImageDisplay({ coverImage }) {
+  const ci = coverImage || { enabled: true, url: '', caption: '' };
+  const [imgError, setImgError] = useState(false);
+  
+  if (!ci.enabled) return null;
+  
+  const hasImage = ci.url && !imgError;
+  
+  return (
+    <div style={{ 
+      width: '100%', maxWidth: 380,
+      borderRadius: 10, overflow: 'hidden',
+      border: '1px solid rgba(255,255,255,0.1)',
+      background: 'rgba(255,255,255,0.02)',
+      boxShadow: '0 10px 30px rgba(0,0,0,0.3)'
+    }}>
+      <div style={{ 
+        width: '100%', aspectRatio: '4 / 3',
+        background: hasImage 
+          ? 'transparent' 
+          : 'linear-gradient(135deg, rgba(214,56,56,0.08) 0%, rgba(46,91,160,0.15) 100%)',
+        position: 'relative', overflow: 'hidden',
+        display: 'flex', alignItems: 'center', justifyContent: 'center'
+      }}>
+        {hasImage ? (
+          <img 
+            src={ci.url} 
+            alt={ci.caption || 'Cover'} 
+            onError={() => setImgError(true)}
+            style={{ 
+              width: '100%', height: '100%', objectFit: 'cover', display: 'block'
+            }} 
+          />
+        ) : (
+          /* Placeholder - 이미지 URL이 없거나 로드 실패 */
+          <div style={{ 
+            textAlign: 'center', padding: 24,
+            color: 'rgba(255,255,255,0.6)'
+          }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" 
+              style={{ margin: '0 auto 12px', display: 'block', opacity: 0.5 }}>
+              <rect x="3" y="3" width="18" height="18" rx="2" stroke="#fff" strokeWidth="1.2" />
+              <circle cx="8.5" cy="8.5" r="1.5" stroke="#fff" strokeWidth="1.2" />
+              <path d="M21 15l-5-5L5 21" stroke="#fff" strokeWidth="1.2" />
+            </svg>
+            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', marginBottom: 4 }}>
+              표지 이미지 미설정
+            </div>
+            <div style={{ fontSize: 10, opacity: 0.7, lineHeight: 1.5 }}>
+              {imgError ? '이미지를 불러올 수 없습니다' : 'admin이 정책 설정에서\n이미지 URL을 등록하면 표시됩니다'}
+            </div>
+          </div>
+        )}
+        
+        {/* 우상단 라벨 */}
+        {ci.caption && hasImage && (
+          <div style={{
+            position: 'absolute', top: 12, right: 12,
+            padding: '5px 10px', background: 'rgba(15,37,71,0.85)',
+            backdropFilter: 'blur(4px)',
+            borderRadius: 4, fontSize: 10, fontWeight: 600,
+            color: '#fff', letterSpacing: '0.1em'
+          }}>
+            {ci.caption}
+          </div>
+        )}
+        
+        {/* 좌하단 빨간 액센트 라인 */}
+        <div style={{
+          position: 'absolute', bottom: 0, left: 0,
+          width: 60, height: 3, background: '#D63838'
+        }} />
+      </div>
+    </div>
+  );
+}
+
+// 회사 정보 카드 (로그인 화면 하단)
+function CardStat({ label, value, highlight }) {
+  return (
+    <div style={{ 
+      padding: '4px 0',
+      borderLeft: highlight ? `2px solid #D63838` : `2px solid rgba(255,255,255,0.15)`,
+      paddingLeft: 12
+    }}>
+      <div style={{ 
+        fontSize: 9, color: 'rgba(255,255,255,0.5)', 
+        letterSpacing: '0.12em', fontWeight: 500,
+        textTransform: 'uppercase', marginBottom: 4
+      }}>
+        {label}
+      </div>
+      <div style={{ 
+        fontSize: 13, color: highlight ? '#fff' : 'rgba(255,255,255,0.9)', 
+        fontWeight: highlight ? 700 : 600, letterSpacing: '-0.01em'
+      }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 사용자 계정
+// ============================================================
+const USERS = [
+  { username: 'admin', password: 'admin', role: 'admin', name: '인사담당자', empId: null, deptScope: '전체' },
+  { username: 'jiy', password: '1234', role: 'manager', name: '정일영', empId: 'K-140401', deptScope: '경영기획본부' },
+  { username: 'cjk', password: '1234', role: 'manager', name: '최재교', empId: 'K-140402', deptScope: '공공사업본부' },
+  { username: 'sys', password: '1234', role: 'manager', name: '신수호', empId: 'K-140404', deptScope: '사업관리부' },
+  { username: 'ljm', password: '1234', role: 'manager', name: '이종민', empId: 'K-231001', deptScope: '서비스개발부' },
+  { username: 'cys', password: '1234', role: 'manager', name: '최영숙', empId: 'K-140403', deptScope: '경영지원부' },
+  { username: 'lwk', password: '1234', role: 'evaluator', name: '이원규', empId: 'K-180501', deptScope: '아카이브사업팀' },
+  { username: 'sdh', password: '1234', role: 'evaluator', name: '심도현', empId: 'K-170801', deptScope: '데이터큐레이션팀' },
+  { username: 'owk', password: '1234', role: 'employee', name: '오윤경', empId: 'K-220601' },
+  { username: 'whw', password: '1234', role: 'employee', name: '원동현', empId: 'K-200501' },
+  { username: 'jye', password: '1234', role: 'employee', name: '정예람', empId: 'K-241201' },
+  { username: 'chy', password: '1234', role: 'employee', name: '최하연', empId: 'K-240403' },
+  { username: 'jeh', password: '1234', role: 'employee', name: '조은희', empId: 'K-240401' },
+  { username: 'gyh', password: '1234', role: 'employee', name: '고영훈', empId: 'K-240202' },
+];
+
+// ============================================================
+// ECount 인사카드 연동 헬퍼
+// ============================================================
+
+// ECount 인사카드 표준 컬럼 (한글 헤더 기준)
+const ECOUNT_HR_COLUMNS = [
+  { key: 'id',         label: '사원코드',   required: true,  desc: '코이션 사번' },
+  { key: 'name',       label: '성명',       required: true,  desc: '직원 이름' },
+  { key: 'dept',       label: '부서',       required: false, desc: '소속 부서' },
+  { key: 'position',   label: '직위',       required: false, desc: '직급/직위명' },
+  { key: 'level',      label: '직무레벨',   required: false, desc: 'L1/L2/L3/L4' },
+  { key: 'group',      label: '직무군',     required: false, desc: 'Archive/Tech/Biz/PM' },
+  { key: 'hireDate',   label: '입사일',     required: false, desc: 'YYYY/MM/DD' },
+  { key: 'baseSalary', label: '기본급',     required: false, desc: '월 기본급(원)' },
+  { key: 'allowance',  label: '제수당',     required: false, desc: '월 수당(원)' },
+  { key: 'mealCar',    label: '식대차량',   required: false, desc: '식대+차량유지(원)' },
+  { key: 'qualif',     label: '자격수당',   required: false, desc: '자격증 수당(원)' },
+  { key: 'email',      label: '이메일',     required: false, desc: 'company@koition.com' },
+  { key: 'status',     label: '재직상태',   required: false, desc: 'active/leave/advisor/freelance/resigned' },
+  { key: 'note',       label: '비고',       required: false, desc: '특이사항' },
+];
+
+// CSV 한 셀에 콤마/줄바꿈/따옴표가 있으면 이스케이프
+function csvCell(val) {
+  if (val === null || val === undefined) return '';
+  const s = String(val);
+  if (/[,\n\r"]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+// 직원 배열을 ECount 인사카드 양식 CSV로 변환 (UTF-8 BOM 포함, Excel 한글 안전)
+function employeesToEcountCSV(employees) {
+  const headers = ECOUNT_HR_COLUMNS.map(c => c.label);
+  const rows = employees.map(emp => 
+    ECOUNT_HR_COLUMNS.map(c => csvCell(emp[c.key]))
+  );
+  const csv = [headers, ...rows].map(r => r.join(',')).join('\r\n');
+  // UTF-8 BOM 추가 - Excel에서 한글 깨짐 방지
+  return '\uFEFF' + csv;
+}
+
+// CSV 텍스트를 파싱 (간단한 RFC 4180 파서)
+function parseCSV(text) {
+  // BOM 제거
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  const rows = [];
+  let row = [], cell = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { cell += '"'; i++; }
+        else inQuotes = false;
+      } else cell += ch;
+    } else {
+      if (ch === '"') inQuotes = true;
+      else if (ch === ',') { row.push(cell); cell = ''; }
+      else if (ch === '\r') { /* skip */ }
+      else if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+      else cell += ch;
+    }
+  }
+  if (cell !== '' || row.length > 0) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.length > 0 && r.some(c => c.trim() !== ''));
+}
+
+// ECount CSV 텍스트를 직원 객체 배열로 변환 (느슨한 컬럼 매칭)
+function ecountCSVToEmployees(csvText) {
+  const rows = parseCSV(csvText);
+  if (rows.length < 2) return { employees: [], errors: ['데이터가 비어있거나 헤더만 있습니다'] };
+  
+  const headers = rows[0].map(h => h.trim());
+  const errors = [];
+  
+  // 헤더 → 코이션 필드 매핑 (한글/영문 모두 허용)
+  const columnMap = {};
+  headers.forEach((h, idx) => {
+    const col = ECOUNT_HR_COLUMNS.find(c => 
+      c.label === h || c.key === h || 
+      c.label.replace(/\s/g, '') === h.replace(/\s/g, '')
+    );
+    if (col) columnMap[idx] = col.key;
+  });
+  
+  // 필수 컬럼 검증
+  const mappedKeys = Object.values(columnMap);
+  if (!mappedKeys.includes('id')) errors.push('필수 컬럼 "사원코드"(id)를 찾을 수 없습니다');
+  if (!mappedKeys.includes('name')) errors.push('필수 컬럼 "성명"(name)을 찾을 수 없습니다');
+  
+  if (errors.length > 0) return { employees: [], errors, columnMap, headers };
+  
+  // 데이터 변환
+  const employees = [];
+  const numericFields = ['baseSalary', 'allowance', 'mealCar', 'qualif'];
+  
+  rows.slice(1).forEach((row, ridx) => {
+    const emp = {};
+    row.forEach((val, idx) => {
+      const key = columnMap[idx];
+      if (!key) return;
+      let v = String(val).trim();
+      if (numericFields.includes(key)) {
+        // 콤마·원 제거 후 숫자 변환
+        v = Number(v.replace(/[,원\s]/g, '')) || 0;
+      }
+      emp[key] = v;
+    });
+    // 기본값 보충
+    if (!emp.level) emp.level = 'L2';
+    if (!emp.group) emp.group = 'Archive';
+    if (!emp.status) emp.status = 'active';
+    if (emp.evalTarget === undefined) emp.evalTarget = (emp.status === 'active');
+    if (!emp.id || !emp.name) {
+      errors.push(`${ridx + 2}행: 사원코드 또는 성명이 비어있어 건너뜁니다`);
+      return;
+    }
+    employees.push(emp);
+  });
+  
+  return { employees, errors, columnMap, headers };
+}
+
+// ----------------------------------------------------------------------
+// Excel(.xlsx, .xls) 지원 - SheetJS를 CDN에서 동적 로드
+// ----------------------------------------------------------------------
+
+// SheetJS 동적 로더 (최초 1회만 로드, 이후 캐시)
+let _xlsxLibPromise = null;
+function loadXLSXLib() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (_xlsxLibPromise) return _xlsxLibPromise;
+  
+  _xlsxLibPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    script.async = true;
+    script.onload = () => {
+      if (window.XLSX) resolve(window.XLSX);
+      else reject(new Error('SheetJS 로드는 완료되었으나 window.XLSX를 찾을 수 없습니다'));
+    };
+    script.onerror = () => {
+      _xlsxLibPromise = null;  // 실패 시 재시도 가능하도록
+      reject(new Error('SheetJS 라이브러리를 불러올 수 없습니다. 인터넷 연결을 확인해주세요'));
+    };
+    document.head.appendChild(script);
+  });
+  
+  return _xlsxLibPromise;
+}
+
+// Excel ArrayBuffer를 직원 객체 배열로 변환
+async function excelToEmployees(arrayBuffer) {
+  const XLSX = await loadXLSXLib();
+  
+  // 워크북 파싱
+  const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+  if (!workbook.SheetNames?.length) {
+    return { employees: [], errors: ['Excel에 시트가 없습니다'] };
+  }
+  
+  // 첫 번째 시트 사용
+  const sheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  
+  // 시트를 2D 배열로 변환 (헤더 행 포함)
+  const rows = XLSX.utils.sheet_to_json(sheet, { 
+    header: 1,         // 헤더를 별도로 두지 않고 1행부터 데이터로
+    blankrows: false,  // 빈 행 제외
+    defval: '',        // 빈 셀은 빈 문자열로
+    raw: false         // 날짜 등을 포맷된 문자열로
+  });
+  
+  if (rows.length < 2) {
+    return { employees: [], errors: ['데이터가 비어있거나 헤더만 있습니다'] };
+  }
+  
+  // 2D 배열을 CSV처럼 처리 (기존 ecountCSVToEmployees 로직 재사용)
+  const headers = rows[0].map(h => String(h || '').trim());
+  const errors = [];
+  
+  // 헤더 → 코이션 필드 매핑
+  const columnMap = {};
+  headers.forEach((h, idx) => {
+    const col = ECOUNT_HR_COLUMNS.find(c => 
+      c.label === h || c.key === h || 
+      c.label.replace(/\s/g, '') === h.replace(/\s/g, '')
+    );
+    if (col) columnMap[idx] = col.key;
+  });
+  
+  const mappedKeys = Object.values(columnMap);
+  if (!mappedKeys.includes('id')) errors.push('필수 컬럼 "사원코드"(id)를 찾을 수 없습니다');
+  if (!mappedKeys.includes('name')) errors.push('필수 컬럼 "성명"(name)을 찾을 수 없습니다');
+  
+  if (errors.length > 0) return { employees: [], errors, columnMap, headers, sheetName, totalSheets: workbook.SheetNames.length };
+  
+  const employees = [];
+  const numericFields = ['baseSalary', 'allowance', 'mealCar', 'qualif'];
+  
+  rows.slice(1).forEach((row, ridx) => {
+    const emp = {};
+    row.forEach((val, idx) => {
+      const key = columnMap[idx];
+      if (!key) return;
+      let v = String(val ?? '').trim();
+      if (numericFields.includes(key)) {
+        v = Number(v.replace(/[,원\s]/g, '')) || 0;
+      }
+      // 날짜 필드는 Excel 날짜 형식 정규화 (YYYY-MM-DD → YYYY/MM/DD)
+      if (key === 'hireDate' && v) {
+        v = v.replace(/-/g, '/').replace(/\./g, '/');
+      }
+      emp[key] = v;
+    });
+    if (!emp.level) emp.level = 'L2';
+    if (!emp.group) emp.group = 'Archive';
+    if (!emp.status) emp.status = 'active';
+    if (emp.evalTarget === undefined) emp.evalTarget = (emp.status === 'active');
+    if (!emp.id || !emp.name) {
+      errors.push(`${ridx + 2}행: 사원코드 또는 성명이 비어있어 건너뜁니다`);
+      return;
+    }
+    employees.push(emp);
+  });
+  
+  return { 
+    employees, errors, columnMap, headers, 
+    sheetName, totalSheets: workbook.SheetNames.length 
+  };
+}
+
+// Excel 양식 샘플 다운로드 (XLSX 형식)
+async function downloadExcelTemplate() {
+  const XLSX = await loadXLSXLib();
+  const sample = [{
+    id: 'K-260601', name: '홍길동', dept: '아카이브사업팀', position: '대리', 
+    level: 'L2', group: 'Archive', hireDate: '2026/06/01',
+    baseSalary: 3500000, allowance: 500000, mealCar: 300000, qualif: 50000,
+    email: 'sample@koition.com', status: 'active', note: '신규 입사'
+  }];
+  
+  // 한글 헤더로 변환
+  const data = sample.map(emp => {
+    const row = {};
+    ECOUNT_HR_COLUMNS.forEach(col => {
+      row[col.label] = emp[col.key] ?? '';
+    });
+    return row;
+  });
+  
+  const ws = XLSX.utils.json_to_sheet(data, { header: ECOUNT_HR_COLUMNS.map(c => c.label) });
+  
+  // 컬럼 너비 자동 조정 (대략적인 값)
+  ws['!cols'] = ECOUNT_HR_COLUMNS.map(c => ({ wch: Math.max(c.label.length * 2, 12) }));
+  
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '인사카드');
+  
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'KOITION_인사카드_양식_샘플.xlsx';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 100);
+}
+
+// 파일 다운로드 헬퍼
+function downloadFile(content, filename, mimeType = 'text/csv;charset=utf-8') {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 100);
+}
+
+const INITIAL_EMPLOYEES = [
+  { id: 'K-140401', name: '정일영', dept: '경영기획본부', position: '대표이사', level: 'L4', group: 'Biz', hireDate: '2014/03/24', baseSalary: 4100000, allowance: 1100000, mealCar: 400000, qualif: 100000, evalTarget: false, status: 'active', role: '', email: 'jiy@koition.com', note: '대표이사' },
+  { id: 'K-140402', name: '최재교', dept: '공공사업본부', position: '대표이사', level: 'L4', group: 'Biz', hireDate: '2014/03/24', baseSalary: 4100000, allowance: 1100000, mealCar: 400000, qualif: 100000, evalTarget: false, status: 'active', role: '', email: 'cjk@koition.com', note: '대표이사' },
+  { id: 'K-230501', name: '김형국', dept: '기업부설연구소', position: '수석연구위원', level: 'L4', group: 'Archive', hireDate: '2023/05/11', baseSalary: 1800000, allowance: 0, mealCar: 200000, qualif: 0, evalTarget: false, status: 'advisor', role: '', email: 'khg@koition.com', note: '자문계약' },
+  { id: 'K-200401', name: '진상효', dept: '공공사업본부/PMO', position: '상무이사', level: 'L4', group: 'Biz', hireDate: '2021/05/01', baseSalary: 4400000, allowance: 0, mealCar: 400000, qualif: 200000, evalTarget: false, status: 'freelancer', role: '', email: 'jsh@koition.com', note: '프리랜서' },
+  { id: 'K-250801', name: '류용환', dept: '기록연구부', position: '연구위원', level: 'L4', group: 'Archive', hireDate: '2025/08/01', baseSalary: 1000000, allowance: 0, mealCar: 0, qualif: 0, evalTarget: false, status: 'advisor', role: '', email: 'ryh@koition.com', note: '자문/연구위원' },
+  { id: 'K-140403', name: '최영숙', dept: '경영지원부/기록연구부', position: '이사', level: 'L4', group: 'Biz', hireDate: '2014/03/24', baseSalary: 3700000, allowance: 600000, mealCar: 600000, qualif: 100000, evalTarget: true, status: 'active', role: '본부장', email: 'cys@koition.com', note: '연구소장 겸직' },
+  { id: 'K-140404', name: '신수호', dept: '사업관리부', position: '부장', level: 'L3', group: 'Biz', hireDate: '2014/03/24', baseSalary: 3400000, allowance: 400000, mealCar: 600000, qualif: 100000, evalTarget: true, status: 'active', role: 'PM', email: 'sys@koition.com', note: '부서장' },
+  { id: 'K-231001', name: '이종민', dept: '서비스개발부', position: '부장', level: 'L3', group: 'Tech', hireDate: '2023/10/23', baseSalary: 3738000, allowance: 500000, mealCar: 400000, qualif: 100000, evalTarget: true, status: 'active', role: 'PM', email: 'ljm@koition.com', note: '부서장' },
+  { id: 'K-210505', name: '최경민', dept: '사업관리부', position: '부장', level: 'L3', group: 'Biz', hireDate: '2022/08/01', baseSalary: 3360000, allowance: 400000, mealCar: 200000, qualif: 0, evalTarget: true, status: 'active', role: 'PM', email: 'ckm@koition.com', note: '' },
+  { id: 'K-240201', name: '오창민', dept: '경영기획본부', position: '부장', level: 'L3', group: 'Biz', hireDate: '2024/02/01', baseSalary: 3267000, allowance: 500000, mealCar: 400000, qualif: 0, evalTarget: true, status: 'active', role: '', email: 'ocm@koition.com', note: '' },
+  { id: 'K-250601', name: '최순용', dept: '사업관리부', position: '부장', level: 'L3', group: 'Biz', hireDate: '2025/06/03', baseSalary: 3706160, allowance: 0, mealCar: 400000, qualif: 0, evalTarget: true, status: 'active', role: '', email: 'csy@koition.com', note: '신규입사' },
+  { id: 'K-180501', name: '이원규', dept: '아카이브사업팀', position: '부장', level: 'L3', group: 'Archive', hireDate: '2018/05/01', baseSalary: 3180060, allowance: 400000, mealCar: 400000, qualif: 0, evalTarget: true, status: 'active', role: 'PM', email: 'lwk@koition.com', note: '팀장' },
+  { id: 'K-180402', name: '김장호', dept: '서비스개발부', position: '차장', level: 'L3', group: 'Tech', hireDate: '2020/04/01', baseSalary: 1696270, allowance: 0, mealCar: 400000, qualif: 0, evalTarget: false, status: 'leave', role: '', email: 'kjh@koition.com', note: '휴직 중' },
+  { id: 'K-170801', name: '심도현', dept: '데이터큐레이션팀', position: '차장', level: 'L3', group: 'Archive', hireDate: '2017/08/01', baseSalary: 3187660, allowance: 550000, mealCar: 400000, qualif: 0, evalTarget: true, status: 'active', role: 'PM', email: 'sdh@koition.com', note: '팀장' },
+  { id: 'K-250602', name: '이흥주', dept: '사업관리부', position: '차장', level: 'L3', group: 'Biz', hireDate: '2025/06/13', baseSalary: 3100000, allowance: 0, mealCar: 400000, qualif: 0, evalTarget: true, status: 'active', role: '', email: 'lhj@koition.com', note: '신규입사' },
+  { id: 'K-240202', name: '고영훈', dept: '사업관리부', position: '과장', level: 'L2', group: 'Tech', hireDate: '2024/03/07', baseSalary: 2934000, allowance: 0, mealCar: 400000, qualif: 0, evalTarget: true, status: 'active', role: '', email: 'gyh@koition.com', note: '' },
+  { id: 'K-220601', name: '오윤경', dept: '데이터큐레이션팀', position: '차장', level: 'L2', group: 'Archive', hireDate: '2022/06/01', baseSalary: 3279570, allowance: 100000, mealCar: 200000, qualif: 0, evalTarget: true, status: 'active', role: 'PL', email: 'owk@koition.com', note: '' },
+  { id: 'K-200501', name: '원동현', dept: '아카이브사업팀', position: '차장', level: 'L2', group: 'Tech', hireDate: '2020/05/04', baseSalary: 3146370, allowance: 200000, mealCar: 200000, qualif: 100000, evalTarget: true, status: 'active', role: 'PL', email: 'whw@koition.com', note: '' },
+  { id: 'K-241201', name: '정예람', dept: '데이터큐레이션팀', position: '과장', level: 'L2', group: 'Archive', hireDate: '2024/12/01', baseSalary: 2900000, allowance: 0, mealCar: 200000, qualif: 0, evalTarget: true, status: 'active', role: '', email: 'jye@koition.com', note: '' },
+  { id: 'K-240403', name: '최하연', dept: '기록연구부', position: '대리', level: 'L2', group: 'Archive', hireDate: '2024/04/08', baseSalary: 2512000, allowance: 0, mealCar: 200000, qualif: 200000, evalTarget: true, status: 'active', role: '기록전문', email: 'chy@koition.com', note: '' },
+  { id: 'K-240401', name: '조은희', dept: '기록연구부', position: '대리', level: 'L1', group: 'Archive', hireDate: '2024/04/01', baseSalary: 2489800, allowance: 0, mealCar: 200000, qualif: 100000, evalTarget: true, status: 'active', role: '기록전문', email: 'jeh@koition.com', note: '' },
+  { id: 'K-260301', name: '오누리', dept: '경영지원부', position: '주임', level: 'L1', group: 'Biz', hireDate: '2026/03/16', baseSalary: 2300000, allowance: 0, mealCar: 200000, qualif: 0, evalTarget: true, status: 'active', role: '', email: 'onr@koition.com', note: '신규입사' },
+];
+
+const INITIAL_POLICY = {
+  comp_expert: 35, comp_problem: 30, comp_learn: 15, comp_collab: 20,
+  perf_kpi: 35, perf_profit: 30, perf_delivery: 20, perf_customer: 15,
+  weight_comp: 50, weight_perf: 50,
+  grades: [
+    { grade: 'S', min: 90, max: 100, dist: 10, increase: 7.0, piCoef: 2.5, label: '탁월' },
+    { grade: 'A', min: 80, max: 89.99, dist: 20, increase: 5.0, piCoef: 1.8, label: '우수' },
+    { grade: 'B', min: 70, max: 79.99, dist: 40, increase: 3.0, piCoef: 1.0, label: '기대수준' },
+    { grade: 'C', min: 60, max: 69.99, dist: 20, increase: 1.5, piCoef: 0.3, label: '개선필요' },
+    { grade: 'D', min: 0, max: 59.99, dist: 10, increase: 0.0, piCoef: 0.0, label: '부진' },
+  ],
+  piBase: { L1: 1500000, L2: 2500000, L3: 4000000, L4: 6000000 },
+  psRate: 5.0,
+  // 로그인 화면 회사 정보 카드 (admin이 직접 편집)
+  coverStats: {
+    enabled: true,
+    items: [
+      { label: '강원랜드 산업유산', value: '아카이브 PM', highlight: false },
+      { label: '기록물 등록·기술', value: 'ISAD(G) 표준', highlight: false },
+      { label: '2026 평가 대상자', value: '17명', highlight: true },
+    ],
+  },
+  // 로그인 화면 우측 상단 표지 이미지 (admin이 URL 입력)
+  coverImage: {
+    enabled: true,
+    url: '',  // 빈 값이면 placeholder 표시 (admin이 호스팅된 이미지 URL 입력)
+    caption: '디지털 전환 · 지식 보존',
+  },
+  // 승진 체계 (Promotion System)
+  promotion: {
+    enabled: true,
+    // 점수→Point 환산률 (예: 종합점수 90 × 0.15 = 13.5pt)
+    pointRate: 0.15,
+    // 직급별 승진 기준
+    tiers: [
+      { fromLevel: '1급', fromTitle: '부장(연구소장)', toTitle: '임원', years: null, requiredPoint: null, increase: null, note: '경영진 의사결정' },
+      { fromLevel: '2급', fromTitle: '차장',           toTitle: '부장', years: 4,   requiredPoint: 13.5, increase: 2 },
+      { fromLevel: '3급', fromTitle: '과장',           toTitle: '차장', years: 3,   requiredPoint: 10,   increase: 3 },
+      { fromLevel: '4급', fromTitle: '대리',           toTitle: '과장', years: 3,   requiredPoint: 10,   increase: 4 },
+      { fromLevel: '5급', fromTitle: '주임',           toTitle: '대리', years: null, requiredPoint: null, increase: 5, note: '경영진 의사결정' },
+      { fromLevel: '6급', fromTitle: '사원(석사)',     toTitle: '대리', years: 2,   requiredPoint: 7,    increase: 8 },
+      { fromLevel: '7급', fromTitle: '사원(초대졸/대졸)', toTitle: '대리', years: 3, requiredPoint: 10,  increase: 8 },
+      { fromLevel: '8급', fromTitle: '사원(고졸)',     toTitle: '대리', years: 4,   requiredPoint: 14,   increase: 8 },
+      { fromLevel: '사원급', fromTitle: '사원',         toTitle: '주임', years: null, requiredPoint: null, increase: 3, note: '경영진 의사결정' },
+    ],
+  },
+};
+
+// ============================================================
+// 승진 심사 유틸 함수
+// ============================================================
+
+// 직원 직책(position)으로 승진 tier 찾기
+function findPromotionTier(position, tiers) {
+  if (!tiers || !position) return null;
+  // 정확한 매칭 시도
+  const exact = tiers.find(t => t.fromTitle === position);
+  if (exact) return exact;
+  // 부분 매칭 (예: position이 '사원'이면 '사원급'을 찾음)
+  if (position === '사원') return tiers.find(t => t.fromLevel === '사원급');
+  if (position === '주임') return tiers.find(t => t.fromLevel === '5급');
+  if (position === '대리') return tiers.find(t => t.fromLevel === '4급');
+  if (position === '과장') return tiers.find(t => t.fromLevel === '3급');
+  if (position === '차장') return tiers.find(t => t.fromLevel === '2급');
+  if (position === '부장' || position === '연구소장') return tiers.find(t => t.fromLevel === '1급');
+  return null;
+}
+
+// 입사일 기준 근속 연수 계산 (단위: 년, 소수점 1자리)
+function calcTenureYears(hireDate, asOf) {
+  if (!hireDate) return 0;
+  // YYYY/MM/DD 또는 YYYY-MM-DD 모두 처리
+  const normalized = String(hireDate).replace(/\//g, '-');
+  const start = new Date(normalized);
+  const end = asOf || new Date();
+  if (isNaN(start.getTime())) return 0;
+  const diff = end - start;
+  return Math.floor((diff / (365.25 * 24 * 60 * 60 * 1000)) * 10) / 10;
+}
+
+// 승진 심사 정보 계산 (대상자 여부, 진급 Point, 충족 여부 등)
+function calcPromotionStatus(emp, policy, totalScore) {
+  if (!policy?.promotion?.enabled) return null;
+  if (!emp.evalTarget) return null;
+  
+  const tier = findPromotionTier(emp.position, policy.promotion.tiers);
+  if (!tier) return null;
+  
+  // 체류 연한 (입사일 기준)
+  const tenure = calcTenureYears(emp.hireDate);
+  
+  // 경영진 의사결정 등급
+  if (tier.years === null) {
+    return {
+      tier,
+      tenure,
+      isEligible: true,
+      decisionType: 'executive',
+      currentPoint: null,
+      requiredPoint: null,
+      pointMet: null,
+      yearsMet: null,
+      yearsRemaining: null,
+    };
+  }
+  
+  // 일반 승진 등급
+  const yearsMet = tenure >= tier.years;
+  const yearsRemaining = Math.max(0, tier.years - tenure);
+  
+  // 현재 점수 → 진급 Point 환산
+  const currentPoint = totalScore != null 
+    ? Math.round(totalScore * (policy.promotion.pointRate || 0.15) * 10) / 10 
+    : null;
+  const pointMet = currentPoint != null && currentPoint >= tier.requiredPoint;
+  
+  // 승진 심사 대상자 여부 (체류 연한 충족 OR 1년 이내 충족 예정)
+  const isEligible = yearsMet || yearsRemaining <= 1;
+  
+  return {
+    tier,
+    tenure,
+    isEligible,
+    decisionType: 'standard',
+    currentPoint,
+    requiredPoint: tier.requiredPoint,
+    pointMet,
+    yearsMet,
+    yearsRemaining,
+  };
+}
+
+const HISTORY_2025 = {
+  year: 2025, closedDate: '2025-12-23',
+  policy: { ...INITIAL_POLICY },
+  gradeMap: {
+    'K-180501': 'A', 'K-200501': 'B', 'K-210505': 'S', 'K-220601': 'A',
+    'K-231001': 'A', 'K-240201': 'C', 'K-240202': 'B', 'K-240401': 'B', 'K-240403': 'S',
+  },
+};
+
+// ============================================================
+// LEVEL_GUIDE · 직무 레벨별 기대 수준 가이드
+// L1·L2 등 신입·주니어 직원의 자기평가 참고 자료
+// ============================================================
+const LEVEL_GUIDE = {
+  L1: {
+    label: 'L1 · 신입·실무 견습',
+    desc: '입사 1~2년차 또는 신규 직무 진입 단계',
+    color: '#5DC4D4',
+    expectedGrade: 'B~C급 (60~79점)',
+    competency: {
+      '직무 전문성': '기본 업무 매뉴얼·SOP에 따라 수행. 단순·반복 업무 독립 수행. 복잡 업무는 선배·상사 안내 받으며 학습 중.',
+      '문제해결력': '예측 가능한 문제는 매뉴얼대로 대응. 새로운 상황은 적극적으로 질문하고 도움 요청.',
+      '학습·자기계발': '신입 교육 충실히 이수. 직무 기초 자격증 도전. 사내 OJT 적극 참여.',
+      '협업·커뮤니케이션': '팀 내 보고·전달 체계 숙지. 회의·메일·메신저 등 기본 소통 도구 능숙 사용.',
+    },
+    performance: {
+      'KPI 달성도': '본인 담당 단위 업무의 80% 이상 완료. KPI 의미와 측정 방법 이해.',
+      '프로젝트 수익성·기여도': '프로젝트 일원으로서 본인 역할 명확히 수행. 직접 수주·영업 기여는 기대 안 함.',
+      '납기 준수·완성도': '본인 담당 업무 납기 95% 이상 준수. 결과물은 검토 후 수정 거쳐 완성.',
+      '고객 만족도·재계약': '직접 고객 응대는 제한적. 선배 동행 또는 보조 역할로 고객 접점 경험.',
+    },
+    kpiFocus: '근태 준수율 · 교육 이수 시간 · 기본 직무 수행 건수',
+    advice: 'L1은 결과보다 학습 태도와 성장 가능성이 중요합니다. "모르는 것을 모른다고 말하기"가 가장 큰 강점입니다. 무리하게 S급 점수를 주지 말고, 솔직하게 현재 수준을 평가하세요.',
+  },
+  L2: {
+    label: 'L2 · 실무 담당',
+    desc: '입사 2~5년차 또는 직무 안정기',
+    color: '#1556C9',
+    expectedGrade: 'B~A급 (70~89점)',
+    competency: {
+      '직무 전문성': '담당 직무 대부분을 독립 수행. 표준 작업 절차 준수. 직무 관련 정기 교육 이수. 기본 자격 보유.',
+      '문제해결력': '일반적 문제는 스스로 해결. 복잡한 상황에서는 상사와 상의 후 해결. 의사결정 기준 준수.',
+      '학습·자기계발': '연 1~2회 외부 교육 또는 자격 도전. 신기술·트렌드 자발 학습. 사내 학습 모임 참여.',
+      '협업·커뮤니케이션': '팀 내 협업 원활. 타부서와도 적절히 소통. 후배 1~2명 OJT 지원 가능.',
+    },
+    performance: {
+      'KPI 달성도': '담당 KPI 100% 달성 목표. 분기별 진척 관리 능력. 일부 KPI는 초과 달성 가능.',
+      '프로젝트 수익성·기여도': '소형 프로젝트 PM 또는 핵심 실무자로 기여. 원가·일정 관리 일부 책임.',
+      '납기 준수·완성도': '본인 담당 업무 납기 100% 준수. 결과물 자체 검토 후 제출. 재작업률 낮음.',
+      '고객 만족도·재계약': '주요 고객 1~2개 직접 응대 가능. 고객 요구 파악 및 일반 응답 가능.',
+    },
+    kpiFocus: '직무군별 핵심 지표 (Archive: 등록 건수·메타데이터 품질 / Tech: 릴리즈 건수·버그율 / Biz: 신규 수주·재계약율)',
+    advice: 'L2는 "독립 실무 담당"이 핵심 키워드입니다. 본인이 책임지고 끝까지 수행한 업무를 구체적 수치로 자기평가에 기록하세요. 후배 지도 경험이 있다면 협업·커뮤니케이션 점수에서 가산됩니다.',
+  },
+  L3: {
+    label: 'L3 · 시니어·팀장급',
+    desc: '입사 5~10년차 또는 팀 리더',
+    color: '#0E2D7A',
+    expectedGrade: 'A~S급 (80~100점)',
+    competency: {
+      '직무 전문성': '직무 전 영역 독립 수행 + 후배 지도. 프로젝트 설계·기획 주도. 자격증 또는 전문 교육 이수.',
+      '문제해결력': '복잡한 문제 체계적 분석, 복수 대안 제시. 대부분 올바른 판단. 상사 개입 없이 스스로 해결.',
+      '학습·자기계발': '연 2회 이상 외부 교육·세미나. 신기술 활용 사례 자체 도입. 후배 멘토링.',
+      '협업·커뮤니케이션': '팀 운영 능력. 타부서·외부 협력 능숙. 발표·문서화 능력 우수.',
+    },
+    performance: {
+      'KPI 달성도': '담당 KPI 100% 이상 달성. 팀 KPI 일부 책임. 110% 이상 초과 달성 가능.',
+      '프로젝트 수익성·기여도': '중형 프로젝트 PM. 원가·일정·품질 종합 관리. 신규 수주 기여.',
+      '납기 준수·완성도': '본인 + 팀원 납기 관리. 위기 대응 능력. 결과물 품질 일관성 유지.',
+      '고객 만족도·재계약': '주요 고객 관계 관리. 추가 발주 유도. 클레임 대응 능력.',
+    },
+    kpiFocus: '본인 KPI + 팀 KPI 일부 + 신규 수주 또는 시스템 가용성 등 사업 영향력',
+    advice: 'L3는 본인 성과 + 팀 기여 모두 평가됩니다. 후배 양성, 프로젝트 리딩, 외부 기관 협력 등 리더십 활동을 구체적으로 기록하세요.',
+  },
+  L4: {
+    label: 'L4 · 본부장·임원급',
+    desc: '본부 운영 및 경영 의사결정 참여',
+    color: '#091F5A',
+    expectedGrade: 'A~S급 (80~100점)',
+    competency: {
+      '직무 전문성': '해당 분야 최고 수준 전문성. 사내 지식 전파자. 외부 강연·기고. 기술표준 수립 기여.',
+      '문제해결력': '전례 없는 문제 정의·해결. 리스크 사전 식별·예방. 의사결정 속도·정확도 탁월.',
+      '학습·자기계발': '업계 동향 선도. 신사업·신기술 발굴. 사내 학습 문화 조성.',
+      '협업·커뮤니케이션': '본부 운영. 경영진 보고. 외부 협력 채널 다수 확보. 대외 발표 능숙.',
+    },
+    performance: {
+      'KPI 달성도': '본부 KPI 100% 이상. 전사 KPI 일부 책임. 신사업 KPI 설계.',
+      '프로젝트 수익성·기여도': '대형 프로젝트 책임. 본부 매출·이익 책임. 신규 사업 발굴·실행.',
+      '납기 준수·완성도': '본부 전체 납기·품질 관리. 위기 시 의사결정.',
+      '고객 만족도·재계약': '대형 고객 관계 관리. 신규 시장 개척. 장기 파트너십 구축.',
+    },
+    kpiFocus: '본부 매출·이익 + 신규 수주 + 전사 사업 영향력',
+    advice: 'L4는 본부 운영 성과로 평가됩니다. 본인 직접 실적보다 본부의 사업 성과, 신사업 발굴, 외부 협력 채널 구축 등 거시적 기여를 기록하세요.',
+  },
+};
+
+// ============================================================
+// COMMENT_GUIDE · 자기평가 의견란 작성 가이드
+// 각 의견란별 작성 기준 + 좋은 예시 + 피해야 할 예시
+// 직무군(Archive·Tech·Biz)별로 차별화된 사례 제공
+// ============================================================
+const COMMENT_GUIDE = {
+  selfStrength: {
+    label: '성과·강점',
+    purpose: '올해 본인이 이뤄낸 구체적 성과와 강점을 정량적으로 기록하는 영역입니다',
+    principles: [
+      { icon: '📊', title: '정량 수치 우선', desc: '"많이 했다" 보다 "X건 처리", "Y% 향상", "Z명 지도" 같은 구체적 숫자' },
+      { icon: '📅', title: '시점 명시', desc: '"올해", "1분기", "Q3 프로젝트" 등 언제 일어난 일인지 명시' },
+      { icon: '🎯', title: '본인 기여 명확화', desc: '"팀이 했다" 보다 "내가 담당했다", "내가 주도했다"로 본인 역할 강조' },
+      { icon: '💡', title: '결과의 영향 설명', desc: '단순 활동 나열보다 그 결과가 회사·고객·동료에게 어떤 영향을 줬는지' },
+    ],
+    examples: {
+      good: {
+        Archive: [
+          '동원탄좌 M650 프로젝트에서 1차년도 목표인 유물 3,500점 메타데이터 등록을 100% 달성했으며, ISAD(G) 표준 기반 기록계층 분류표를 본인이 설계하여 자료 검색 정확도를 약 40% 개선했습니다.',
+          'OCR 자동화 파이프라인 도입을 주도하여 광업 도면 디지털화 작업 시간을 종전 1건당 평균 25분에서 8분으로 단축했습니다. 연간 약 1,200건 처리 기준 300시간 이상의 인력 절감 효과가 발생했습니다.',
+        ],
+        Tech: [
+          'KOITION HR 시스템 v6 출시를 주도하여 평가-급여-승진 심사를 단일 시스템에서 처리 가능하도록 통합했습니다. 출시 후 admin 작업 시간이 기존 대비 60% 단축되었으며, 사용자 피드백 점수 4.8/5.0을 기록했습니다.',
+          'Q2에 발생한 운영 서버 장애 대응에서 평균 복구 시간(MTTR)을 4시간에서 35분으로 줄이는 자동 알림·롤백 시스템을 구축했습니다. 이후 6개월간 동일 유형 장애 0건 유지 중입니다.',
+        ],
+        Biz: [
+          '강원랜드 M650 후속 계약 3억 5천만 원 규모 신규 수주에 핵심 영업 담당으로 기여했습니다. 사전 자문 회의 4회 주관 및 기술 제안서 수석 작성을 통해 입찰 평가에서 1위 획득했습니다.',
+          '기존 거래처 7개 중 6개와 2026년 재계약을 완료하여 재계약율 85.7%를 달성했습니다. 특히 평창광업소 건은 경쟁사 제안에도 불구하고 단가 인하 없이 재계약을 성사시켰습니다.',
+        ],
+        PM: [
+          '올해 PM으로 4개 프로젝트(M650 1·2차년도, 평창광업소 사업본부 아카이브, 정선 산업유산 디지털화)를 동시 수행하여 모두 약정 납기 내 완료했습니다. 평균 프로젝트 이익률 26.4%를 달성하여 본부 목표 22%를 초과했습니다.',
+          'M650 1차년도 프로젝트에서 발주처(강원랜드 사업본부) CSAT 평가 4.6/5.0점을 획득하여, 후속 2차년도 사업(3억 5천만 원)을 단독 협상을 통해 추가 수주하는 성과를 만들었습니다. 본인의 사전 신뢰 관계 구축이 핵심 요인이었습니다.',
+        ],
+      },
+      bad: [
+        '"올해 열심히 일했고 맡은 일을 책임감 있게 수행했습니다." → 너무 추상적, 구체적 사례 없음',
+        '"팀과 협력하여 좋은 성과를 냈습니다." → 본인 기여가 불명확, 정량 수치 없음',
+        '"항상 최선을 다했고 주변 동료들에게도 인정받았습니다." → 자기 평가에 부적합한 주관적 표현',
+      ],
+    },
+  },
+  selfImprovement: {
+    label: '개선점',
+    purpose: '본인이 부족했다고 느낀 부분을 솔직하게 인정하고 개선 의지를 보이는 영역입니다',
+    principles: [
+      { icon: '🤔', title: '솔직한 자기 성찰', desc: '"개선할 부분이 없다"는 답변은 오히려 마이너스. 누구나 성장할 영역이 있음' },
+      { icon: '🎯', title: '구체적 영역 지목', desc: '"전반적으로 부족"보다 "발표 능력", "일정 관리", "신기술 학습" 등 구체 영역' },
+      { icon: '📈', title: '개선 계획 포함', desc: '단순 인정보다 "어떻게 개선할 것인지" 행동 계획까지 함께 기술' },
+      { icon: '⚖️', title: '강점과 균형', desc: '강점의 반대편을 개선점으로 (강점이 추진력이면 → 디테일 검토 부족 인정)' },
+    ],
+    examples: {
+      good: {
+        Archive: [
+          '메타데이터 입력 속도는 빠른 편이지만, 일부 자료의 출처 검증에 충분한 시간을 들이지 못해 후속 보정 작업이 발생한 사례가 3건 있었습니다. 2026년에는 자료 수집 단계에서 출처 검증 체크리스트를 도입하여 사전 검증을 강화하겠습니다.',
+          '아카이브 분류 작업은 익숙해졌으나, 디지털 보존 기술(특히 마이그레이션 전략) 영역의 지식이 부족합니다. 2026년 상반기 중 OAIS 표준 교육 1회 이수와 관련 자격증 도전을 계획하고 있습니다.',
+        ],
+        Tech: [
+          '신규 기능 개발에 집중하다 보니 기존 코드 리팩토링·테스트 커버리지 향상 작업이 후순위로 밀린 부분이 있습니다. 2026년에는 매 스프린트의 20%를 기술 부채 해소에 할당하여 장기 유지보수성을 개선하겠습니다.',
+          '문서화가 부족하여 후임자 인수인계나 외부 공유 시 시간이 더 소요됩니다. 주요 시스템에 대한 ADR(Architecture Decision Records)를 분기별로 작성하여 의사결정 근거를 남기겠습니다.',
+        ],
+        Biz: [
+          '신규 수주에는 적극적이었으나 기존 고객 정기 미팅을 분기에 1회 이상 진행하지 못한 사례가 있었습니다. 2026년에는 핵심 고객 5개사 대상 월 1회 정기 컨택 일정을 사전에 캘린더에 등록하여 관계 관리를 체계화하겠습니다.',
+          '입찰 제안서 작성 시 디자인·시각화 측면에서 외주 의존도가 높았습니다. 2026년 1분기 중 PPT 디자인 실무 교육을 이수하여 자체 제작 비중을 50% 이상으로 높이겠습니다.',
+        ],
+        PM: [
+          '동시에 4개 프로젝트를 수행하다 보니 일정 단위로는 잘 관리했지만, 프로젝트 간 자원 배분 충돌이 2회 발생했습니다. 2026년에는 분기 초 자원 계획서를 작성하여 PM 본부장과 사전 조정하는 체계를 도입하겠습니다.',
+          '프로젝트 종료 시 발주처 만족도(CSAT)는 우수했으나, 종료 후 1~2개월 내 추가 발주 전환률이 약 30%에 그쳐 후속 수주 기회를 놓친 사례가 있습니다. 2026년에는 PM 주도 클로징 미팅 + 후속 사업 제안 패키지화를 통해 전환률 50% 이상을 목표합니다.',
+        ],
+      },
+      bad: [
+        '"특별히 개선할 점은 없다고 생각합니다." → 자기 성찰 의지 부족으로 평가됨',
+        '"더 열심히 하겠습니다." → 구체적 영역이나 행동 계획 없음',
+        '"회사의 지원이 부족해서 어려웠습니다." → 외부 환경 탓, 본인 개선점이 아님',
+      ],
+    },
+  },
+  selfGoal: {
+    label: '내년 목표·요청사항',
+    purpose: '내년 도전 목표와 회사·상사에게 필요한 지원을 구체적으로 제안하는 영역입니다',
+    principles: [
+      { icon: '🎯', title: 'SMART 목표', desc: '구체적(Specific), 측정 가능(Measurable), 달성 가능(Achievable), 관련성(Relevant), 기한(Time-bound)' },
+      { icon: '🪜', title: '도전적이되 현실적', desc: '현재 수준의 110~130% 정도가 적정. 너무 쉬우면 성장 없고, 너무 어려우면 실패 부담' },
+      { icon: '🤝', title: '필요한 지원 명시', desc: '"교육 기회", "예산 X천만 원", "인력 1명" 등 구체적 요청. 회사 의사결정 자료가 됨' },
+      { icon: '📊', title: '본부 KPI와 연결', desc: '본인 목표가 부서·본부 KPI에 어떻게 기여하는지 연결고리 설명' },
+    ],
+    examples: {
+      good: {
+        Archive: [
+          '2026년에는 M650 프로젝트 2차년도(나머지 1,500점 메타데이터 완성) + 신규 강원랜드 사업본부 아카이브 사업 1개 추가 수주 지원을 목표로 합니다. 이를 위해 ISAD(G) 심화 교육 이수와 ICA 국제표준 워크숍 참가(예산 약 200만 원) 지원을 요청드립니다.',
+          '디지털 아카이브 분야의 자격증 ARMA(IGP, Information Governance Professional) 취득을 2026년 상반기 목표로 설정했습니다. 자격증 응시료(약 1,800달러) 회사 지원과 격주 1회 학습 시간(2시간) 활용 양해를 요청드립니다.',
+        ],
+        Tech: [
+          'HR v6 안정화 이후 2026년에는 강원랜드 산업유산 아카이브 외부 공개 플랫폼 개발 PM 역할에 도전하고 싶습니다. 6월 시작 → 12월 베타 오픈을 목표로 하며, 프론트엔드 개발자 1명 추가 채용 검토를 요청드립니다.',
+          'AI/LLM 활용 메타데이터 자동 생성 기능 도입을 통해 디지털화 효율을 30% 추가 개선하는 것이 2026년 핵심 목표입니다. Azure OpenAI API 사용료 예산 월 50만 원 책정과 AWS Solutions Architect 자격증 도전 시간 양해를 요청드립니다.',
+        ],
+        Biz: [
+          '2026년 신규 수주 목표를 작년 대비 25% 증가한 12억 원으로 설정합니다. 강원도 7개 지자체 광업 아카이브 통합 수주(약 5억 원)와 타 광산 지역(태백·정선·영월) 신규 1개사 발굴이 핵심 전략입니다. 이를 위해 컨퍼런스 참가(연 3회, 약 500만 원) 지원을 요청드립니다.',
+          '본인은 영업 출신이지만 기록학 전문성이 부족해 입찰 제안서 작성에서 한계를 느낍니다. 2026년 한국기록학회 정기 학술대회 참석(2박3일, 약 60만 원)과 기록학 입문 도서 자비 구매(약 30만 원) 정도의 자기계발 시간 허용을 요청드립니다.',
+        ],
+        PM: [
+          '2026년 PM 수행 목표를 6개 프로젝트로 확대하면서 평균 이익률 25% 이상 유지, 납기 100% 달성, CSAT 4.5 이상을 모두 달성하는 것이 핵심 목표입니다. 이를 위해 PM 보조 인력(주니어) 1명 충원과 프로젝트 관리 도구(Jira·Asana 등) 도입 예산 월 30만 원 책정을 요청드립니다.',
+          '본인은 Archive 전문성을 보유한 PM이지만, 강원랜드 외 광산 지역 확장을 위해서는 광업 산업 전반에 대한 이해가 필요합니다. 2026년 한국광해광업공단 주최 산업유산 세미나(2회) 참석과 광업 관련 도서·자료 구매 예산 약 50만 원을 요청드리며, 신규 사업 발굴 시간으로 월 8시간 활용 양해를 부탁드립니다.',
+        ],
+      },
+      bad: [
+        '"맡겨주시는 일을 잘 해내겠습니다." → 본인 주도성 부족, 도전 의지 없음',
+        '"승진하고 싶습니다." → 결과만 있고 과정·계획 없음',
+        '"연봉 인상을 부탁드립니다." → 본 영역의 용도와 다름 (별도 면담에서 논의할 사항)',
+      ],
+    },
+  },
+};
+
+// ============================================================
+// RUBRICS · 평가 척도 기준표
+// ============================================================
+const RUBRICS = {
+  comp: [
+    {
+      key: 'comp_expert', label: '직무 전문성',
+      desc: '담당 직무 전문지식·기술 수준, 자격증·공인 역량',
+      bands: [
+        { range: '90~100', label: 'S급', grade: 'S', criteria: '해당 분야 최고 수준 전문성. 사내 지식 전파자 역할. 관련 자격증 보유 또는 기술표준 수립 기여. 외부 강연·기고 실적.' },
+        { range: '80~89', label: 'A급', grade: 'A', criteria: '직무 전 영역 독립 수행 가능. 후배 지도 가능. 프로젝트 설계·기획 주도. 자격증 또는 전문 교육 이수.' },
+        { range: '70~79', label: 'B급', grade: 'B', criteria: '주요 업무 독립 수행. 일부 복잡 업무는 상사 확인 필요. 직무 관련 교육 정기 이수. 기본 자격 보유.' },
+        { range: '60~69', label: 'C급', grade: 'C', criteria: '기본 업무는 수행하나 심화 영역에서 빈번한 지원 필요. 자격·교육 이수 미흡.' },
+        { range: '0~59', label: 'D급', grade: 'D', criteria: '전문지식 부족으로 업무 지연 또는 오류 반복. 자기계발 노력 현저히 부족.' },
+      ],
+    },
+    {
+      key: 'comp_problem', label: '문제해결력',
+      desc: '복잡한 문제 분석·해결, 의사결정의 질과 속도',
+      bands: [
+        { range: '90~100', label: 'S급', grade: 'S', criteria: '전례 없는 문제를 독자적으로 정의하고 해결책 제시. 리스크 사전 식별 및 예방. 의사결정 속도와 정확도 모두 탁월.' },
+        { range: '80~89', label: 'A급', grade: 'A', criteria: '복잡한 문제를 체계적으로 분석, 복수 대안 제시. 대부분 올바른 판단. 상사 개입 없이 스스로 해결.' },
+        { range: '70~79', label: 'B급', grade: 'B', criteria: '일반적 문제는 스스로 해결. 복잡한 상황에서는 상사 상의 후 해결. 의사결정 기준 준수.' },
+        { range: '60~69', label: 'C급', grade: 'C', criteria: '문제 발생 시 즉각 대응 어려움. 해결책이 표면적·단기적 수준에 그침.' },
+        { range: '0~59', label: 'D급', grade: 'D', criteria: '문제 인식 자체가 늦거나 회피. 반복 오류에 개선 없음.' },
+      ],
+    },
+    {
+      key: 'comp_learn', label: '학습·자기계발',
+      desc: '신규 지식 습득, 교육 이수, 자격 취득 등',
+      bands: [
+        { range: '90~100', label: 'S급', grade: 'S', criteria: '연 1건 이상 자격·자격증 취득. 사내 스터디·세미나 주도. 습득 지식을 실무에 즉각 적용하여 성과 창출.' },
+        { range: '80~89', label: 'A급', grade: 'A', criteria: '연간 교육 계획 대비 120% 이상 이수. 외부 컨퍼런스 참석. 개인 학습 콘텐츠 공유.' },
+        { range: '70~79', label: 'B급', grade: 'B', criteria: '연간 필수 교육 100% 이수. 업무 관련 새로운 도구·기술 자발적 학습.' },
+        { range: '60~69', label: 'C급', grade: 'C', criteria: '필수 교육 이수율 80% 미만. 자기계발 활동이 수동적·의무적 수준에 그침.' },
+        { range: '0~59', label: 'D급', grade: 'D', criteria: '교육 불참 또는 미이수 반복. 새로운 업무 방식 적용 거부.' },
+      ],
+    },
+    {
+      key: 'comp_collab', label: '협업·커뮤니케이션',
+      desc: '팀워크, 보고·소통, 다면평가 반영',
+      bands: [
+        { range: '90~100', label: 'S급', grade: 'S', criteria: '부서 간 갈등을 선제적으로 조율. 다면평가 최상위. 보고서·발표 품질 탁월. 의사소통으로 프로젝트 속도 향상.' },
+        { range: '80~89', label: 'A급', grade: 'A', criteria: '팀 내 협력 분위기 조성. 보고·공유 신속 정확. 다면평가 상위 30%.' },
+        { range: '70~79', label: 'B급', grade: 'B', criteria: '업무 관련 커뮤니케이션 원활. 팀 회의 적극 참여. 다면평가 보통 수준.' },
+        { range: '60~69', label: 'C급', grade: 'C', criteria: '소통 부족으로 오해·재작업 발생. 다면평가 하위 30%.' },
+        { range: '0~59', label: 'D급', grade: 'D', criteria: '팀워크 저해 행동. 보고 누락·지연 반복. 다면평가 최하위.' },
+      ],
+    },
+  ],
+  perf: [
+    {
+      key: 'perf_kpi', label: 'KPI 달성도',
+      desc: '연초 설정 KPI 달성률 (계량 지표)',
+      bands: [
+        { range: '90~100', label: 'S급', grade: 'S', criteria: 'KPI 달성률 120% 이상. 목표를 초과 달성하여 추가 성과 창출. 도전적 목표를 스스로 설정·달성.' },
+        { range: '80~89', label: 'A급', grade: 'A', criteria: 'KPI 달성률 105~119%. 대부분의 목표 달성, 일부 초과.' },
+        { range: '70~79', label: 'B급', grade: 'B', criteria: 'KPI 달성률 90~104%. 설정 목표 대부분 달성.' },
+        { range: '60~69', label: 'C급', grade: 'C', criteria: 'KPI 달성률 75~89%. 핵심 목표 일부 미달.' },
+        { range: '0~59', label: 'D급', grade: 'D', criteria: 'KPI 달성률 75% 미만. 핵심 목표 다수 미달성.' },
+      ],
+    },
+    {
+      key: 'perf_profit', label: '프로젝트 수익성·기여도',
+      desc: '담당 프로젝트 수익률, 신규 수주 기여',
+      bands: [
+        { range: '90~100', label: 'S급', grade: 'S', criteria: '담당 프로젝트 수익률 목표 대비 120% 이상. 신규 프로젝트 수주 1건 이상 주도. 원가 절감 아이디어 도입.' },
+        { range: '80~89', label: 'A급', grade: 'A', criteria: '수익률 목표 105~119%. 기존 고객 추가 발주 유도. 예산 내 프로젝트 완료.' },
+        { range: '70~79', label: 'B급', grade: 'B', criteria: '수익률 목표 90~104%. 예산 초과 없이 프로젝트 완료.' },
+        { range: '60~69', label: 'C급', grade: 'C', criteria: '수익률 목표 75~89%. 소규모 예산 초과 발생.' },
+        { range: '0~59', label: 'D급', grade: 'D', criteria: '수익률 목표 75% 미만. 예산 초과 또는 손실 발생.' },
+      ],
+    },
+    {
+      key: 'perf_delivery', label: '납기 준수·완성도',
+      desc: '계획 대비 납기 준수율, 결과물 품질',
+      bands: [
+        { range: '90~100', label: 'S급', grade: 'S', criteria: '납기 준수율 100%. 결과물 품질 고객/발주처로부터 공식 우수 인정. 사전 리스크 관리로 일정 당겨 완료.' },
+        { range: '80~89', label: 'A급', grade: 'A', criteria: '납기 준수율 95% 이상. 결과물 재작업 1회 이내. 품질 검토 통과율 높음.' },
+        { range: '70~79', label: 'B급', grade: 'B', criteria: '납기 준수율 85~94%. 경미한 수정 발생하나 최종 마감 내 완료.' },
+        { range: '60~69', label: 'C급', grade: 'C', criteria: '납기 준수율 70~84%. 재작업 2~3회 발생. 일부 마감 지연.' },
+        { range: '0~59', label: 'D급', grade: 'D', criteria: '납기 준수율 70% 미만. 반복적 지연 및 품질 불량.' },
+      ],
+    },
+    {
+      key: 'perf_customer', label: '고객 만족도·재계약',
+      desc: '고객 평가 점수, 재계약·추가 발주 실적',
+      bands: [
+        { range: '90~100', label: 'S급', grade: 'S', criteria: '고객 만족도 설문 상위 10%. 재계약률 100% + 추가 발주. 고객으로부터 감사 서한 또는 공식 표창.' },
+        { range: '80~89', label: 'A급', grade: 'A', criteria: '고객 만족도 상위 30%. 재계약률 90% 이상. 고객 VOC 긍정 비율 높음.' },
+        { range: '70~79', label: 'B급', grade: 'B', criteria: '고객 만족도 평균 수준. 재계약률 75% 이상. 클레임 없이 프로젝트 종료.' },
+        { range: '60~69', label: 'C급', grade: 'C', criteria: '고객 불만 1~2건 발생. 재계약률 50~74%.' },
+        { range: '0~59', label: 'D급', grade: 'D', criteria: '고객 클레임 다수. 재계약 실패. 계약 해지 또는 분쟁 발생.' },
+      ],
+    },
+  ],
+};
+
+// ============================================================
+// KPI 정량 측정 지표 (전사 공통 + 직무군별 특화)
+// ============================================================
+const KPI_METRICS = {
+  // 전사 공통 KPI (모든 직원 대상)
+  common: {
+    title: '전사 공통 KPI',
+    subtitle: '직무군 무관 전 직원 적용 · 정량 측정',
+    color: 'brand',
+    metrics: [
+      {
+        id: 'kpi_attain', name: 'KPI 달성률',
+        unit: '%', formula: '실제 달성 / 연초 설정 목표 × 100',
+        bands: [
+          { range: '120% 이상', grade: 'S', score: 100 },
+          { range: '105~119%', grade: 'A', score: 85 },
+          { range: '90~104%', grade: 'B', score: 75 },
+          { range: '75~89%', grade: 'C', score: 65 },
+          { range: '75% 미만', grade: 'D', score: 50 },
+        ],
+        examples: '연초 KPI: 아카이브 1,500건 등록 → 실제 1,650건 등록 시 110% (A등급)',
+      },
+      {
+        id: 'attendance', name: '근태 준수율',
+        unit: '%', formula: '(근무일 - 무단결근·지각 일수) / 근무일 × 100',
+        bands: [
+          { range: '100% (무결근·무지각)', grade: 'S', score: 100 },
+          { range: '98~99.9%', grade: 'A', score: 85 },
+          { range: '95~97.9%', grade: 'B', score: 75 },
+          { range: '90~94.9%', grade: 'C', score: 65 },
+          { range: '90% 미만', grade: 'D', score: 50 },
+        ],
+        examples: '연 250일 근무일 중 지각 5회(0.5일 환산) → 99.8% (A등급)',
+      },
+      {
+        id: 'edu_hours', name: '교육 이수 시간',
+        unit: '시간/년', formula: '연간 사내·외 교육 누적 시간',
+        bands: [
+          { range: '60시간 이상', grade: 'S', score: 100 },
+          { range: '40~59시간', grade: 'A', score: 85 },
+          { range: '24~39시간', grade: 'B', score: 75 },
+          { range: '16~23시간', grade: 'C', score: 65 },
+          { range: '16시간 미만', grade: 'D', score: 50 },
+        ],
+        examples: 'ISAD(G) 표준 교육 16시간 + 사내 워크샵 24시간 + 자격증 강의 20시간 = 60시간 (S등급)',
+      },
+      {
+        id: 'qualif', name: '자격증·전문 자격 보유',
+        unit: '점', formula: '관련 자격 보유 점수 합계 (정보관리기술사 50점, 기록물관리전문요원 30점, 기타 10점)',
+        bands: [
+          { range: '60점 이상', grade: 'S', score: 100 },
+          { range: '40~59점', grade: 'A', score: 85 },
+          { range: '20~39점', grade: 'B', score: 75 },
+          { range: '10~19점', grade: 'C', score: 65 },
+          { range: '0~9점', grade: 'D', score: 50 },
+        ],
+        examples: '정보관리기술사 50점 + 기록물관리전문요원 30점 = 80점 (S등급)',
+      },
+    ],
+  },
+  
+  // Archive (기록관리) 직무군 특화
+  Archive: {
+    title: 'Archive · 기록관리 직무군 KPI',
+    subtitle: '아카이브사업팀·데이터큐레이션팀·기록연구부',
+    color: 'Archive',
+    metrics: [
+      {
+        id: 'archive_reg', name: '아카이브 등록 건수',
+        unit: '건/년', formula: '연간 ISAD(G) 표준 적용 기록물 등록·기술 건수',
+        bands: [
+          { range: '2,000건 이상', grade: 'S', score: 100 },
+          { range: '1,500~1,999건', grade: 'A', score: 85 },
+          { range: '1,000~1,499건', grade: 'B', score: 75 },
+          { range: '700~999건', grade: 'C', score: 65 },
+          { range: '700건 미만', grade: 'D', score: 50 },
+        ],
+        examples: '강원랜드 동원탄좌 컬렉션 1,800건 + 사북항쟁 자료 320건 = 2,120건 (S등급)',
+      },
+      {
+        id: 'metadata_qa', name: '메타데이터 품질 검증 통과율',
+        unit: '%', formula: '검증 통과 건수 / 전체 검증 건수 × 100',
+        bands: [
+          { range: '98% 이상', grade: 'S', score: 100 },
+          { range: '95~97.9%', grade: 'A', score: 85 },
+          { range: '90~94.9%', grade: 'B', score: 75 },
+          { range: '85~89.9%', grade: 'C', score: 65 },
+          { range: '85% 미만', grade: 'D', score: 50 },
+        ],
+        examples: '품질 검증 1,000건 중 970건 통과 → 97% (A등급)',
+      },
+      {
+        id: 'classification', name: '단위업무 분류표 적용 정확도',
+        unit: '%', formula: '재분류 없이 1차 분류된 비율',
+        bands: [
+          { range: '95% 이상', grade: 'S', score: 100 },
+          { range: '90~94.9%', grade: 'A', score: 85 },
+          { range: '85~89.9%', grade: 'B', score: 75 },
+          { range: '75~84.9%', grade: 'C', score: 65 },
+          { range: '75% 미만', grade: 'D', score: 50 },
+        ],
+        examples: '1차 분류 500건 중 460건 재분류 없이 확정 → 92% (A등급)',
+      },
+      {
+        id: 'preservation', name: '디지털 보존 처리율',
+        unit: '%', formula: '장기보존포맷 변환 완료 / 대상 건수 × 100',
+        bands: [
+          { range: '100%', grade: 'S', score: 100 },
+          { range: '95~99.9%', grade: 'A', score: 85 },
+          { range: '85~94.9%', grade: 'B', score: 75 },
+          { range: '70~84.9%', grade: 'C', score: 65 },
+          { range: '70% 미만', grade: 'D', score: 50 },
+        ],
+        examples: '대상 1,200건 중 1,150건 PDF/A·TIFF 변환 → 95.8% (A등급)',
+      },
+    ],
+  },
+  
+  // Tech (기술개발) 직무군 특화
+  Tech: {
+    title: 'Tech · 기술개발 직무군 KPI',
+    subtitle: '서비스개발부 · 시스템·플랫폼 개발',
+    color: 'Tech',
+    metrics: [
+      {
+        id: 'release_count', name: '서비스 릴리즈 건수',
+        unit: '건/년', formula: '연간 프로덕션 배포 횟수 (major + minor)',
+        bands: [
+          { range: '24건 이상 (월 2건+)', grade: 'S', score: 100 },
+          { range: '18~23건', grade: 'A', score: 85 },
+          { range: '12~17건', grade: 'B', score: 75 },
+          { range: '6~11건', grade: 'C', score: 65 },
+          { range: '6건 미만', grade: 'D', score: 50 },
+        ],
+        examples: '아카이브 검색 시스템 v2 출시(major 2건) + 기능 개선(minor 22건) = 24건 (S등급)',
+      },
+      {
+        id: 'bug_rate', name: '버그 발생률',
+        unit: '건/1000라인', formula: '연간 발견된 버그 건수 / 작성한 코드 라인 수(KLOC)',
+        bands: [
+          { range: '0.5건/KLOC 이하', grade: 'S', score: 100 },
+          { range: '0.51~1.0건/KLOC', grade: 'A', score: 85 },
+          { range: '1.01~2.0건/KLOC', grade: 'B', score: 75 },
+          { range: '2.01~3.5건/KLOC', grade: 'C', score: 65 },
+          { range: '3.5건 초과', grade: 'D', score: 50 },
+        ],
+        examples: '작성 코드 20,000라인 중 버그 15건 → 0.75건/KLOC (A등급)',
+      },
+      {
+        id: 'system_uptime', name: '시스템 가용성 (Uptime)',
+        unit: '%', formula: '서비스 정상 가동 시간 / 전체 운영 시간 × 100',
+        bands: [
+          { range: '99.95% 이상', grade: 'S', score: 100 },
+          { range: '99.5~99.94%', grade: 'A', score: 85 },
+          { range: '99.0~99.49%', grade: 'B', score: 75 },
+          { range: '97.0~98.99%', grade: 'C', score: 65 },
+          { range: '97% 미만', grade: 'D', score: 50 },
+        ],
+        examples: '연 8,760시간 중 다운타임 4시간 → 99.95% (S등급)',
+      },
+      {
+        id: 'code_review', name: '코드 리뷰 참여 건수',
+        unit: '건/년', formula: 'PR 리뷰어로 참여한 횟수 (코멘트 작성 기준)',
+        bands: [
+          { range: '200건 이상', grade: 'S', score: 100 },
+          { range: '120~199건', grade: 'A', score: 85 },
+          { range: '60~119건', grade: 'B', score: 75 },
+          { range: '30~59건', grade: 'C', score: 65 },
+          { range: '30건 미만', grade: 'D', score: 50 },
+        ],
+        examples: 'GitHub PR 리뷰어 참여 156회 (A등급)',
+      },
+    ],
+  },
+  
+  // Biz (사업경영) 직무군 특화
+  Biz: {
+    title: 'Biz · 사업경영 직무군 KPI',
+    subtitle: '경영기획본부·공공사업본부·사업관리부·경영지원부',
+    color: 'Biz',
+    metrics: [
+      {
+        id: 'contract_value', name: '신규 수주 계약 금액',
+        unit: '억원/년', formula: '본인 주도 수주 신규 계약 합계',
+        bands: [
+          { range: '15억원 이상', grade: 'S', score: 100 },
+          { range: '10~14.9억원', grade: 'A', score: 85 },
+          { range: '5~9.9억원', grade: 'B', score: 75 },
+          { range: '2~4.9억원', grade: 'C', score: 65 },
+          { range: '2억원 미만', grade: 'D', score: 50 },
+        ],
+        examples: '강원랜드 아카이브 8억 + 광역시 공공기록 5억 + 자문 2.5억 = 15.5억 (S등급)',
+      },
+      {
+        id: 'profit_rate', name: '담당 프로젝트 영업이익률',
+        unit: '%', formula: '(매출 - 직접비) / 매출 × 100 · 담당 PM 기준',
+        bands: [
+          { range: '25% 이상', grade: 'S', score: 100 },
+          { range: '18~24.9%', grade: 'A', score: 85 },
+          { range: '12~17.9%', grade: 'B', score: 75 },
+          { range: '5~11.9%', grade: 'C', score: 65 },
+          { range: '5% 미만', grade: 'D', score: 50 },
+        ],
+        examples: '담당 프로젝트 매출 10억 / 직접비 7.8억 → 영업이익률 22% (A등급)',
+      },
+      {
+        id: 'renewal_rate', name: '재계약·연장 성공률',
+        unit: '%', formula: '재계약 성공 건수 / 만료 도래 건수 × 100',
+        bands: [
+          { range: '100%', grade: 'S', score: 100 },
+          { range: '85~99.9%', grade: 'A', score: 85 },
+          { range: '70~84.9%', grade: 'B', score: 75 },
+          { range: '50~69.9%', grade: 'C', score: 65 },
+          { range: '50% 미만', grade: 'D', score: 50 },
+        ],
+        examples: '만료 도래 10건 중 9건 재계약 성공 → 90% (A등급)',
+      },
+      {
+        id: 'proposal_winrate', name: '제안 입찰 낙찰률',
+        unit: '%', formula: '낙찰 건수 / 제안 참가 건수 × 100',
+        bands: [
+          { range: '50% 이상', grade: 'S', score: 100 },
+          { range: '35~49.9%', grade: 'A', score: 85 },
+          { range: '25~34.9%', grade: 'B', score: 75 },
+          { range: '15~24.9%', grade: 'C', score: 65 },
+          { range: '15% 미만', grade: 'D', score: 50 },
+        ],
+        examples: '제안 20건 참가 중 8건 낙찰 → 40% (A등급)',
+      },
+    ],
+  },
+  
+  // PM (사업수행) 직무군 특화 - 사업관리부·PMO 핵심 인력
+  PM: {
+    title: 'PM · 사업수행 직무군 KPI',
+    subtitle: '사업관리부·PMO · 프로젝트 수행 + 사업 개발 양축',
+    color: 'PM',
+    metrics: [
+      {
+        id: 'pm_project_count', name: '프로젝트 수행 건수',
+        unit: '건/년', formula: '연간 PM 역할로 수행 완료한 프로젝트 수 (단순 참여 제외)',
+        bands: [
+          { range: '6건 이상', grade: 'S', score: 100 },
+          { range: '4~5건', grade: 'A', score: 85 },
+          { range: '3건', grade: 'B', score: 75 },
+          { range: '2건', grade: 'C', score: 65 },
+          { range: '1건 이하', grade: 'D', score: 50 },
+        ],
+        examples: '동원탄좌 M650 + 강원랜드 사업본부 + 평창광업소 + 정선 사업본부 4개 PM 수행 (A등급)',
+      },
+      {
+        id: 'pm_ontime', name: '납기 준수율',
+        unit: '%', formula: '연간 수행한 프로젝트 중 약정 납기 내 완료한 비율',
+        bands: [
+          { range: '100% (전 프로젝트 납기 준수)', grade: 'S', score: 100 },
+          { range: '90~99%', grade: 'A', score: 85 },
+          { range: '80~89%', grade: 'B', score: 75 },
+          { range: '70~79%', grade: 'C', score: 65 },
+          { range: '70% 미만', grade: 'D', score: 50 },
+        ],
+        examples: '5건 중 4건 정시 완료, 1건 1주 지연 → 80% (B등급)',
+      },
+      {
+        id: 'pm_margin', name: '프로젝트 이익률',
+        unit: '%', formula: '(프로젝트 매출 - 인건비·외주비·경비) / 프로젝트 매출 × 100, 본인 PM 수행 건 평균',
+        bands: [
+          { range: '30% 이상', grade: 'S', score: 100 },
+          { range: '22~29.9%', grade: 'A', score: 85 },
+          { range: '15~21.9%', grade: 'B', score: 75 },
+          { range: '8~14.9%', grade: 'C', score: 65 },
+          { range: '8% 미만 또는 적자', grade: 'D', score: 50 },
+        ],
+        examples: 'M650 3.5억 수주 → 인건비·경비 2.5억 → 이익률 28.6% (A등급)',
+      },
+      {
+        id: 'pm_customer_csat', name: '고객 만족도 (CSAT)',
+        unit: '점/5점', formula: '프로젝트 종료 시 발주처 만족도 평가 점수 평균',
+        bands: [
+          { range: '4.7 이상', grade: 'S', score: 100 },
+          { range: '4.3~4.69', grade: 'A', score: 85 },
+          { range: '3.8~4.29', grade: 'B', score: 75 },
+          { range: '3.3~3.79', grade: 'C', score: 65 },
+          { range: '3.3 미만', grade: 'D', score: 50 },
+        ],
+        examples: 'M650 발주처 평가 4.5점 + 평창광업소 4.7점 평균 4.6 (A등급)',
+      },
+    ],
+  },
+};
+
+const fmtKRW = (n) => Math.round(n || 0).toLocaleString('ko-KR');
+const fmtMan = (n) => (Math.round((n || 0) / 10000)).toLocaleString('ko-KR') + '만';
+
+// 직무군 컬러 헬퍼 (Archive·Tech·Biz·PM)
+const groupColor = (group) => {
+  const map = { Archive: T.groupArchive, Tech: T.groupTech, Biz: T.groupBiz, PM: T.groupPM };
+  return map[group] || T.textMute;
+};
+const groupLabel = (group) => {
+  const map = { Archive: 'Archive · 기록관리', Tech: 'Tech · 기술개발', Biz: 'Biz · 사업경영', PM: 'PM · 사업수행' };
+  return map[group] || group;
+};
+
+function calcCompScore(s, p) {
+  if (!s || s.comp_expert == null) return null;
+  return (Number(s.comp_expert) * p.comp_expert + Number(s.comp_problem ?? 75) * p.comp_problem + Number(s.comp_learn ?? 75) * p.comp_learn + Number(s.comp_collab ?? 75) * p.comp_collab) / 100;
+}
+function calcPerfScore(s, p) {
+  if (!s || s.perf_kpi == null) return null;
+  return (Number(s.perf_kpi) * p.perf_kpi + Number(s.perf_profit ?? 75) * p.perf_profit + Number(s.perf_delivery ?? 75) * p.perf_delivery + Number(s.perf_customer ?? 75) * p.perf_customer) / 100;
+}
+function calcTotal(c, pf, p) { if (c == null || pf == null) return null; return (c * p.weight_comp + pf * p.weight_perf) / 100; }
+function getGrade(t, p) { if (t == null) return null; for (const g of p.grades) if (t >= g.min && t <= g.max) return g; return p.grades[p.grades.length - 1]; }
+
+function calcSalary(emp, scores, policy) {
+  const totalCurrent = (Number(emp.baseSalary || 0) + Number(emp.allowance || 0) + Number(emp.mealCar || 0) + Number(emp.qualif || 0)) * 12;
+  if (!emp.evalTarget) {
+    return { isExcluded: true, grade: null, totalScore: null, newSalary: emp.baseSalary, increase: 0, pi: 0, ps: 0, totalComp2026: totalCurrent, delta: 0 };
+  }
+  const comp = calcCompScore(scores, policy);
+  const perf = calcPerfScore(scores, policy);
+  const total = calcTotal(comp, perf, policy);
+  const grade = getGrade(total, policy);
+  if (!grade) return { isExcluded: false, grade: null, totalScore: null, newSalary: emp.baseSalary, increase: 0, pi: 0, ps: 0, totalComp2026: totalCurrent, delta: 0 };
+  const newSalary = Math.round(emp.baseSalary * (1 + grade.increase / 100) / 1000) * 1000;
+  const piBase = policy.piBase[emp.level] || 0;
+  const pi = Math.round(piBase * grade.piCoef);
+  const ps = grade.grade === 'D' ? 0 : Math.round((newSalary * 12 * policy.psRate / 100) / 1000) * 1000;
+  const totalComp2026 = newSalary * 12 + (Number(emp.allowance || 0) + Number(emp.mealCar || 0) + Number(emp.qualif || 0)) * 12 + pi + ps;
+  return { isExcluded: false, grade, comp, perf, totalScore: total, newSalary, increase: grade.increase, pi, ps, totalComp2026, delta: totalComp2026 - totalCurrent };
+}
+
+// ============================================================
+// 메인 App
+// ============================================================
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [tab, setTab] = useState('dashboard');
+  const [employees, setEmployees] = useState(INITIAL_EMPLOYEES);
+  const [policy, setPolicy] = useState(INITIAL_POLICY);
+  const [scores, setScores] = useState({});
+  const [selfScores, setSelfScores] = useState({});
+  const [comments, setComments] = useState({});
+  const [submissions, setSubmissions] = useState({});
+  const [history, setHistory] = useState([HISTORY_2025]);
+  const [selectedEmp, setSelectedEmp] = useState(null);
+  const [historyHighlight, setHistoryHighlight] = useState(null);  // {empId, year}
+  const [toast, setToast] = useState(null);
+  const currentYear = 2026;
+
+  useEffect(() => {
+    try {
+      const res = localStorage.getItem('koition_hr_v6');
+      if (res) {
+        const data = JSON.parse(res);
+        if (data.employees) setEmployees(data.employees);
+        if (data.policy) {
+          // 기존 정책에 coverStats/coverImage/promotion이 없으면 기본값 보충 (마이그레이션)
+          const migrated = { 
+            ...data.policy, 
+            coverStats: data.policy.coverStats || INITIAL_POLICY.coverStats,
+            coverImage: data.policy.coverImage || INITIAL_POLICY.coverImage,
+            promotion: data.policy.promotion || INITIAL_POLICY.promotion
+          };
+          setPolicy(migrated);
+        }
+        if (data.scores) setScores(data.scores);
+        if (data.selfScores) setSelfScores(data.selfScores);
+        if (data.comments) setComments(data.comments);
+        if (data.submissions) setSubmissions(data.submissions);
+        if (data.history) setHistory(data.history);
+      }
+    } catch (e) {}
+  }, []);
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 2800);
+  };
+
+  const results = useMemo(() => {
+    const map = {};
+    employees.forEach(e => { map[e.id] = calcSalary(e, scores[e.id], policy); });
+    return map;
+  }, [employees, scores, policy]);
+
+  const stats = useMemo(() => {
+    const targets = employees.filter(e => e.evalTarget);
+    const completed = targets.filter(e => results[e.id]?.grade).length;
+    const gradeCount = { S: 0, A: 0, B: 0, C: 0, D: 0 };
+    targets.forEach(e => { const g = results[e.id]?.grade?.grade; if (g) gradeCount[g]++; });
+    const total2025 = employees.reduce((s, e) => s + (Number(e.baseSalary || 0) + Number(e.allowance || 0) + Number(e.mealCar || 0) + Number(e.qualif || 0)) * 12, 0);
+    const total2026 = employees.reduce((s, e) => s + (results[e.id]?.totalComp2026 || 0), 0);
+    return { totalEmp: employees.length, evalTargets: targets.length, completed, gradeCount, total2025, total2026, delta: total2026 - total2025, deltaPct: total2025 > 0 ? ((total2026 - total2025) / total2025 * 100) : 0 };
+  }, [employees, results]);
+
+  const handleSave = () => {
+    try {
+      localStorage.setItem('koition_hr_v6', JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, history }));
+      showToast('데이터가 저장되었습니다');
+    } catch (e) { showToast('저장 실패', 'error'); }
+  };
+  const handleExport = () => {
+    const data = { year: currentYear, employees, policy, scores, selfScores, comments, submissions, history };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `koition_hr_${currentYear}.json`; a.click();
+    URL.revokeObjectURL(url);
+    showToast('JSON 파일이 다운로드되었습니다');
+  };
+  const handleImport = (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (data.employees) setEmployees(data.employees);
+        if (data.policy) {
+          const migrated = { 
+            ...data.policy, 
+            coverStats: data.policy.coverStats || INITIAL_POLICY.coverStats,
+            coverImage: data.policy.coverImage || INITIAL_POLICY.coverImage,
+            promotion: data.policy.promotion || INITIAL_POLICY.promotion
+          };
+          setPolicy(migrated);
+        }
+        if (data.scores) setScores(data.scores);
+        if (data.selfScores) setSelfScores(data.selfScores);
+        if (data.comments) setComments(data.comments);
+        if (data.submissions) setSubmissions(data.submissions);
+        if (data.history) setHistory(data.history);
+        showToast('데이터를 불러왔습니다');
+      } catch (err) { showToast('파일 형식이 올바르지 않습니다', 'error'); }
+    };
+    reader.readAsText(file);
+  };
+
+  const updateScore = (id, field, value) => {
+    const v = value === '' ? null : Math.max(0, Math.min(100, Number(value)));
+    setScores(prev => ({ ...prev, [id]: { ...(prev[id] || {}), [field]: v } }));
+  };
+  const updateSelfScore = (id, field, value) => {
+    const v = value === '' ? null : Math.max(0, Math.min(100, Number(value)));
+    setSelfScores(prev => ({ ...prev, [id]: { ...(prev[id] || {}), [field]: v } }));
+  };
+  const updateComment = (id, field, value) => {
+    setComments(prev => ({ ...prev, [id]: { ...(prev[id] || {}), [field]: value } }));
+  };
+  const submitSelfEval = (id) => {
+    setSubmissions(prev => ({ ...prev, [id]: 'self_submitted' }));
+    showToast('자기 평가가 제출되었습니다');
+  };
+  const copySelfToEvaluator = (id) => {
+    const self = selfScores[id]; if (!self) return;
+    setScores(prev => ({ ...prev, [id]: { ...self } }));
+    showToast('자기 평가 점수를 가져왔습니다');
+  };
+
+  // 직원 추가/수정/삭제 (admin 전용)
+  const addEmployee = (emp) => {
+    setEmployees(prev => [...prev, emp]);
+    showToast(`${emp.name}님이 추가되었습니다`);
+  };
+  const updateEmployee = (id, updated) => {
+    setEmployees(prev => prev.map(e => e.id === id ? { ...e, ...updated } : e));
+    showToast(`${updated.name || ''}님 정보가 수정되었습니다`);
+  };
+  const deleteEmployee = (id) => {
+    const emp = employees.find(e => e.id === id);
+    setEmployees(prev => prev.filter(e => e.id !== id));
+    showToast(`${emp?.name || ''}님이 삭제되었습니다`);
+  };
+
+  // 결과 상세 패널에서 다년도 이력 메뉴로 이동 + 특정 직원·연도 강조
+  const navigateToHistory = (empId, year) => {
+    setHistoryHighlight({ empId, year });
+    setTab('history');
+    // 페이지 이동 후 5초 뒤 강조 해제
+    setTimeout(() => setHistoryHighlight(null), 5000);
+  };
+
+  if (!user) return <LoginView onLogin={setUser} policy={policy} />;
+
+  const allMenus = [
+    { id: 'dashboard', label: '대시보드', icon: BarChart3, roles: ['admin', 'manager', 'evaluator', 'employee'] },
+    { id: 'self', label: '내 평가', icon: UserCheck, roles: ['employee', 'evaluator', 'manager'] },
+    { id: 'employees', label: '직원 관리', icon: Users, roles: ['admin'] },
+    { id: 'evaluation', label: '평가 입력', icon: FileText, roles: ['admin', 'manager', 'evaluator'] },
+    { id: 'results', label: '평가 결과', icon: Award, roles: ['admin', 'manager'] },
+    { id: 'salary', label: '급여 산정', icon: Wallet, roles: ['admin'] },
+    { id: 'analytics', label: '통계 분석', icon: PieIcon, roles: ['admin', 'manager'] },
+    { id: 'history', label: '다년도 이력', icon: History, roles: ['admin'] },
+    { id: 'notify', label: '이메일 통보', icon: Mail, roles: ['admin'] },
+    { id: 'policy', label: '정책 설정', icon: Settings, roles: ['admin'] },
+  ];
+  const visibleMenus = allMenus.filter(m => m.roles.includes(user.role));
+  const visibleEmployees = employees.filter(e => {
+    if (user.role === 'admin') return true;
+    if (user.role === 'manager' || user.role === 'evaluator') return e.dept.includes(user.deptScope) || e.dept === user.deptScope;
+    return e.id === user.empId;
+  });
+
+  return (
+    <>
+      <GlobalStyles />
+      <div style={{ minHeight: '100vh', background: T.bg, fontFamily: FONT, color: T.text }}>
+        <Header user={user} onLogout={() => { setUser(null); setTab('dashboard'); }} 
+          handleSave={handleSave} handleExport={handleExport} handleImport={handleImport} />
+        
+        <div style={{ display: 'flex', minHeight: 'calc(100vh - 72px)' }}>
+          <Sidebar visibleMenus={visibleMenus} tab={tab} setTab={setTab} user={user} stats={stats} />
+          
+          <main style={{ flex: 1, padding: `${S[7]}px ${S[8]}px`, overflow: 'auto', maxWidth: `calc(100vw - ${SIDEBAR_W}px)` }}>
+            {tab === 'dashboard' && <DashboardView user={user} stats={stats} employees={visibleEmployees} results={results} policy={policy} setTab={setTab} submissions={submissions} />}
+            {tab === 'self' && <SelfEvalView user={user} employees={employees} selfScores={selfScores} updateSelfScore={updateSelfScore} comments={comments} updateComment={updateComment} policy={policy} submissions={submissions} submitSelfEval={submitSelfEval} />}
+            {tab === 'employees' && <EmployeesView employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} deleteEmployee={deleteEmployee} history={history} results={results} currentYear={currentYear} policy={policy} />}
+            {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} />}
+            {tab === 'results' && <ResultsView user={user} employees={visibleEmployees} results={results} comments={comments} scores={scores} selfScores={selfScores} policy={policy} currentYear={currentYear} history={history} navigateToHistory={navigateToHistory} />}
+            {tab === 'salary' && <SalaryView employees={employees} results={results} stats={stats} />}
+            {tab === 'analytics' && <AnalyticsView employees={visibleEmployees} results={results} policy={policy} stats={stats} />}
+            {tab === 'history' && <HistoryView history={history} employees={employees} results={results} currentYear={currentYear} highlight={historyHighlight} />}
+            {tab === 'notify' && <NotifyView employees={employees} results={results} currentYear={currentYear} />}
+            {tab === 'policy' && <PolicyView policy={policy} setPolicy={setPolicy} />}
+          </main>
+        </div>
+        
+        {toast && <Toast {...toast} />}
+      </div>
+    </>
+  );
+}
+
+// ============================================================
+// 전역 스타일 (CSS Reset & Font)
+// ============================================================
+function GlobalStyles() {
+  return (
+    <style>{`
+      @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+      * { box-sizing: border-box; }
+      body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+      button { font-family: inherit; }
+      input, select, textarea { font-family: inherit; }
+      input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+      input[type="range"] { accent-color: ${T.brand}; }
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
+      ::-webkit-scrollbar-track { background: ${T.surfaceAlt}; }
+      ::-webkit-scrollbar-thumb { background: ${T.borderStrong}; border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: ${T.textMute}; }
+      @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    `}</style>
+  );
+}
+
+// ============================================================
+// Toast 알림
+// ============================================================
+function Toast({ message, type }) {
+  const color = type === 'error' ? T.danger : T.success;
+  return (
+    <div style={{
+      position: 'fixed', bottom: S[7], right: S[7], zIndex: 1000,
+      background: T.surface, padding: `${S[3]}px ${S[5]}px`,
+      borderLeft: `4px solid ${color}`, borderRadius: 6,
+      boxShadow: T.shadow3, display: 'flex', alignItems: 'center', gap: S[3],
+      fontSize: 14, fontWeight: 500, color: T.ink,
+      animation: 'slideIn 0.2s ease-out'
+    }}>
+      {type === 'error' ? <AlertCircle size={16} color={color} /> : <CheckCircle2 size={16} color={color} />}
+      {message}
+    </div>
+  );
+}
+
+// ============================================================
+// 공통 컴포넌트
+// ============================================================
+const card = (extra = {}) => ({
+  background: T.surface,
+  border: `1px solid ${T.border}`,
+  borderRadius: 8,
+  boxShadow: T.shadow1,
+  ...extra
+});
+
+const pageHeader = (subtitle) => ({ marginBottom: S[7] });
+
+function PageHeader({ eyebrow, title, subtitle, action }) {
+  return (
+    <div style={{ marginBottom: S[7], display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: S[4] }}>
+      <div>
+        {eyebrow && (
+          <div style={{ 
+            fontSize: 11, fontWeight: 600, color: T.brand, 
+            letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: S[2]
+          }}>
+            {eyebrow}
+          </div>
+        )}
+        <h1 style={{ 
+          fontSize: 32, fontWeight: 700, margin: 0, letterSpacing: '-0.02em', 
+          color: T.ink, lineHeight: 1.2
+        }}>
+          {title}
+        </h1>
+        {subtitle && (
+          <p style={{ fontSize: 14, color: T.textMute, marginTop: S[2], margin: `${S[2]}px 0 0`, maxWidth: 720 }}>
+            {subtitle}
+          </p>
+        )}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function Button({ variant = 'outline', size = 'md', icon: Icon, children, onClick, disabled, style: extraStyle, ...props }) {
+  const sizes = {
+    sm: { padding: '6px 10px', fontSize: 12, gap: 5 },
+    md: { padding: '8px 14px', fontSize: 13, gap: 6 },
+    lg: { padding: '12px 20px', fontSize: 14, gap: 8 }
+  };
+  const variants = {
+    primary: { background: T.brand, color: '#fff', border: `1px solid ${T.brand}` },
+    secondary: { background: T.surface, color: T.brand, border: `1px solid ${T.brand}` },
+    outline: { background: 'transparent', color: T.text, border: `1px solid ${T.border}` },
+    ghost: { background: 'transparent', color: T.text, border: '1px solid transparent' },
+    danger: { background: 'transparent', color: T.danger, border: `1px solid ${T.danger}` },
+  };
+  return (
+    <button 
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      {...props}
+      style={{
+        ...sizes[size], 
+        ...variants[variant],
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        fontWeight: 500, 
+        cursor: disabled ? 'not-allowed' : 'pointer', 
+        borderRadius: 6,
+        transition: 'all 0.15s ease', 
+        whiteSpace: 'nowrap',
+        opacity: disabled ? 0.5 : 1,
+        fontFamily: FONT,
+        ...extraStyle
+      }}
+      onMouseEnter={e => {
+        if (disabled) return;
+        if (variant === 'outline' || variant === 'ghost') e.currentTarget.style.background = T.surfaceAlt;
+        if (variant === 'primary') e.currentTarget.style.background = T.brandDark;
+        if (variant === 'secondary') e.currentTarget.style.background = T.surfaceAlt;
+      }}
+      onMouseLeave={e => {
+        if (disabled) return;
+        e.currentTarget.style.background = variants[variant].background;
+      }}
+    >
+      {Icon && <Icon size={size === 'sm' ? 12 : 14} />}
+      {children}
+    </button>
+  );
+}
+
+function Badge({ children, color = T.textMute, variant = 'solid', size = 'md' }) {
+  const sizes = { sm: { padding: '2px 6px', fontSize: 10 }, md: { padding: '3px 8px', fontSize: 11 } };
+  const styles = variant === 'solid' 
+    ? { background: color, color: '#fff' }
+    : { background: 'transparent', color, border: `1px solid ${color}` };
+  return (
+    <span style={{ ...sizes[size], ...styles, fontWeight: 600, borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 4, letterSpacing: '0.02em' }}>
+      {children}
+    </span>
+  );
+}
+
+function GradeBadge({ grade, size = 'md' }) {
+  if (!grade) return <span style={{ color: T.textLight, fontSize: 11 }}>-</span>;
+  const sizes = { sm: 22, md: 28, lg: 36 };
+  const fontSize = { sm: 11, md: 13, lg: 16 };
+  return (
+    <span style={{
+      display: 'inline-flex', width: sizes[size], height: sizes[size],
+      background: T[grade], color: '#fff', alignItems: 'center', justifyContent: 'center',
+      fontWeight: 700, fontSize: fontSize[size], borderRadius: 4
+    }}>
+      {grade}
+    </span>
+  );
+}
+
+// ============================================================
+// Header
+// ============================================================
+function Header({ user, onLogout, handleSave, handleExport, handleImport }) {
+  const roleConfig = {
+    admin: { label: '관리자', color: T.brand },
+    manager: { label: '부서장', color: T.brandLight },
+    evaluator: { label: '평가자', color: T.A },
+    employee: { label: '직원', color: T.textMute }
+  };
+  const r = roleConfig[user.role];
+  
+  return (
+    <header style={{
+      background: T.surface, height: 72,
+      display: 'flex', alignItems: 'stretch',
+      borderBottom: `1px solid ${T.border}`,
+      boxShadow: T.shadowHeader,
+      position: 'sticky', top: 0, zIndex: 50
+    }}>
+      {/* 로고 영역 - 사이드바와 동일 너비 */}
+      <div style={{ 
+        width: SIDEBAR_W, flexShrink: 0,
+        padding: `0 ${S[4]}px`, display: 'flex', alignItems: 'center',
+        borderRight: `1px solid ${T.border}`,
+        cursor: 'pointer'
+      }}>
+        <KoitionLogo size={28} />
+      </div>
+
+      {/* 우측 액션 영역 */}
+      <div style={{ 
+        flex: 1, padding: `0 ${S[6]}px`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: S[3]
+      }}>
+        {/* 페이지 컨텍스트 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: S[3] }}>
+          <div style={{ 
+            padding: `${S[1]}px ${S[3]}px`,
+            background: T.surfaceAlt, borderRadius: 4,
+            fontSize: 11, color: T.textMute, fontWeight: 500, letterSpacing: '0.05em'
+          }}>
+            2026 평가 시즌
+          </div>
+        </div>
+
+        {/* 사용자 + 액션 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: S[2] }}>
+          <div style={{ 
+            display: 'flex', alignItems: 'center', gap: S[2],
+            padding: `${S[1]}px ${S[3]}px`, borderRadius: 6,
+            background: T.surfaceAlt
+          }}>
+            <Badge color={r.color} variant="solid" size="sm">{r.label}</Badge>
+            <span style={{ fontSize: 13, color: T.ink, fontWeight: 500 }}>{user.name}</span>
+          </div>
+          {user.role === 'admin' && (
+            <>
+              <Button variant="outline" size="sm" icon={Save} onClick={handleSave}>저장</Button>
+              <Button variant="primary" size="sm" icon={Download} onClick={handleExport}>내보내기</Button>
+              <label>
+                <Button variant="outline" size="sm" icon={Upload} as="span">불러오기</Button>
+                <input type="file" accept=".json" onChange={handleImport} style={{ display: 'none' }} />
+              </label>
+            </>
+          )}
+          <Button variant="ghost" size="sm" icon={LogOut} onClick={onLogout}>로그아웃</Button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+// ============================================================
+// Sidebar
+// ============================================================
+function Sidebar({ visibleMenus, tab, setTab, user, stats }) {
+  return (
+    <nav style={{ 
+      width: SIDEBAR_W, flexShrink: 0,
+      background: T.surface, borderRight: `1px solid ${T.border}`,
+      padding: `${S[5]}px 0`, position: 'sticky', top: 72,
+      height: 'calc(100vh - 72px)', overflowY: 'auto'
+    }}>
+      <div style={{ padding: `0 ${S[5]}px`, marginBottom: S[3] }}>
+        <div style={{ 
+          fontSize: 10, fontWeight: 600, color: T.textMute, 
+          letterSpacing: '0.15em', textTransform: 'uppercase' 
+        }}>
+          MENU
+        </div>
+      </div>
+      
+      {visibleMenus.map(it => {
+        const Icon = it.icon; const active = tab === it.id;
+        return (
+          <button key={it.id} onClick={() => setTab(it.id)} style={{
+            width: '100%', padding: `${S[3]}px ${S[5]}px`, border: 'none',
+            background: active ? T.surfaceAlt : 'transparent',
+            color: active ? T.brand : T.text,
+            display: 'flex', alignItems: 'center', gap: S[3],
+            fontSize: 14, fontWeight: active ? 600 : 400, cursor: 'pointer',
+            borderLeft: active ? `3px solid ${T.brand}` : '3px solid transparent',
+            textAlign: 'left', transition: 'all 0.15s', position: 'relative'
+          }}
+          onMouseEnter={e => { if (!active) e.currentTarget.style.background = T.surfaceAlt; }}
+          onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+          >
+            <Icon size={16} strokeWidth={active ? 2.2 : 1.8} />
+            <span>{it.label}</span>
+            {active && <ChevronRight size={12} style={{ marginLeft: 'auto' }} />}
+          </button>
+        );
+      })}
+
+      <div style={{ 
+        margin: `${S[6]}px ${S[5]}px 0`, padding: `${S[4]}px ${S[4]}px`,
+        background: T.surfaceAlt, borderRadius: 6,
+        fontSize: 12
+      }}>
+        <div style={{ fontSize: 10, color: T.textMute, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: S[2] }}>
+          현황
+        </div>
+        <Stat label="접속자" value={user.name} />
+        <Stat label="범위" value={user.deptScope || '본인'} />
+        {user.role === 'admin' && (
+          <>
+            <Stat label="전체" value={`${stats.totalEmp}명`} />
+            <Stat label="평가대상" value={`${stats.evalTargets}명`} />
+            <Stat label="완료" value={`${stats.completed}/${stats.evalTargets}`} highlight={stats.completed === stats.evalTargets} />
+          </>
+        )}
+      </div>
+    </nav>
+  );
+}
+
+function Stat({ label, value, highlight }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '3px 0' }}>
+      <span style={{ color: T.textMute, fontSize: 11 }}>{label}</span>
+      <span style={{ color: highlight ? T.success : T.ink, fontWeight: 600, fontSize: 12 }}>{value}</span>
+    </div>
+  );
+}
+
+// ============================================================
+// 로그인 화면
+// ============================================================
+function LoginView({ onLogin, policy }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  
+  const handleSubmit = () => {
+    const u = USERS.find(x => x.username === username && x.password === password);
+    if (u) { onLogin(u); }
+    else { setError('아이디 또는 비밀번호가 일치하지 않습니다.'); }
+  };
+
+  return (
+    <>
+      <GlobalStyles />
+      <div style={{
+        minHeight: '100vh', display: 'flex',
+        background: `linear-gradient(135deg, ${T.brandDark} 0%, ${T.brand} 50%, ${T.brandLight} 100%)`,
+        fontFamily: FONT
+      }}>
+        {/* 좌측 브랜드 영역 - 1:1 비율, 균형잡힌 3단 레이아웃 */}
+        <div style={{
+          flex: 1, padding: `${S[8]}px ${S[9]}px`,
+          display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+          color: '#fff', position: 'relative', overflow: 'hidden',
+          minHeight: '100vh'
+        }}>
+          {/* 배경: 미세한 격자 패턴 (한국 전통 격자 모티브) */}
+          <svg style={{ 
+            position: 'absolute', inset: 0, width: '100%', height: '100%',
+            opacity: 0.04, pointerEvents: 'none'
+          }} xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <pattern id="koreanGrid" width="40" height="40" patternUnits="userSpaceOnUse">
+                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#fff" strokeWidth="0.5"/>
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#koreanGrid)" />
+          </svg>
+          
+          {/* 배경 글로우 (우상단) */}
+          <div style={{
+            position: 'absolute', top: '-10%', right: '-15%', width: '70%', height: '70%',
+            background: `radial-gradient(circle, rgba(214,56,56,0.12) 0%, transparent 65%)`,
+            pointerEvents: 'none'
+          }} />
+          {/* 배경 글로우 (좌하단) */}
+          <div style={{
+            position: 'absolute', bottom: '-10%', left: '-10%', width: '60%', height: '60%',
+            background: `radial-gradient(circle, rgba(46,91,160,0.25) 0%, transparent 60%)`,
+            pointerEvents: 'none'
+          }} />
+          
+          {/* ============ 상단 (30%): 로고 ============ */}
+          <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: S[4] }}>
+            <KoitionLogo size={28} variant="light" />
+            
+            {/* 우측: 회사 정체성 태그 */}
+            <div style={{ 
+              marginLeft: 'auto', display: 'flex', gap: S[2], 
+              fontSize: 9, fontWeight: 600, letterSpacing: '0.2em'
+            }}>
+              <span style={{ 
+                padding: '4px 10px', background: 'rgba(255,255,255,0.1)', 
+                borderRadius: 3, color: 'rgba(255,255,255,0.8)',
+                border: '1px solid rgba(255,255,255,0.15)'
+              }}>
+                AI · ARCHIVE
+              </span>
+              <span style={{ 
+                padding: '4px 10px', background: 'rgba(214,56,56,0.2)', 
+                borderRadius: 3, color: '#fff',
+                border: '1px solid rgba(214,56,56,0.4)'
+              }}>
+                SINCE 2014
+              </span>
+            </div>
+          </div>
+          
+          {/* ============ 중앙 (40%): 메인 타이포 + 정체성 비주얼 ============ */}
+          <div style={{ 
+            position: 'relative', zIndex: 1, 
+            display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: S[6], 
+            alignItems: 'center'
+          }}>
+            {/* 좌측: 메인 타이포그래피 */}
+            <div>
+              <div style={{ 
+                fontSize: 12, color: T.accent, fontWeight: 700, 
+                letterSpacing: '0.3em', marginBottom: S[3] 
+              }}>
+                HUMAN RESOURCE MANAGEMENT
+              </div>
+              <h1 style={{ 
+                fontSize: 64, fontWeight: 800, margin: 0, 
+                letterSpacing: '-0.03em', lineHeight: 1, 
+                fontFamily: FONT
+              }}>
+                KOITION
+              </h1>
+              <div style={{ 
+                fontSize: 26, fontWeight: 600, marginTop: S[3],
+                color: '#fff', letterSpacing: '-0.02em',
+                lineHeight: 1.3
+              }}>
+                인사평가·보상<br/>관리 시스템
+              </div>
+              
+              {/* 빨간 액센트 라인 + 짧은 슬로건 */}
+              <div style={{ marginTop: S[5], display: 'flex', alignItems: 'center', gap: S[3] }}>
+                <div style={{ width: 40, height: 2, background: T.accent }} />
+                <div style={{ 
+                  fontSize: 11, color: 'rgba(255,255,255,0.85)', 
+                  letterSpacing: '0.15em', fontWeight: 500, lineHeight: 1.6
+                }}>
+                  DATA-DRIVEN HR<br/>
+                  <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 10 }}>
+                    데이터 기반의 인사평가 체계
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+            {/* 우측: 표지 이미지 (admin이 URL로 교체 가능) */}
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+              <CoverImageDisplay coverImage={policy?.coverImage} />
+            </div>
+          </div>
+          
+          {/* ============ 하단 (30%): 팀 일러스트 + 회사 소개 ============ */}
+          <div style={{ position: 'relative', zIndex: 1 }}>
+            {/* 회사 소개 카드 - admin이 정책 설정에서 편집 가능, 비활성화 시 숨김 */}
+            {policy?.coverStats?.enabled && policy.coverStats.items?.length > 0 && (
+              <div style={{ 
+                padding: `${S[4]}px ${S[5]}px`, 
+                background: 'rgba(255,255,255,0.04)', 
+                borderRadius: 8, marginBottom: S[5],
+                border: '1px solid rgba(255,255,255,0.08)',
+                display: 'grid', 
+                gridTemplateColumns: `repeat(${policy.coverStats.items.length}, 1fr)`, 
+                gap: S[4]
+              }}>
+                {policy.coverStats.items.map((item, i) => (
+                  <CardStat key={i} label={item.label} value={item.value} highlight={item.highlight} />
+                ))}
+              </div>
+            )}
+            
+            {/* 비주얼 트리오: 다트+타겟 / 펜+기록 / 디지털 전환 */}
+            <div style={{ marginBottom: S[4] }}>
+              <KoitionVisualTrio />
+            </div>
+            
+            {/* 푸터 */}
+            <div style={{ 
+              paddingTop: S[3], borderTop: '1px solid rgba(255,255,255,0.08)'
+            }}>
+              <div style={{ 
+                fontSize: 10, color: 'rgba(255,255,255,0.45)', 
+                letterSpacing: '0.15em', lineHeight: 1.8
+              }}>
+                © 2026 KOITION · <span style={{ color: 'rgba(255,255,255,0.6)' }}>KOREA INNOVATION</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 우측 로그인 폼 - 1:1 비율 */}
+        <div style={{
+          flex: 1, background: T.surface,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: S[10]
+        }}>
+          <div style={{ width: '100%', maxWidth: 400 }}>
+            <div style={{ 
+              fontSize: 11, color: T.brand, fontWeight: 600,
+              letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: S[3] 
+            }}>
+              SIGN IN
+            </div>
+            <h2 style={{ 
+              fontSize: 28, fontWeight: 700, color: T.ink, margin: 0,
+              letterSpacing: '-0.02em'
+            }}>
+              로그인
+            </h2>
+            <p style={{ fontSize: 13, color: T.textMute, marginTop: S[2], marginBottom: S[7] }}>
+              인사평가·급여 관리 시스템에 접속합니다
+            </p>
+            
+            <div style={{ marginBottom: S[4] }}>
+              <label style={{ 
+                fontSize: 11, color: T.textMute, fontWeight: 600,
+                letterSpacing: '0.1em', textTransform: 'uppercase', display: 'block', marginBottom: S[2]
+              }}>
+                아이디
+              </label>
+              <input type="text" value={username} onChange={e => setUsername(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+                placeholder="username"
+                style={{ 
+                  width: '100%', padding: '12px 14px', 
+                  border: `1px solid ${T.border}`, borderRadius: 6,
+                  fontSize: 14, background: T.surface, boxSizing: 'border-box',
+                  fontFamily: FONT, outline: 'none', transition: 'border 0.15s'
+                }}
+                onFocus={e => e.target.style.borderColor = T.brand}
+                onBlur={e => e.target.style.borderColor = T.border}
+              />
+            </div>
+            
+            <div style={{ marginBottom: S[3] }}>
+              <label style={{ 
+                fontSize: 11, color: T.textMute, fontWeight: 600,
+                letterSpacing: '0.1em', textTransform: 'uppercase', display: 'block', marginBottom: S[2]
+              }}>
+                비밀번호
+              </label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+                placeholder="••••••••"
+                style={{ 
+                  width: '100%', padding: '12px 14px',
+                  border: `1px solid ${T.border}`, borderRadius: 6,
+                  fontSize: 14, background: T.surface, boxSizing: 'border-box',
+                  fontFamily: FONT, outline: 'none', transition: 'border 0.15s'
+                }}
+                onFocus={e => e.target.style.borderColor = T.brand}
+                onBlur={e => e.target.style.borderColor = T.border}
+              />
+            </div>
+            
+            {error && (
+              <div style={{ 
+                fontSize: 12, color: T.danger, padding: `${S[2]}px ${S[3]}px`,
+                background: T.accentSoft, borderRadius: 4, marginBottom: S[3],
+                display: 'flex', alignItems: 'center', gap: S[2]
+              }}>
+                <AlertCircle size={14} /> {error}
+              </div>
+            )}
+            
+            <button onClick={handleSubmit} style={{
+              width: '100%', padding: '14px',
+              background: T.brand, color: '#fff', border: 'none', borderRadius: 6,
+              fontSize: 14, fontWeight: 600, cursor: 'pointer',
+              letterSpacing: '0.05em', fontFamily: FONT,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: S[2],
+              transition: 'background 0.15s', marginTop: S[4]
+            }}
+            onMouseEnter={e => e.target.style.background = T.brandDark}
+            onMouseLeave={e => e.target.style.background = T.brand}
+            >
+              <LogIn size={16} /> 로그인
+            </button>
+            
+            <div style={{ 
+              marginTop: S[7], padding: S[4],
+              background: T.surfaceAlt, borderRadius: 6,
+              fontSize: 11, color: T.textMute, lineHeight: 1.8
+            }}>
+              <div style={{ fontWeight: 600, color: T.ink, marginBottom: S[2], fontSize: 11, letterSpacing: '0.05em' }}>
+                테스트 계정
+              </div>
+              <div><code style={{ background: T.surface, padding: '1px 5px', borderRadius: 3, color: T.brand }}>admin</code> / admin · 인사담당자</div>
+              <div><code style={{ background: T.surface, padding: '1px 5px', borderRadius: 3, color: T.brand }}>ljm</code> / 1234 · 이종민 부서장</div>
+              <div><code style={{ background: T.surface, padding: '1px 5px', borderRadius: 3, color: T.brand }}>owk</code> / 1234 · 오윤경 (직원)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ============================================================
+// 대시보드
+// ============================================================
+function DashboardView({ user, stats, employees, results, policy, setTab, submissions }) {
+  if (user.role === 'employee') {
+    const emp = employees[0];
+    const status = submissions[emp?.id];
+    return (
+      <div>
+        <PageHeader 
+          eyebrow="My Dashboard"
+          title={`${user.name}님, 환영합니다`}
+          subtitle="2026년 인사평가 진행 상황을 확인하세요"
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: S[5] }}>
+          <div style={{ ...card(), padding: S[7] }}>
+            <div style={{ fontSize: 11, color: T.brand, fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: S[3] }}>
+              자기 평가 현황
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: S[5], marginBottom: S[5] }}>
+              <div style={{
+                width: 64, height: 64, borderRadius: 32,
+                background: status === 'self_submitted' ? T.success : T.warning,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff'
+              }}>
+                {status === 'self_submitted' ? <CheckCircle2 size={32} /> : <FileText size={28} />}
+              </div>
+              <div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: T.ink }}>
+                  {status === 'self_submitted' ? '제출 완료' : '작성 중'}
+                </div>
+                <div style={{ fontSize: 13, color: T.textMute, marginTop: S[1] }}>
+                  {status === 'self_submitted' ? '평가자가 검토 중입니다' : '자기 평가를 작성해주세요'}
+                </div>
+              </div>
+            </div>
+            <Button variant="primary" icon={ChevronRight} onClick={() => setTab('self')}>
+              내 평가 입력하기
+            </Button>
+          </div>
+          
+          <div style={{ ...card(), padding: S[6] }}>
+            <div style={{ fontSize: 11, color: T.brand, fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: S[4] }}>
+              내 정보
+            </div>
+            <InfoRow label="사번" value={emp?.id} />
+            <InfoRow label="부서" value={emp?.dept} />
+            <InfoRow label="직위" value={`${emp?.position} · ${emp?.level}`} />
+            <InfoRow label="직무군" value={emp?.group} />
+            <InfoRow label="입사일" value={emp?.hireDate} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const targets = employees.filter(e => e.evalTarget);
+  const completed = targets.filter(e => results[e.id]?.grade).length;
+  const completion = targets.length > 0 ? (completed / targets.length * 100) : 0;
+  const gradeCount = { S: 0, A: 0, B: 0, C: 0, D: 0 };
+  targets.forEach(e => { const g = results[e.id]?.grade?.grade; if (g) gradeCount[g]++; });
+  const total2025 = employees.reduce((s, e) => s + (Number(e.baseSalary || 0) + Number(e.allowance || 0) + Number(e.mealCar || 0) + Number(e.qualif || 0)) * 12, 0);
+  const total2026 = employees.reduce((s, e) => s + (results[e.id]?.totalComp2026 || 0), 0);
+  const delta = total2026 - total2025;
+  const deltaPct = total2025 > 0 ? ((delta / total2025) * 100) : 0;
+  const scopeLabel = user.role === 'admin' ? '전사' : user.deptScope;
+  
+  // 인건비 정보 표시 권한 (admin·manager만)
+  const canViewSalary = user.role === 'admin' || user.role === 'manager';
+
+  return (
+    <div>
+      <PageHeader 
+        eyebrow={`${user.role === 'admin' ? 'ADMIN' : user.role === 'manager' ? 'MANAGER' : user.role === 'evaluator' ? 'EVALUATOR' : 'EMPLOYEE'} · ${scopeLabel}`}
+        title="대시보드"
+        subtitle={`${scopeLabel} 2026년 인사평가 진행 현황${canViewSalary ? ' 및 보상 시뮬레이션' : ''}`}
+      />
+      
+      {/* 메트릭 카드 - 권한별 컬럼 수 자동 조정 */}
+      <div style={{ 
+        display: 'grid', 
+        gridTemplateColumns: canViewSalary ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)', 
+        gap: S[4], marginBottom: S[6] 
+      }}>
+        <MetricCard 
+          icon={Users} 
+          label={user.role === 'admin' ? '전체 직원' : '담당 인원'} 
+          value={targets.length + (employees.length - targets.length)} 
+          unit="명" 
+          sub={`평가대상 ${targets.length}명 · 제외 ${employees.length - targets.length}명`}
+        />
+        <MetricCard 
+          icon={UserCheck} 
+          label="평가 완료" 
+          value={completed} 
+          unit={`/${targets.length}`}
+          sub={`진행률 ${completion.toFixed(0)}%`}
+          progress={completion}
+          color={completion === 100 ? T.success : T.brand}
+        />
+        
+        {/* 인건비 카드 - admin·manager만 표시 */}
+        {canViewSalary && (
+          <>
+            <MetricCard 
+              icon={Wallet} 
+              label="2026 예상 인건비" 
+              value={fmtMan(total2026)} 
+              unit="원"
+              sub={`2025 대비 ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(1)}%`}
+              color={T.brand}
+            />
+            <MetricCard 
+              icon={TrendingUp} 
+              label="총 증감액" 
+              value={(delta >= 0 ? '+' : '') + fmtMan(delta)} 
+              unit="원"
+              sub={`전년 ${fmtMan(total2025)}원`}
+              color={delta >= 0 ? T.success : T.danger}
+            />
+          </>
+        )}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: S[5] }}>
+        {/* 등급 분포 */}
+        <div style={{ ...card(), padding: S[6] }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: S[5] }}>
+            <div>
+              <div style={{ fontSize: 11, color: T.brand, fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: S[1] }}>
+                Grade Distribution
+              </div>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: T.ink }}>등급 분포</h3>
+            </div>
+            <div style={{ fontSize: 11, color: T.textMute }}>실제 vs 권장</div>
+          </div>
+          {policy.grades.map(g => {
+            const count = gradeCount[g.grade];
+            const actPct = completed > 0 ? (count / completed * 100) : 0;
+            return (
+              <div key={g.grade} style={{ marginBottom: S[4], display: 'flex', alignItems: 'center', gap: S[4] }}>
+                <GradeBadge grade={g.grade} size="md" />
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
+                    <span style={{ color: T.textMute }}>{g.label}</span>
+                    <span style={{ color: T.ink }}>
+                      <strong>{count}명</strong>
+                      <span style={{ color: T.textLight, marginLeft: 6, fontSize: 11 }}>
+                        실제 {actPct.toFixed(0)}% · 권장 {g.dist}%
+                      </span>
+                    </span>
+                  </div>
+                  <div style={{ position: 'relative', height: 8, background: T.surfaceAlt, borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ 
+                      width: `${actPct}%`, height: '100%', background: T[g.grade], 
+                      borderRadius: 4, transition: 'width 0.4s ease' 
+                    }} />
+                    <div style={{ 
+                      position: 'absolute', left: `${g.dist}%`, top: -2, bottom: -2,
+                      width: 2, background: T.ink, opacity: 0.4 
+                    }} />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 평가 진행 상태 */}
+        <div style={{ ...card(), padding: S[6] }}>
+          <div style={{ marginBottom: S[5] }}>
+            <div style={{ fontSize: 11, color: T.brand, fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: S[1] }}>
+              Status
+            </div>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: T.ink }}>평가 진행 상태</h3>
+          </div>
+          <div style={{ maxHeight: 320, overflowY: 'auto', margin: `0 -${S[6]}px`, padding: `0 ${S[6]}px` }}>
+            {targets.map(emp => {
+              const r = results[emp.id]; const done = !!r?.grade;
+              return (
+                <div key={emp.id} style={{ 
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: `${S[3]}px 0`, borderBottom: `1px solid ${T.divider}`
+                }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: T.ink }}>{emp.name}</div>
+                    <div style={{ fontSize: 11, color: T.textMute, marginTop: 2 }}>{emp.position} · {emp.level}</div>
+                  </div>
+                  {done ? <GradeBadge grade={r.grade.grade} size="sm" /> : <Badge color={T.textLight} variant="outline" size="sm">미평가</Badge>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: `${S[2]}px 0`, borderBottom: `1px solid ${T.divider}` }}>
+      <span style={{ fontSize: 12, color: T.textMute }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 500, color: T.ink }}>{value}</span>
+    </div>
+  );
+}
+
+function MetricCard({ icon: Icon, label, value, unit, sub, progress, color = T.ink }) {
+  return (
+    <div style={{ ...card(), padding: S[5], position: 'relative', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: S[3] }}>
+        <div style={{ 
+          width: 36, height: 36, borderRadius: 8,
+          background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <Icon size={18} color={color} strokeWidth={2} />
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: T.textMute, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: S[2], fontWeight: 600 }}>
+        {label}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: S[1] }}>
+        <span style={{ fontSize: 28, fontWeight: 700, color, letterSpacing: '-0.02em', lineHeight: 1 }}>{value}</span>
+        <span style={{ fontSize: 13, color: T.textMute }}>{unit}</span>
+      </div>
+      {sub && <div style={{ fontSize: 11, color: T.textMute, marginTop: S[1] }}>{sub}</div>}
+      {progress != null && (
+        <div style={{ marginTop: S[3], height: 4, background: T.surfaceAlt, borderRadius: 2, overflow: 'hidden' }}>
+          <div style={{ width: `${progress}%`, height: '100%', background: color, transition: 'width 0.4s' }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// 직급별 평가 기준 안내 패널 (자기평가 화면 상단)
+// L1·L2 직원에게 특히 도움됨
+// ============================================================
+function LevelGuidePanel({ emp }) {
+  const [expanded, setExpanded] = useState(emp.level === 'L1' || emp.level === 'L2');
+  const guide = LEVEL_GUIDE[emp.level];
+  if (!guide) return null;
+  
+  const isJunior = emp.level === 'L1' || emp.level === 'L2';
+  const accentColor = guide.color;
+  
+  return (
+    <div style={{ 
+      ...card({ borderLeft: `4px solid ${accentColor}` }), 
+      padding: 0, marginBottom: S[5], overflow: 'hidden'
+    }}>
+      {/* 헤더 (항상 표시) */}
+      <button 
+        onClick={() => setExpanded(!expanded)}
+        style={{ 
+          width: '100%', padding: `${S[4]}px ${S[6]}px`,
+          background: isJunior ? 'linear-gradient(135deg, rgba(93,196,212,0.08) 0%, rgba(27,86,201,0.05) 100%)' : T.surface,
+          border: 'none', cursor: 'pointer', textAlign: 'left',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: S[4],
+          fontFamily: FONT
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: S[3] }}>
+          <div style={{ 
+            width: 40, height: 40, borderRadius: 8, background: accentColor,
+            color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 14, fontWeight: 800, letterSpacing: '0.05em'
+          }}>
+            {emp.level}
+          </div>
+          <div>
+            <div style={{ 
+              fontSize: 10, fontWeight: 700, color: accentColor, 
+              letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 2
+            }}>
+              {isJunior ? '★ 직급별 평가 기준 안내' : '직급별 평가 기준'}
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: T.ink }}>
+              {guide.label} <span style={{ fontSize: 11, color: T.textMute, fontWeight: 500, marginLeft: 6 }}>· {guide.desc}</span>
+            </div>
+            <div style={{ fontSize: 11, color: T.textMute, marginTop: 4 }}>
+              기대 평가 등급: <strong style={{ color: accentColor }}>{guide.expectedGrade}</strong>
+              {isJunior && <span style={{ color: T.accent, marginLeft: 8 }}>· 자기평가 시 참고하세요</span>}
+            </div>
+          </div>
+        </div>
+        <ChevronDown size={18} style={{ 
+          color: T.textMute, transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+          transition: 'transform 0.2s'
+        }}/>
+      </button>
+      
+      {/* 펼친 영역 */}
+      {expanded && (
+        <div style={{ padding: `0 ${S[6]}px ${S[5]}px`, borderTop: `1px solid ${T.divider}`, paddingTop: S[4] }}>
+          {/* 핵심 조언 */}
+          {guide.advice && (
+            <div style={{ 
+              padding: `${S[3]}px ${S[4]}px`, background: '#FFF8E6', borderLeft: `3px solid ${T.warning}`,
+              borderRadius: 4, marginBottom: S[4], display: 'flex', alignItems: 'flex-start', gap: S[2]
+            }}>
+              <Sparkles size={14} style={{ color: T.warning, flexShrink: 0, marginTop: 1 }} />
+              <div style={{ fontSize: 12, color: T.text, lineHeight: 1.7 }}>
+                <strong style={{ color: T.warning }}>💡 {emp.level} 자기평가 팁:</strong> {guide.advice}
+              </div>
+            </div>
+          )}
+          
+          {/* 역량/업적 기대 수준 2단 */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[4], marginBottom: S[4] }}>
+            {/* 역량 기대 수준 */}
+            <div>
+              <div style={{ 
+                fontSize: 11, fontWeight: 700, color: T.brand, letterSpacing: '0.15em',
+                textTransform: 'uppercase', marginBottom: S[3], paddingBottom: 6,
+                borderBottom: `2px solid ${T.brand}`
+              }}>
+                역량 평가 기대 수준
+              </div>
+              {Object.entries(guide.competency).map(([key, value]) => (
+                <div key={key} style={{ marginBottom: S[3] }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.ink, marginBottom: 3 }}>
+                    {key}
+                  </div>
+                  <div style={{ fontSize: 11, color: T.text, lineHeight: 1.6 }}>
+                    {value}
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            {/* 업적 기대 수준 */}
+            <div>
+              <div style={{ 
+                fontSize: 11, fontWeight: 700, color: T.success, letterSpacing: '0.15em',
+                textTransform: 'uppercase', marginBottom: S[3], paddingBottom: 6,
+                borderBottom: `2px solid ${T.success}`
+              }}>
+                업적 평가 기대 수준
+              </div>
+              {Object.entries(guide.performance).map(([key, value]) => (
+                <div key={key} style={{ marginBottom: S[3] }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.ink, marginBottom: 3 }}>
+                    {key}
+                  </div>
+                  <div style={{ fontSize: 11, color: T.text, lineHeight: 1.6 }}>
+                    {value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* KPI 집중 영역 */}
+          <div style={{ 
+            padding: `${S[3]}px ${S[4]}px`, background: T.surfaceAlt, borderRadius: 6,
+            display: 'flex', alignItems: 'center', gap: S[3]
+          }}>
+            <div style={{ 
+              fontSize: 10, fontWeight: 700, color: T.textMute, letterSpacing: '0.1em',
+              textTransform: 'uppercase', flexShrink: 0
+            }}>
+              KPI 집중 영역
+            </div>
+            <div style={{ fontSize: 11, color: T.text, fontWeight: 500 }}>
+              {guide.kpiFocus}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// 자기평가 ScoreRow + 평가 기준 보기 인라인 펼침
+// ============================================================
+function SelfScoreRowWithGuide({ itemKey, label, weight, desc, value, onChange, disabled, empLevel, category }) {
+  const [guideOpen, setGuideOpen] = useState(false);
+  
+  // RUBRICS에서 해당 항목의 5단계 기준 찾기
+  const rubric = RUBRICS[category]?.find(r => r.key === itemKey);
+  
+  // L1·L2의 기대 등급 박스 강조
+  const expectedGrade = LEVEL_GUIDE[empLevel]?.expectedGrade || '';
+  const expectedGradeMatch = expectedGrade.match(/([SABCD])급?[~\-]?([SABCD])?/);
+  const expectedGrades = expectedGradeMatch 
+    ? (expectedGradeMatch[2] ? [expectedGradeMatch[1], expectedGradeMatch[2]] : [expectedGradeMatch[1]])
+    : [];
+  const isInExpectedRange = (g) => {
+    if (expectedGrades.length === 0) return false;
+    const order = { S: 5, A: 4, B: 3, C: 2, D: 1 };
+    if (expectedGrades.length === 1) return g === expectedGrades[0];
+    const min = Math.min(order[expectedGrades[0]], order[expectedGrades[1]]);
+    const max = Math.max(order[expectedGrades[0]], order[expectedGrades[1]]);
+    return order[g] >= min && order[g] <= max;
+  };
+  
+  return (
+    <div style={{ 
+      padding: `${S[4]}px 0`, borderBottom: `1px solid ${T.divider}` 
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: S[4] }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: T.ink }}>{label}</div>
+            <Badge color={T.brand} variant="outline" size="sm">{weight}%</Badge>
+            {rubric && (
+              <button 
+                onClick={() => setGuideOpen(!guideOpen)}
+                style={{ 
+                  padding: '2px 8px', background: guideOpen ? T.brand : 'transparent',
+                  color: guideOpen ? '#fff' : T.brand,
+                  border: `1px solid ${T.brand}`, borderRadius: 3,
+                  fontSize: 10, fontWeight: 600, cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  fontFamily: FONT, transition: 'all 0.15s'
+                }}
+              >
+                <FileText size={10} />
+                {guideOpen ? '기준 닫기' : '평가 기준 보기'}
+              </button>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: T.textMute }}>{desc}</div>
+        </div>
+        <input
+          type="number" min="0" max="100" step="1"
+          value={value ?? ''} onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))}
+          disabled={disabled}
+          style={{ 
+            width: 90, padding: '10px 12px', border: `1px solid ${T.border}`, borderRadius: 6,
+            fontSize: 18, textAlign: 'center', fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+            color: T.ink, background: disabled ? T.surfaceAlt : T.surface, outline: 'none',
+            fontFamily: '"SF Mono", Monaco, monospace'
+          }}
+          onFocus={e => e.target.style.borderColor = T.brand}
+          onBlur={e => e.target.style.borderColor = T.border}
+        />
+      </div>
+      
+      {/* 평가 기준 펼침 영역 */}
+      {guideOpen && rubric && (
+        <div style={{ 
+          marginTop: S[3], padding: S[4], 
+          background: T.surfaceAlt, borderRadius: 6,
+          border: `1px solid ${T.divider}`
+        }}>
+          <div style={{ fontSize: 11, color: T.textMute, marginBottom: S[3], lineHeight: 1.6 }}>
+            <strong style={{ color: T.text }}>{rubric.label}</strong> · {rubric.desc}
+          </div>
+          
+          {/* 5단계 기준 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: S[2] }}>
+            {rubric.bands.map(band => {
+              const isExpected = isInExpectedRange(band.grade);
+              return (
+                <div key={band.grade} style={{ 
+                  display: 'grid', gridTemplateColumns: 'auto auto 1fr', gap: S[3],
+                  alignItems: 'flex-start',
+                  padding: `${S[2]}px ${S[3]}px`,
+                  background: isExpected ? 'rgba(214,56,56,0.05)' : T.surface,
+                  border: `1px solid ${isExpected ? T.accent : T.border}`,
+                  borderLeft: `3px solid ${T[band.grade]}`,
+                  borderRadius: 4
+                }}>
+                  <GradeBadge grade={band.grade} size="sm" />
+                  <div style={{ 
+                    fontSize: 11, fontWeight: 700, color: T.text, 
+                    minWidth: 55, fontFamily: '"SF Mono", Monaco, monospace',
+                    fontVariantNumeric: 'tabular-nums'
+                  }}>
+                    {band.range}점
+                  </div>
+                  <div style={{ fontSize: 11, color: T.text, lineHeight: 1.6 }}>
+                    {band.criteria}
+                    {isExpected && (
+                      <span style={{ 
+                        marginLeft: 8, padding: '1px 6px', background: T.accent, 
+                        color: '#fff', borderRadius: 3, fontSize: 9, fontWeight: 700, letterSpacing: '0.05em'
+                      }}>
+                        {empLevel} 기대 수준
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// 자기 평가
+// ============================================================
+function SelfEvalView({ user, employees, selfScores, updateSelfScore, comments, updateComment, policy, submissions, submitSelfEval }) {
+  const emp = employees.find(e => e.id === user.empId);
+  if (!emp) return <EmptyState icon={AlertCircle} title="평가 대상이 아닙니다" desc="시스템 관리자에게 문의하세요" />;
+  if (!emp.evalTarget) return <EmptyState icon={AlertCircle} title="평가 대상자가 아닙니다" desc="대표이사·자문 등 평가 제외 대상입니다" />;
+  
+  const sc = selfScores[emp.id] || {};
+  const cm = comments[emp.id] || {};
+  const submitted = submissions[emp.id] === 'self_submitted';
+  const selfComp = calcCompScore(sc, policy);
+  const selfPerf = calcPerfScore(sc, policy);
+  const selfTotal = calcTotal(selfComp, selfPerf, policy);
+
+  return (
+    <div>
+      <PageHeader 
+        eyebrow="Self Evaluation"
+        title="내 평가 입력"
+        subtitle="본인의 한 해를 돌아보며 자기 평가를 작성해주세요. 제출 후 평가자가 검토합니다."
+      />
+      
+      {/* 직급별 평가 기준 안내 패널 (L1·L2 강조) */}
+      <LevelGuidePanel emp={emp} />
+      
+      <div style={{ ...card(), padding: S[6], marginBottom: S[5] }}>
+        <div style={{ 
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+          paddingBottom: S[5], marginBottom: S[5], borderBottom: `1px solid ${T.border}` 
+        }}>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: T.ink, marginBottom: S[1] }}>{emp.name}</div>
+            <div style={{ fontSize: 13, color: T.textMute, display: 'flex', gap: S[3], flexWrap: 'wrap' }}>
+              <span>{emp.id}</span>
+              <span style={{ color: T.borderStrong }}>·</span>
+              <span>{emp.dept}</span>
+              <span style={{ color: T.borderStrong }}>·</span>
+              <span>{emp.position}</span>
+              <Badge color={T.brand} variant="outline" size="sm">{emp.level}</Badge>
+              <Badge color={groupColor(emp.group)} variant="solid" size="sm">{emp.group}</Badge>
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            {submitted ? (
+              <div style={{ 
+                padding: `${S[2]}px ${S[4]}px`, background: T.success, color: '#fff',
+                borderRadius: 6, fontSize: 13, fontWeight: 600,
+                display: 'flex', alignItems: 'center', gap: S[2]
+              }}>
+                <CheckCircle2 size={16} /> 제출 완료
+              </div>
+            ) : (
+              <Badge color={T.warning} variant="solid">작성 중</Badge>
+            )}
+            {selfTotal != null && (
+              <div style={{ fontSize: 12, color: T.textMute, marginTop: S[2] }}>
+                예상 점수 <strong style={{ color: T.brand, fontSize: 14 }}>{selfTotal.toFixed(1)}</strong>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        <SectionTitle>역량 자기평가</SectionTitle>
+        {[
+          { key: 'comp_expert', label: '직무 전문성', weight: policy.comp_expert, desc: '본인의 직무 전문성에 대해 평가해주세요' },
+          { key: 'comp_problem', label: '문제해결력', weight: policy.comp_problem, desc: '복잡한 문제 해결 능력에 대해 평가해주세요' },
+          { key: 'comp_learn', label: '학습·자기계발', weight: policy.comp_learn, desc: '학습 및 자기계발 노력을 평가해주세요' },
+          { key: 'comp_collab', label: '협업·커뮤니케이션', weight: policy.comp_collab, desc: '팀워크와 소통 능력을 평가해주세요' },
+        ].map(it => <SelfScoreRowWithGuide key={it.key} itemKey={it.key} label={it.label} weight={it.weight} desc={it.desc} value={sc[it.key]} onChange={v => updateSelfScore(emp.id, it.key, v)} disabled={submitted} empLevel={emp.level} category="comp" />)}
+        
+        <div style={{ marginTop: S[7] }}>
+          <SectionTitle>업적 자기평가</SectionTitle>
+          {[
+            { key: 'perf_kpi', label: 'KPI 달성도', weight: policy.perf_kpi, desc: '본인의 KPI 달성률을 평가해주세요' },
+            { key: 'perf_profit', label: '프로젝트 수익성', weight: policy.perf_profit, desc: '담당 프로젝트의 수익성 기여를 평가해주세요' },
+            { key: 'perf_delivery', label: '납기·완성도', weight: policy.perf_delivery, desc: '납기 준수 및 결과물 품질을 평가해주세요' },
+            { key: 'perf_customer', label: '고객 만족도', weight: policy.perf_customer, desc: '고객 만족도와 재계약 기여를 평가해주세요' },
+          ].map(it => <SelfScoreRowWithGuide key={it.key} itemKey={it.key} label={it.label} weight={it.weight} desc={it.desc} value={sc[it.key]} onChange={v => updateSelfScore(emp.id, it.key, v)} disabled={submitted} empLevel={emp.level} category="perf" />)}
+        </div>
+      </div>
+      
+      <div style={{ ...card(), padding: S[6], marginBottom: S[5] }}>
+        <SectionTitle>본인 의견</SectionTitle>
+        <CommentFieldWithGuide 
+          label="올해의 성과·강점" 
+          placeholder="올해 본인이 이뤄낸 성과나 강점을 자유롭게 작성해주세요" 
+          value={cm.selfStrength} 
+          onChange={v => updateComment(emp.id, 'selfStrength', v)} 
+          disabled={submitted}
+          guideKey="selfStrength"
+          empGroup={emp.group}
+        />
+        <CommentFieldWithGuide 
+          label="개선하고 싶은 점" 
+          placeholder="향후 개선하거나 발전시키고 싶은 부분을 작성해주세요" 
+          value={cm.selfImprovement} 
+          onChange={v => updateComment(emp.id, 'selfImprovement', v)} 
+          disabled={submitted}
+          guideKey="selfImprovement"
+          empGroup={emp.group}
+        />
+        <CommentFieldWithGuide 
+          label="내년 목표·요청사항" 
+          placeholder="내년 도전 목표나 회사에 대한 요청을 작성해주세요" 
+          value={cm.selfGoal} 
+          onChange={v => updateComment(emp.id, 'selfGoal', v)} 
+          disabled={submitted}
+          guideKey="selfGoal"
+          empGroup={emp.group}
+        />
+        {!submitted && (
+          <div style={{ marginTop: S[5], paddingTop: S[4], borderTop: `1px solid ${T.divider}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: S[3] }}>
+              <div style={{ fontSize: 12, color: T.textMute, lineHeight: 1.6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: S[2], marginBottom: 4 }}>
+                  <AlertCircle size={14} style={{ color: T.warning }} />
+                  <strong style={{ color: T.text }}>제출 전 확인사항</strong>
+                </div>
+                <div>제출 후에는 수정할 수 없으니 신중히 검토해주세요.</div>
+              </div>
+              <button
+                onClick={() => {
+                  const ok = window.confirm('자기 평가를 제출하시겠습니까?\n제출 후에는 수정할 수 없습니다.');
+                  if (ok) {
+                    submitSelfEval(emp.id);
+                  }
+                }}
+                style={{
+                  padding: '14px 28px',
+                  background: T.brand,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 6,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: FONT,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  letterSpacing: '0.02em',
+                  boxShadow: '0 2px 8px rgba(27, 58, 111, 0.2)',
+                  transition: 'all 0.15s'
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = T.brandDark;
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(27, 58, 111, 0.3)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = T.brand;
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(27, 58, 111, 0.2)';
+                }}
+              >
+                <CheckCircle2 size={16} /> 자기 평가 제출
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SectionTitle({ children, accent }) {
+  return (
+    <div style={{ 
+      display: 'flex', alignItems: 'baseline', gap: S[3], marginBottom: S[4],
+      paddingBottom: S[2], borderBottom: `2px solid ${T.brand}`
+    }}>
+      <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.ink }}>{children}</h3>
+      {accent && <span style={{ fontSize: 12, color: T.textMute }}>{accent}</span>}
+    </div>
+  );
+}
+
+function ScoreRow({ label, weight, desc, value, onChange, disabled, selfValue }) {
+  const diff = selfValue != null && value != null ? value - selfValue : null;
+  const cols = selfValue !== undefined ? '1fr 220px 90px 70px' : '1fr 220px 90px';
+  return (
+    <div style={{ 
+      display: 'grid', gridTemplateColumns: cols, gap: S[4], 
+      alignItems: 'center', padding: `${S[3]}px 0`,
+      borderBottom: `1px solid ${T.divider}`, opacity: disabled ? 0.6 : 1
+    }}>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 500, color: T.ink }}>
+          {label} <span style={{ color: T.brand, fontSize: 12, fontWeight: 600 }}>{weight}%</span>
+        </div>
+        <div style={{ fontSize: 11, color: T.textMute, marginTop: 2, lineHeight: 1.5 }}>{desc}</div>
+        {selfValue != null && (
+          <div style={{ fontSize: 11, color: T.brand, marginTop: 4, fontWeight: 500 }}>
+            본인 평가: {selfValue}점
+          </div>
+        )}
+      </div>
+      <input type="range" min="0" max="100" step="1" value={value ?? 75} 
+        onChange={e => onChange(e.target.value)} disabled={disabled}
+        style={{ width: '100%' }} />
+      <input type="number" min="0" max="100" value={value ?? ''} 
+        onChange={e => onChange(e.target.value)} disabled={disabled} placeholder="0-100"
+        style={{ 
+          padding: '8px 12px', border: `1px solid ${T.border}`, borderRadius: 6,
+          fontSize: 14, textAlign: 'center', background: disabled ? T.surfaceAlt : T.surface, 
+          fontFamily: FONT, fontWeight: 600, color: T.ink, outline: 'none'
+        }} />
+      {selfValue !== undefined && (
+        <div style={{ 
+          fontSize: 12, textAlign: 'center', fontWeight: 600,
+          color: diff == null ? T.textLight : diff > 0 ? T.success : diff < 0 ? T.danger : T.textMute 
+        }}>
+          {diff != null ? (diff > 0 ? '+' : '') + diff : '-'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CommentField({ label, placeholder, value, onChange, disabled }) {
+  return (
+    <div style={{ marginBottom: S[4] }}>
+      <label style={{ fontSize: 12, fontWeight: 600, color: T.text, display: 'block', marginBottom: S[2] }}>
+        {label}
+      </label>
+      <textarea value={value || ''} onChange={e => onChange(e.target.value)} 
+        placeholder={placeholder} rows={3} disabled={disabled}
+        style={{ 
+          width: '100%', padding: '12px 14px', 
+          border: `1px solid ${T.border}`, borderRadius: 6,
+          fontSize: 13, fontFamily: FONT, lineHeight: 1.7,
+          background: disabled ? T.surfaceAlt : T.surface, 
+          boxSizing: 'border-box', resize: 'vertical', outline: 'none',
+          color: T.ink
+        }}
+        onFocus={e => !disabled && (e.target.style.borderColor = T.brand)}
+        onBlur={e => e.target.style.borderColor = T.border}
+      />
+    </div>
+  );
+}
+
+// ============================================================
+// CommentFieldWithGuide - 작성 가이드 + 좋은 예시 인라인 펼침
+// 자기평가 의견란 전용 (직무군별 차별화된 예시 제공)
+// ============================================================
+function CommentFieldWithGuide({ label, placeholder, value, onChange, disabled, guideKey, empGroup }) {
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('good');  // 'good' | 'bad'
+  const guide = COMMENT_GUIDE[guideKey];
+  
+  if (!guide) {
+    // 가이드가 없으면 기본 CommentField로 폴백
+    return <CommentField label={label} placeholder={placeholder} value={value} onChange={onChange} disabled={disabled} />;
+  }
+  
+  // 직무군별 좋은 예시 (없으면 Archive 기본값)
+  const goodExamples = guide.examples.good[empGroup] || guide.examples.good['Archive'];
+  const charCount = (value || '').length;
+  
+  // 예시를 텍스트 영역에 삽입하는 핸들러
+  const insertExample = (example) => {
+    if (disabled) return;
+    if (value && value.trim().length > 0) {
+      if (!window.confirm('현재 작성 중인 내용이 있습니다. 예시로 교체하시겠습니까?')) return;
+    }
+    onChange(example);
+    setGuideOpen(false);
+  };
+  
+  return (
+    <div style={{ marginBottom: S[4] }}>
+      {/* 라벨 + 가이드 버튼 */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: S[2], gap: S[2] }}>
+        <label style={{ fontSize: 12, fontWeight: 600, color: T.text }}>
+          {label}
+          <span style={{ fontSize: 11, color: T.textMute, fontWeight: 500, marginLeft: 6 }}>· {charCount}자</span>
+        </label>
+        <button
+          type="button"
+          onClick={() => setGuideOpen(!guideOpen)}
+          style={{ 
+            padding: '4px 10px', background: guideOpen ? T.brand : 'transparent',
+            color: guideOpen ? '#fff' : T.brand,
+            border: `1px solid ${T.brand}`, borderRadius: 4,
+            fontSize: 10, fontWeight: 600, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            fontFamily: FONT, transition: 'all 0.15s'
+          }}
+        >
+          <Sparkles size={11} />
+          {guideOpen ? '가이드 닫기' : '작성 가이드 + 예시 보기'}
+        </button>
+      </div>
+      
+      {/* 작성 가이드 펼침 영역 */}
+      {guideOpen && (
+        <div style={{ 
+          marginBottom: S[3], padding: S[4], 
+          background: T.surfaceAlt, borderRadius: 6,
+          border: `1px solid ${T.divider}`,
+          borderLeft: `3px solid ${T.brand}`
+        }}>
+          {/* 목적 */}
+          <div style={{ 
+            fontSize: 11, color: T.text, lineHeight: 1.7, marginBottom: S[3],
+            padding: `${S[2]}px ${S[3]}px`, background: T.surface, borderRadius: 4
+          }}>
+            <strong style={{ color: T.brand }}>📌 작성 목적:</strong> {guide.purpose}
+          </div>
+          
+          {/* 작성 원칙 4가지 */}
+          <div style={{ marginBottom: S[3] }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.textMute, letterSpacing: '0.1em', marginBottom: S[2] }}>
+              작성 원칙
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: S[2] }}>
+              {guide.principles.map((p, i) => (
+                <div key={i} style={{ 
+                  padding: `${S[2]}px ${S[3]}px`, background: T.surface, 
+                  borderRadius: 4, border: `1px solid ${T.border}`
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.ink, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span>{p.icon}</span> {p.title}
+                  </div>
+                  <div style={{ fontSize: 10, color: T.textMute, lineHeight: 1.5 }}>
+                    {p.desc}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* 좋은 예시 / 나쁜 예시 탭 */}
+          <div style={{ marginTop: S[3] }}>
+            <div style={{ 
+              display: 'flex', gap: S[1], marginBottom: S[2],
+              borderBottom: `1px solid ${T.border}`, paddingBottom: 0
+            }}>
+              <button
+                type="button"
+                onClick={() => setActiveTab('good')}
+                style={{ 
+                  padding: `${S[2]}px ${S[3]}px`, background: 'transparent',
+                  border: 'none', cursor: 'pointer', fontFamily: FONT,
+                  borderBottom: activeTab === 'good' ? `2px solid ${T.success}` : '2px solid transparent',
+                  color: activeTab === 'good' ? T.success : T.textMute,
+                  fontSize: 11, fontWeight: 700, marginBottom: -1,
+                  display: 'flex', alignItems: 'center', gap: 4
+                }}
+              >
+                <CheckCircle2 size={11} />
+                좋은 예시 ({empGroup})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('bad')}
+                style={{ 
+                  padding: `${S[2]}px ${S[3]}px`, background: 'transparent',
+                  border: 'none', cursor: 'pointer', fontFamily: FONT,
+                  borderBottom: activeTab === 'bad' ? `2px solid ${T.danger}` : '2px solid transparent',
+                  color: activeTab === 'bad' ? T.danger : T.textMute,
+                  fontSize: 11, fontWeight: 700, marginBottom: -1,
+                  display: 'flex', alignItems: 'center', gap: 4
+                }}
+              >
+                <X size={11} />
+                피해야 할 예시
+              </button>
+            </div>
+            
+            {/* 탭 내용 */}
+            {activeTab === 'good' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: S[2] }}>
+                {goodExamples.map((example, i) => (
+                  <div key={i} style={{ 
+                    padding: `${S[3]}px ${S[3]}px`, background: '#F0F7F1', 
+                    borderRadius: 4, border: `1px solid ${T.success}`,
+                    position: 'relative'
+                  }}>
+                    <div style={{ 
+                      fontSize: 9, fontWeight: 700, color: T.success, 
+                      letterSpacing: '0.1em', marginBottom: 4
+                    }}>
+                      ✓ 좋은 예시 {i + 1}
+                    </div>
+                    <div style={{ fontSize: 11, color: T.text, lineHeight: 1.7, marginBottom: S[2] }}>
+                      {example}
+                    </div>
+                    {!disabled && (
+                      <button
+                        type="button"
+                        onClick={() => insertExample(example)}
+                        style={{ 
+                          padding: '3px 8px', background: T.success, color: '#fff',
+                          border: 'none', borderRadius: 3, cursor: 'pointer',
+                          fontSize: 10, fontWeight: 600, fontFamily: FONT,
+                          display: 'inline-flex', alignItems: 'center', gap: 3
+                        }}
+                      >
+                        <Pencil size={9} />
+                        이 예시를 출발점으로 사용
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <div style={{ 
+                  fontSize: 10, color: T.textMute, marginTop: 4, padding: 6,
+                  background: 'transparent', borderRadius: 4, lineHeight: 1.6
+                }}>
+                  💡 위 예시는 <strong>{empGroup} 직무군</strong> 기준입니다. 그대로 복사하지 말고, 본인 상황에 맞게 수치와 사례를 바꿔서 활용하세요.
+                </div>
+              </div>
+            )}
+            
+            {activeTab === 'bad' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: S[2] }}>
+                {guide.examples.bad.map((example, i) => (
+                  <div key={i} style={{ 
+                    padding: `${S[3]}px ${S[3]}px`, background: '#FBEAEA', 
+                    borderRadius: 4, border: `1px solid ${T.danger}`
+                  }}>
+                    <div style={{ 
+                      fontSize: 9, fontWeight: 700, color: T.danger, 
+                      letterSpacing: '0.1em', marginBottom: 4
+                    }}>
+                      ✗ 피해야 할 예시 {i + 1}
+                    </div>
+                    <div style={{ fontSize: 11, color: T.text, lineHeight: 1.7 }}>
+                      {example}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      
+      {/* 텍스트 영역 */}
+      <textarea value={value || ''} onChange={e => onChange(e.target.value)} 
+        placeholder={placeholder} rows={4} disabled={disabled}
+        style={{ 
+          width: '100%', padding: '12px 14px', 
+          border: `1px solid ${T.border}`, borderRadius: 6,
+          fontSize: 13, fontFamily: FONT, lineHeight: 1.7,
+          background: disabled ? T.surfaceAlt : T.surface, 
+          boxSizing: 'border-box', resize: 'vertical', outline: 'none',
+          color: T.ink
+        }}
+        onFocus={e => !disabled && (e.target.style.borderColor = T.brand)}
+        onBlur={e => e.target.style.borderColor = T.border}
+      />
+    </div>
+  );
+}
+
+function EmptyState({ icon: Icon, title, desc }) {
+  return (
+    <div style={{ padding: S[10], textAlign: 'center', color: T.textMute }}>
+      <Icon size={40} style={{ margin: '0 auto', display: 'block', marginBottom: S[3], color: T.textLight }} />
+      <div style={{ fontSize: 16, fontWeight: 600, color: T.ink, marginBottom: S[1] }}>{title}</div>
+      <div style={{ fontSize: 13 }}>{desc}</div>
+    </div>
+  );
+}
+
+// ============================================================
+// 직원 관리
+// ============================================================
+function EmployeesView({ employees, addEmployee, updateEmployee, deleteEmployee, history, results, currentYear, policy }) {
+  const [search, setSearch] = useState('');
+  const [filterDept, setFilterDept] = useState('전체');
+  const [filterStatus, setFilterStatus] = useState('전체');
+  const [editTarget, setEditTarget] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);  // 펼쳐진 직원 ID
+  const departments = ['전체', ...new Set(employees.map(e => e.dept))];
+  
+  const filtered = employees.filter(e => {
+    const ms = !search || e.name.includes(search) || e.id.includes(search);
+    const md = filterDept === '전체' || e.dept === filterDept;
+    const mst = filterStatus === '전체' || e.status === filterStatus;
+    return ms && md && mst;
+  });
+
+  const statusMap = {
+    active: { label: '재직', color: T.success },
+    leave: { label: '휴직', color: T.warning },
+    freelancer: { label: '프리랜서', color: T.textMute },
+    advisor: { label: '자문', color: T.brand }
+  };
+
+  const handleSaveEmployee = (data, isNew) => {
+    if (isNew) addEmployee(data);
+    else updateEmployee(data.id, data);
+    setEditTarget(null);
+  };
+
+  const handleAddMemo = (empId, memo) => {
+    const emp = employees.find(e => e.id === empId);
+    if (!emp) return;
+    const newMemo = { id: 'm_' + Date.now(), ...memo };
+    const memos = [newMemo, ...(emp.memos || [])];
+    updateEmployee(empId, { ...emp, memos });
+  };
+
+  const handleDeleteMemo = (empId, memoId) => {
+    const emp = employees.find(e => e.id === empId);
+    if (!emp) return;
+    const memos = (emp.memos || []).filter(m => m.id !== memoId);
+    updateEmployee(empId, { ...emp, memos });
+  };
+
+  const handleUpdateNote = (empId, note) => {
+    const emp = employees.find(e => e.id === empId);
+    if (!emp) return;
+    updateEmployee(empId, { ...emp, note });
+  };
+  
+  // ECount 연동 상태
+  const [ecountModalOpen, setEcountModalOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
+  // ECount 인사카드 양식으로 내보내기 (CSV)
+  const handleExportEcountCSV = () => {
+    const csv = employeesToEcountCSV(employees);
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    downloadFile(csv, `KOITION_인사카드_ECount양식_${today}.csv`, 'text/csv;charset=utf-8');
+  };
+  
+  // ECount 인사카드 양식으로 내보내기 (Excel .xlsx)
+  const handleExportEcountXLSX = async () => {
+    try {
+      setIsExporting(true);
+      const XLSX = await loadXLSXLib();
+      
+      // 한글 헤더로 변환된 데이터
+      const data = employees.map(emp => {
+        const row = {};
+        ECOUNT_HR_COLUMNS.forEach(col => {
+          row[col.label] = emp[col.key] ?? '';
+        });
+        return row;
+      });
+      
+      const ws = XLSX.utils.json_to_sheet(data, { 
+        header: ECOUNT_HR_COLUMNS.map(c => c.label) 
+      });
+      
+      // 컬럼 너비 자동 조정
+      ws['!cols'] = ECOUNT_HR_COLUMNS.map(c => ({ 
+        wch: Math.max(c.label.length * 2, 12) 
+      }));
+      
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '인사카드');
+      
+      const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbout], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `KOITION_인사카드_ECount양식_${today}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+    } catch (err) {
+      alert('Excel 내보내기 실패: ' + err.message);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  return (
+    <div>
+      <PageHeader 
+        eyebrow="Employees"
+        title="직원 관리"
+        subtitle={`전체 ${employees.length}명 · 재직 ${employees.filter(e => e.status === 'active').length}명 · 평가 대상 ${employees.filter(e => e.evalTarget).length}명 · 이름을 클릭하면 상세 정보가 펼쳐집니다`}
+        action={
+          <div style={{ display: 'flex', gap: S[2] }}>
+            <Button variant="outline" size="lg" icon={Building2} onClick={() => setEcountModalOpen(true)}>
+              ECount 연동
+            </Button>
+            <Button variant="primary" size="lg" icon={Plus} onClick={() => setEditTarget({ __isNew: true })}>
+              직원 추가
+            </Button>
+          </div>
+        }
+      />
+      
+      <div style={{ display: 'flex', gap: S[3], marginBottom: S[5] }}>
+        <div style={{ flex: 1, position: 'relative' }}>
+          <Search size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: T.textMute }} />
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)} 
+            placeholder="사번 또는 이름 검색"
+            style={{ 
+              width: '100%', padding: '10px 14px 10px 40px', 
+              border: `1px solid ${T.border}`, borderRadius: 6,
+              fontSize: 13, background: T.surface, boxSizing: 'border-box', 
+              fontFamily: FONT, outline: 'none'
+            }}
+            onFocus={e => e.target.style.borderColor = T.brand}
+            onBlur={e => e.target.style.borderColor = T.border}
+          />
+        </div>
+        <select value={filterDept} onChange={e => setFilterDept(e.target.value)} 
+          style={{ 
+            padding: '10px 14px', border: `1px solid ${T.border}`, borderRadius: 6,
+            fontSize: 13, background: T.surface, minWidth: 200, fontFamily: FONT, color: T.ink, outline: 'none'
+          }}>
+          {departments.map(d => <option key={d}>{d}</option>)}
+        </select>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} 
+          style={{ 
+            padding: '10px 14px', border: `1px solid ${T.border}`, borderRadius: 6,
+            fontSize: 13, background: T.surface, minWidth: 140, fontFamily: FONT, color: T.ink, outline: 'none'
+          }}>
+          <option value="전체">전체</option>
+          <option value="active">재직</option>
+          <option value="leave">휴직</option>
+          <option value="freelancer">프리랜서</option>
+          <option value="advisor">자문</option>
+        </select>
+      </div>
+
+      <div style={{ ...card(), padding: 0, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: T.surfaceAlt }}>
+              <Th>사번</Th><Th>성명</Th><Th>부서</Th><Th>직위</Th>
+              <Th align="center">레벨</Th><Th align="center">직무군</Th>
+              <Th>입사일</Th>
+              <Th align="right">기본급</Th>
+              <Th align="right">직책수당</Th>
+              <Th align="right">식대/차량</Th>
+              <Th align="right">자격</Th>
+              <Th align="center">상태</Th><Th align="center">평가</Th>
+              <Th align="center">메모</Th>
+              <Th align="center">관리</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((emp, idx) => {
+              const isInactive = emp.status !== 'active';
+              const st = statusMap[emp.status] || statusMap.active;
+              const isExpanded = expandedId === emp.id;
+              const memoCount = (emp.memos || []).length;
+              return (
+                <React.Fragment key={emp.id}>
+                  <tr style={{ 
+                    borderBottom: isExpanded ? 'none' : `1px solid ${T.divider}`,
+                    background: isExpanded ? T.surfaceAlt : (idx % 2 === 0 ? T.surface : '#FBFCFD'),
+                    color: isInactive ? T.textMute : T.text,
+                    transition: 'background 0.15s'
+                  }}>
+                    <Td><code style={{ fontSize: 11, color: T.textMute }}>{emp.id}</code></Td>
+                    <Td>
+                      <button onClick={() => setExpandedId(isExpanded ? null : emp.id)}
+                        style={{ 
+                          background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+                          display: 'inline-flex', alignItems: 'center', gap: 6, 
+                          fontFamily: FONT, color: T.ink, fontWeight: 600, fontSize: 13
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.color = T.brand}
+                        onMouseLeave={e => e.currentTarget.style.color = T.ink}
+                      >
+                        {emp.name}
+                        <ChevronDown size={12} style={{ 
+                          color: T.textMute, 
+                          transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.2s'
+                        }}/>
+                      </button>
+                    </Td>
+                    <Td>{emp.dept}</Td>
+                    <Td>{emp.position}</Td>
+                    <Td align="center"><Badge color={T.brand} variant="outline" size="sm">{emp.level}</Badge></Td>
+                    <Td align="center">
+                      <Badge color={groupColor(emp.group)} variant="solid" size="sm">{emp.group}</Badge>
+                    </Td>
+                    <Td>{emp.hireDate}</Td>
+                    <Td align="right" mono>{fmtKRW(emp.baseSalary)}</Td>
+                    <Td align="right" mono>{emp.allowance > 0 ? fmtKRW(emp.allowance) : '-'}</Td>
+                    <Td align="right" mono>{emp.mealCar > 0 ? fmtKRW(emp.mealCar) : '-'}</Td>
+                    <Td align="right" mono>{emp.qualif > 0 ? fmtKRW(emp.qualif) : '-'}</Td>
+                    <Td align="center"><Badge color={st.color} variant="solid" size="sm">{st.label}</Badge></Td>
+                    <Td align="center">
+                      {emp.evalTarget 
+                        ? <Badge color={T.success} variant="outline" size="sm">대상</Badge>
+                        : <span style={{ color: T.textLight, fontSize: 11 }}>제외</span>}
+                    </Td>
+                    <Td align="center">
+                      {memoCount > 0 
+                        ? <Badge color={T.brand} variant="solid" size="sm">{memoCount}</Badge>
+                        : <span style={{ color: T.textLight, fontSize: 11 }}>-</span>}
+                    </Td>
+                    <Td align="center">
+                      <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                        <button onClick={() => setEditTarget(emp)} title="수정"
+                          style={{ padding: 6, background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 4, cursor: 'pointer', display: 'inline-flex', color: T.brand }}
+                          onMouseEnter={e => e.currentTarget.style.background = T.surfaceAlt}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                          <Pencil size={13} />
+                        </button>
+                        <button onClick={() => { if (window.confirm(`${emp.name}님을 삭제하시겠습니까?\n삭제된 정보는 복구할 수 없습니다.`)) deleteEmployee(emp.id); }} title="삭제"
+                          style={{ padding: 6, background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 4, cursor: 'pointer', display: 'inline-flex', color: T.danger }}
+                          onMouseEnter={e => e.currentTarget.style.background = '#FBEAEA'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </Td>
+                  </tr>
+                  {isExpanded && (
+                    <tr style={{ borderBottom: `1px solid ${T.divider}`, background: T.surfaceAlt }}>
+                      <td colSpan="15" style={{ padding: 0 }}>
+                        <EmployeeDetailPanel 
+                          emp={emp} 
+                          history={history}
+                          results={results}
+                          currentYear={currentYear}
+                          policy={policy}
+                          onAddMemo={(memo) => handleAddMemo(emp.id, memo)}
+                          onDeleteMemo={(memoId) => handleDeleteMemo(emp.id, memoId)}
+                          onUpdateNote={(note) => handleUpdateNote(emp.id, note)}
+                          onEdit={() => setEditTarget(emp)}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+            {filtered.length === 0 && (
+              <tr><td colSpan="15" style={{ padding: S[8], textAlign: 'center', color: T.textMute, fontSize: 13 }}>검색 조건에 맞는 직원이 없습니다.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {editTarget && (
+        <EmployeeModal 
+          target={editTarget} 
+          existingIds={employees.map(e => e.id)}
+          onSave={handleSaveEmployee} 
+          onClose={() => setEditTarget(null)} 
+        />
+      )}
+      
+      {ecountModalOpen && (
+        <EcountSyncModal
+          employees={employees}
+          isExporting={isExporting}
+          onExportCSV={handleExportEcountCSV}
+          onExportXLSX={handleExportEcountXLSX}
+          onImport={(imported) => {
+            // 사번 기준 중복 검사 → 신규 추가 또는 업데이트
+            let added = 0, updated = 0;
+            imported.forEach(newEmp => {
+              const existing = employees.find(e => e.id === newEmp.id);
+              if (existing) {
+                updateEmployee(newEmp.id, { ...existing, ...newEmp });
+                updated++;
+              } else {
+                addEmployee(newEmp);
+                added++;
+              }
+            });
+            return { added, updated };
+          }}
+          onClose={() => setEcountModalOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// 직원 상세 패널 (이름 클릭 시 펼쳐지는 콘텐츠)
+// ============================================================
+function EmployeeDetailPanel({ emp, history, results, currentYear, policy, onAddMemo, onDeleteMemo, onUpdateNote, onEdit }) {
+  const [memoForm, setMemoForm] = useState({ date: new Date().toISOString().slice(0, 10), category: '평가', content: '' });
+  const [noteEdit, setNoteEdit] = useState(emp.note || '');
+  const [noteEditing, setNoteEditing] = useState(false);
+
+  // 근속 연수 계산
+  const calcTenure = () => {
+    if (!emp.hireDate) return '-';
+    const parts = emp.hireDate.split('/');
+    if (parts.length !== 3) return '-';
+    const hire = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    const now = new Date();
+    const yrs = (now - hire) / (1000 * 60 * 60 * 24 * 365.25);
+    const fullYrs = Math.floor(yrs);
+    const months = Math.floor((yrs - fullYrs) * 12);
+    return `${fullYrs}년 ${months}개월`;
+  };
+
+  // 평가 이력 수집 (history + 현재 진행 결과)
+  const evalHistory = [];
+  history.forEach(h => {
+    const g = h.gradeMap?.[emp.id];
+    if (g) evalHistory.push({ year: h.year, grade: g, closedDate: h.closedDate });
+  });
+  const currentGrade = results?.[emp.id]?.grade?.grade;
+  if (currentGrade) {
+    evalHistory.push({ year: currentYear, grade: currentGrade, isCurrent: true });
+  }
+  evalHistory.sort((a, b) => b.year - a.year);
+
+  // 총 보상 (현재)
+  const monthlyTotal = (emp.baseSalary || 0) + (emp.allowance || 0) + (emp.mealCar || 0) + (emp.qualif || 0);
+  const annualTotal = monthlyTotal * 12;
+
+  const categoryColors = {
+    '평가': T.brand, '근태': T.warning, '교육': T.success,
+    '계약': T.A, '징계': T.danger, '포상': T.S, '기타': T.textMute
+  };
+  const memos = emp.memos || [];
+
+  const handleAddMemo = () => {
+    if (!memoForm.content.trim()) return;
+    onAddMemo({
+      date: memoForm.date,
+      category: memoForm.category,
+      content: memoForm.content.trim()
+    });
+    setMemoForm({ date: new Date().toISOString().slice(0, 10), category: '평가', content: '' });
+  };
+
+  const handleSaveNote = () => {
+    onUpdateNote(noteEdit);
+    setNoteEditing(false);
+  };
+
+  return (
+    <div style={{ padding: `${S[5]}px ${S[6]}px`, background: T.surfaceAlt, animation: 'fadeIn 0.2s ease-out' }}>
+      {/* 헤더 영역 */}
+      <div style={{ 
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+        marginBottom: S[4], paddingBottom: S[3], borderBottom: `1px solid ${T.border}` 
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: S[3] }}>
+          <div style={{ 
+            width: 48, height: 48, borderRadius: 8, background: T.brand, 
+            color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 18, fontWeight: 700
+          }}>
+            {emp.name.slice(0, 1)}
+          </div>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: T.ink }}>{emp.name} <span style={{ fontSize: 13, color: T.textMute, fontWeight: 500 }}>· {emp.position}</span></div>
+            <div style={{ fontSize: 12, color: T.textMute, marginTop: 2 }}>
+              {emp.id} · {emp.dept} · 근속 {calcTenure()}
+            </div>
+          </div>
+        </div>
+        <Button variant="secondary" size="sm" icon={Pencil} onClick={onEdit}>전체 정보 수정</Button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: S[5] }}>
+        {/* 좌측: 기본 정보 + 평가 이력 */}
+        <div>
+          {/* 기본 정보 카드 */}
+          <div style={{ background: T.surface, borderRadius: 8, padding: S[5], marginBottom: S[4], border: `1px solid ${T.border}` }}>
+            <DetailSectionTitle icon={Briefcase}>기본 정보</DetailSectionTitle>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[3], fontSize: 12 }}>
+              <DetailItem label="입사일" value={emp.hireDate} />
+              <DetailItem label="근속 기간" value={calcTenure()} />
+              <DetailItem label="직무레벨" value={<Badge color={T.brand} variant="outline" size="sm">{emp.level}</Badge>} />
+              <DetailItem label="직무군" value={<Badge color={groupColor(emp.group)} variant="solid" size="sm">{emp.group}</Badge>} />
+              <DetailItem label="담당 역할" value={emp.role || '-'} />
+              <DetailItem label="이메일" value={<code style={{ fontSize: 11, color: T.textMute }}>{emp.email || '-'}</code>} />
+            </div>
+            <div style={{ marginTop: S[4], paddingTop: S[3], borderTop: `1px solid ${T.divider}` }}>
+              <DetailSectionTitle icon={Wallet}>월 보상 (현재 기준)</DetailSectionTitle>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: S[3], fontSize: 12 }}>
+                <CompItem label="기본급" value={fmtKRW(emp.baseSalary)} />
+                <CompItem label="직책수당" value={emp.allowance > 0 ? fmtKRW(emp.allowance) : '-'} />
+                <CompItem label="식대/차량" value={emp.mealCar > 0 ? fmtKRW(emp.mealCar) : '-'} />
+                <CompItem label="자격" value={emp.qualif > 0 ? fmtKRW(emp.qualif) : '-'} />
+              </div>
+              <div style={{ marginTop: S[3], padding: `${S[3]}px ${S[4]}px`, background: T.brand, borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>월 합계 / 연 환산</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: '#fff', fontVariantNumeric: 'tabular-nums' }}>
+                  {fmtKRW(monthlyTotal)}원 / {fmtKRW(annualTotal)}원
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* 평가 이력 */}
+          <div style={{ background: T.surface, borderRadius: 8, padding: S[5], border: `1px solid ${T.border}` }}>
+            <DetailSectionTitle icon={Award}>평가 이력</DetailSectionTitle>
+            {evalHistory.length === 0 ? (
+              <div style={{ padding: S[4], textAlign: 'center', color: T.textLight, fontSize: 12 }}>
+                평가 이력이 없습니다
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: S[3], flexWrap: 'wrap' }}>
+                {evalHistory.map(h => (
+                  <div key={h.year} style={{ 
+                    flex: '0 0 auto', padding: `${S[3]}px ${S[4]}px`, 
+                    background: T.surfaceAlt, borderRadius: 6,
+                    border: h.isCurrent ? `2px solid ${T.brand}` : `1px solid ${T.border}`,
+                    minWidth: 90, textAlign: 'center'
+                  }}>
+                    <div style={{ fontSize: 11, color: T.textMute, marginBottom: 6 }}>
+                      {h.year}년 {h.isCurrent && <span style={{ color: T.brand, fontWeight: 600 }}>· 진행</span>}
+                    </div>
+                    <GradeBadge grade={h.grade} size="md" />
+                    {h.closedDate && (
+                      <div style={{ fontSize: 10, color: T.textLight, marginTop: 4 }}>{h.closedDate}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          {/* 승진 심사 정보 (대상자만) */}
+          <PromotionStatusCard emp={emp} policy={policy} totalScore={results?.[emp.id]?.totalScore} />
+        </div>
+
+        {/* 우측: 비고 + 메모 타임라인 */}
+        <div>
+          {/* 비고 인라인 편집 */}
+          <div style={{ background: T.surface, borderRadius: 8, padding: S[5], marginBottom: S[4], border: `1px solid ${T.border}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: S[3] }}>
+              <DetailSectionTitle icon={StickyNote} noMargin>비고·특이사항</DetailSectionTitle>
+              {!noteEditing && (
+                <button onClick={() => { setNoteEdit(emp.note || ''); setNoteEditing(true); }} 
+                  style={{ padding: '4px 10px', background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 4, cursor: 'pointer', fontSize: 11, color: T.brand, fontFamily: FONT, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <Pencil size={11} /> 편집
+                </button>
+              )}
+            </div>
+            {noteEditing ? (
+              <>
+                <textarea value={noteEdit} onChange={e => setNoteEdit(e.target.value)} rows={4}
+                  placeholder="비고를 입력하세요"
+                  style={{ 
+                    width: '100%', padding: '10px 12px', border: `1px solid ${T.brand}`, borderRadius: 6,
+                    fontSize: 13, fontFamily: FONT, lineHeight: 1.7, background: T.surface,
+                    boxSizing: 'border-box', resize: 'vertical', outline: 'none', color: T.ink
+                  }}
+                />
+                <div style={{ display: 'flex', gap: S[2], marginTop: S[2], justifyContent: 'flex-end' }}>
+                  <Button variant="outline" size="sm" onClick={() => setNoteEditing(false)}>취소</Button>
+                  <Button variant="primary" size="sm" icon={CheckCircle2} onClick={handleSaveNote}>저장</Button>
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 13, color: emp.note ? T.ink : T.textLight, lineHeight: 1.7, whiteSpace: 'pre-wrap', minHeight: 40, padding: S[3], background: T.surfaceAlt, borderRadius: 6 }}>
+                {emp.note || '비고가 없습니다. 우상단 「편집」을 눌러 추가하세요.'}
+              </div>
+            )}
+          </div>
+
+          {/* 메모 타임라인 */}
+          <div style={{ background: T.surface, borderRadius: 8, padding: S[5], border: `1px solid ${T.border}` }}>
+            <DetailSectionTitle icon={MessageSquare}>메모 타임라인 ({memos.length})</DetailSectionTitle>
+            
+            {/* 메모 추가 폼 */}
+            <div style={{ padding: S[3], background: T.surfaceAlt, borderRadius: 6, marginBottom: S[3] }}>
+              <div style={{ display: 'flex', gap: S[2], marginBottom: S[2] }}>
+                <input type="date" value={memoForm.date} onChange={e => setMemoForm({ ...memoForm, date: e.target.value })}
+                  style={{ padding: '6px 10px', border: `1px solid ${T.border}`, borderRadius: 4, fontSize: 12, background: T.surface, fontFamily: FONT, color: T.ink, outline: 'none' }} />
+                <select value={memoForm.category} onChange={e => setMemoForm({ ...memoForm, category: e.target.value })}
+                  style={{ flex: 1, padding: '6px 10px', border: `1px solid ${T.border}`, borderRadius: 4, fontSize: 12, background: T.surface, fontFamily: FONT, color: T.ink, outline: 'none' }}>
+                  {Object.keys(categoryColors).map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <textarea value={memoForm.content} onChange={e => setMemoForm({ ...memoForm, content: e.target.value })}
+                placeholder="메모 내용 입력 후 추가 (예: 정보관리기술사 자격 취득, 강원랜드 PM 변경 등)"
+                rows={2}
+                style={{ 
+                  width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 4,
+                  fontSize: 12, fontFamily: FONT, lineHeight: 1.6, background: T.surface,
+                  boxSizing: 'border-box', resize: 'vertical', outline: 'none', color: T.ink, marginBottom: S[2]
+                }}
+              />
+              <Button variant="primary" size="sm" icon={Plus} onClick={handleAddMemo} disabled={!memoForm.content.trim()}>
+                메모 추가
+              </Button>
+            </div>
+
+            {/* 메모 목록 */}
+            {memos.length === 0 ? (
+              <div style={{ padding: S[4], textAlign: 'center', color: T.textLight, fontSize: 12 }}>
+                등록된 메모가 없습니다
+              </div>
+            ) : (
+              <div style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: S[2] }}>
+                {memos.map(m => {
+                  const cColor = categoryColors[m.category] || T.textMute;
+                  return (
+                    <div key={m.id} style={{ 
+                      display: 'flex', gap: S[3], padding: `${S[2]}px ${S[3]}px`, 
+                      background: T.surfaceAlt, borderRadius: 6, borderLeft: `3px solid ${cColor}`
+                    }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: S[2], marginBottom: 4 }}>
+                          <span style={{ fontSize: 10, color: T.textMute, fontVariantNumeric: 'tabular-nums' }}>{m.date}</span>
+                          <Badge color={cColor} variant="solid" size="sm">{m.category}</Badge>
+                        </div>
+                        <div style={{ fontSize: 12, color: T.text, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{m.content}</div>
+                      </div>
+                      <button onClick={() => { if (window.confirm('이 메모를 삭제하시겠습니까?')) onDeleteMemo(m.id); }}
+                        style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textLight, display: 'inline-flex', alignSelf: 'flex-start' }}
+                        onMouseEnter={e => e.currentTarget.style.color = T.danger}
+                        onMouseLeave={e => e.currentTarget.style.color = T.textLight}>
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailSectionTitle({ icon: Icon, children, noMargin }) {
+  return (
+    <div style={{ 
+      display: 'flex', alignItems: 'center', gap: 8, 
+      marginBottom: noMargin ? 0 : S[3], 
+      paddingBottom: noMargin ? 0 : S[2]
+    }}>
+      <Icon size={14} style={{ color: T.brand }} />
+      <span style={{ fontSize: 12, fontWeight: 700, color: T.ink, letterSpacing: '0.02em' }}>{children}</span>
+    </div>
+  );
+}
+
+function DetailItem({ label, value }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0' }}>
+      <span style={{ color: T.textMute, fontSize: 11 }}>{label}</span>
+      <span style={{ color: T.ink, fontSize: 12, fontWeight: 500 }}>{value}</span>
+    </div>
+  );
+}
+
+function CompItem({ label, value }) {
+  return (
+    <div style={{ textAlign: 'center', padding: `${S[2]}px ${S[2]}px`, background: T.surfaceAlt, borderRadius: 4 }}>
+      <div style={{ fontSize: 10, color: T.textMute, marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: T.ink, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+    </div>
+  );
+}
+
+// ============================================================
+// KPI 자동 계산기 모달
+// 실측값 입력 → 등급·점수 자동 계산 → 가중 평균으로 KPI 달성도 산출
+// ============================================================
+function KPICalculatorModal({ employee, currentScore, onApply, onClose }) {
+  // 직원 직무군에 따라 표시할 KPI 그룹 선택
+  const empGroup = employee.group || 'Archive';
+  const commonMetrics = KPI_METRICS.common.metrics;
+  const groupMetrics = KPI_METRICS[empGroup]?.metrics || [];
+  
+  // 직무군별 액센트 컬러 매핑 (KPI_METRICS[group].color 키 → 실제 컬러)
+  const groupColorMap = { 
+    'S': T.S, 'A': T.A, 'B': T.B, 'C': T.C, 'D': T.D,
+    'brand': T.brand, 'accent': T.accent,
+    'Archive': T.groupArchive, 'Tech': T.groupTech, 
+    'Biz': T.groupBiz, 'PM': T.groupPM
+  };
+  const groupAccent = groupColorMap[KPI_METRICS[empGroup]?.color] || T.brand;
+  
+  // PM 겸임 여부 확인 (role === 'PM'이면서 group이 PM이 아닌 경우)
+  const isPMRole = employee.role === 'PM' && empGroup !== 'PM';
+  const pmMetrics = isPMRole ? (KPI_METRICS.PM?.metrics || []) : [];
+  
+  const allMetrics = [
+    ...commonMetrics.map(m => ({ ...m, groupId: 'common', groupLabel: '전사 공통', accent: T.brand })),
+    ...groupMetrics.map(m => ({ ...m, groupId: empGroup, groupLabel: empGroup, accent: groupAccent })),
+    // PM 겸임 인력은 PM KPI도 표시 (선택적으로 활용)
+    ...pmMetrics.map(m => ({ ...m, groupId: 'PM', groupLabel: 'PM 겸임', accent: T.groupPM }))
+  ];
+  
+  // 각 지표의 실측값 + 사용여부 상태
+  const [values, setValues] = useState({});      // { metricId: number }
+  // 기본 선택: 전사 공통 + 본 직무군은 ON, PM 겸임은 OFF (선택적 활용)
+  const [selected, setSelected] = useState(
+    allMetrics.reduce((acc, m) => ({ ...acc, [m.id]: m.groupId !== 'PM' || empGroup === 'PM' }), {})
+  );
+  
+  // 측정값으로 점수 계산
+  const calcScore = (metric, value) => {
+    if (value === '' || value === null || value === undefined || isNaN(Number(value))) return null;
+    const v = Number(value);
+    
+    // 각 지표마다 등급 판단 로직 - 첫 번째 일치하는 band 사용
+    // 첫 band의 range가 "120% 이상" 같이 ">=" 의미인 경우와, "120%" 인 경우 처리
+    for (const band of metric.bands) {
+      const r = band.range;
+      // "X 이상" 또는 "X+"
+      const gteMatch = r.match(/^([\d.]+)\s*[%점건시간억원\/KLOC]*\s*이상/);
+      if (gteMatch) {
+        if (v >= Number(gteMatch[1])) return { ...band };
+        continue;
+      }
+      // "X~Y" 또는 "X-Y" 범위
+      const rangeMatch = r.match(/^([\d.]+)[%점건시간억원\s]*~\s*([\d.]+)/);
+      if (rangeMatch) {
+        const min = Number(rangeMatch[1]);
+        const max = Number(rangeMatch[2]);
+        if (v >= min && v <= max) return { ...band };
+        continue;
+      }
+      // "X 미만" 또는 "X 이하"
+      const ltMatch = r.match(/^([\d.]+)[%점건시간억원\s]*미만/);
+      if (ltMatch) {
+        if (v < Number(ltMatch[1])) return { ...band };
+        continue;
+      }
+      const lteMatch = r.match(/^([\d.]+)[%점건시간억원\s]*이하/);
+      if (lteMatch) {
+        if (v <= Number(lteMatch[1])) return { ...band };
+        continue;
+      }
+      // "X% (무결근)" 같은 패턴 - 정확히 X
+      const exactMatch = r.match(/^([\d.]+)%?\s*\(/);
+      if (exactMatch) {
+        if (v >= Number(exactMatch[1])) return { ...band };
+        continue;
+      }
+    }
+    // 어떤 band에도 안 걸리면 마지막(D) 반환
+    return { ...metric.bands[metric.bands.length - 1] };
+  };
+  
+  // 선택된 지표들의 가중 평균 계산
+  const computedScores = allMetrics.map(m => ({
+    metric: m,
+    band: calcScore(m, values[m.id]),
+    isSelected: selected[m.id],
+    rawValue: values[m.id]
+  }));
+  
+  const validScores = computedScores.filter(c => c.isSelected && c.band !== null);
+  const finalScore = validScores.length > 0 
+    ? Math.round(validScores.reduce((sum, c) => sum + c.band.score, 0) / validScores.length)
+    : null;
+  
+  const finalGrade = finalScore != null 
+    ? (finalScore >= 90 ? 'S' : finalScore >= 80 ? 'A' : finalScore >= 70 ? 'B' : finalScore >= 60 ? 'C' : 'D')
+    : null;
+  
+  return (
+    <div style={{ 
+      position: 'fixed', inset: 0, background: 'rgba(15, 37, 71, 0.45)', 
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200,
+      padding: S[5], animation: 'fadeIn 0.15s ease-out'
+    }}
+    onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ 
+        background: T.surface, borderRadius: 10, width: '100%', maxWidth: 880, 
+        maxHeight: '92vh', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+        display: 'flex', flexDirection: 'column'
+      }}>
+        {/* 헤더 */}
+        <div style={{ 
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: `${S[5]}px ${S[6]}px`, borderBottom: `1px solid ${T.border}`,
+          background: T.surface
+        }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Calculator size={16} style={{ color: T.success }} />
+              <div style={{ fontSize: 11, fontWeight: 600, color: T.success, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+                KPI Calculator
+              </div>
+            </div>
+            <h2 style={{ margin: `${S[1]}px 0 0`, fontSize: 20, fontWeight: 700, color: T.ink }}>
+              {employee.name} · KPI 자동 계산기
+            </h2>
+            <div style={{ fontSize: 12, color: T.textMute, marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              {employee.dept} · {employee.position} · 직무군 
+              <Badge color={groupColor(empGroup)} variant="solid" size="sm">{empGroup}</Badge>
+              {isPMRole && (
+                <Badge color={T.groupPM} variant="outline" size="sm">+ PM 겸임</Badge>
+              )}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ padding: 8, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute, display: 'inline-flex' }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* 본문 */}
+        <div style={{ padding: `${S[5]}px ${S[6]}px`, overflowY: 'auto', flex: 1 }}>
+          <div style={{ 
+            padding: `${S[3]}px ${S[4]}px`, background: '#FFF8E6', borderRadius: 6, 
+            marginBottom: S[5], fontSize: 11, color: T.text, lineHeight: 1.7,
+            display: 'flex', alignItems: 'flex-start', gap: S[2]
+          }}>
+            <AlertCircle size={14} style={{ color: T.warning, flexShrink: 0, marginTop: 1 }} />
+            <div>
+              <strong style={{ color: T.warning }}>사용 방법:</strong> 각 지표의 실측값을 입력하면 자동으로 등급·점수가 계산됩니다. 
+              사용할 지표만 체크박스로 선택하면 선택된 지표들의 평균이 최종 KPI 달성도 점수로 산정됩니다.
+            </div>
+          </div>
+
+          {/* 전사 공통 KPI */}
+          <div style={{ marginBottom: S[5] }}>
+            <div style={{ 
+              fontSize: 11, fontWeight: 700, color: T.brand, letterSpacing: '0.15em', 
+              textTransform: 'uppercase', marginBottom: S[3], paddingBottom: 6,
+              borderBottom: `2px solid ${T.brand}`,
+              display: 'flex', alignItems: 'center', gap: 8
+            }}>
+              <Badge color={T.brand} variant="solid" size="sm">전사</Badge>
+              <span>공통 KPI · 4종</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[3] }}>
+              {commonMetrics.map(m => (
+                <KPICalcRow 
+                  key={m.id} metric={m} 
+                  value={values[m.id] || ''} 
+                  selected={selected[m.id]} 
+                  onValueChange={v => setValues(prev => ({ ...prev, [m.id]: v }))}
+                  onToggle={() => setSelected(prev => ({ ...prev, [m.id]: !prev[m.id] }))}
+                  computedBand={calcScore(m, values[m.id])}
+                  accent={T.brand}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* 직무군 특화 KPI */}
+          <div style={{ marginBottom: S[5] }}>
+            <div style={{ 
+              fontSize: 11, fontWeight: 700, color: T.success, letterSpacing: '0.15em', 
+              textTransform: 'uppercase', marginBottom: S[3], paddingBottom: 6,
+              borderBottom: `2px solid ${T.success}`,
+              display: 'flex', alignItems: 'center', gap: 8
+            }}>
+              <Badge color={T.success} variant="solid" size="sm">{empGroup}</Badge>
+              <span>{KPI_METRICS[empGroup]?.title?.replace(/.*·\s*/, '') || empGroup} · 4종</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[3] }}>
+              {groupMetrics.map(m => (
+                <KPICalcRow 
+                  key={m.id} metric={m} 
+                  value={values[m.id] || ''} 
+                  selected={selected[m.id]} 
+                  onValueChange={v => setValues(prev => ({ ...prev, [m.id]: v }))}
+                  onToggle={() => setSelected(prev => ({ ...prev, [m.id]: !prev[m.id] }))}
+                  computedBand={calcScore(m, values[m.id])}
+                  accent={T.success}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* 푸터: 결과 요약 + 적용 버튼 */}
+        <div style={{ 
+          borderTop: `1px solid ${T.border}`, padding: `${S[4]}px ${S[6]}px`,
+          background: T.surfaceAlt
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: S[4] }}>
+            {/* 좌측: 계산 결과 요약 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: S[5] }}>
+              <div>
+                <div style={{ fontSize: 10, color: T.textMute, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>
+                  사용 지표
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: T.ink, fontVariantNumeric: 'tabular-nums' }}>
+                  {validScores.length} <span style={{ fontSize: 12, color: T.textMute, fontWeight: 400 }}>/ {allMetrics.length}</span>
+                </div>
+              </div>
+              <div style={{ height: 40, width: 1, background: T.border }} />
+              <div>
+                <div style={{ fontSize: 10, color: T.textMute, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>
+                  KPI 달성도 점수
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ 
+                    fontSize: 28, fontWeight: 800, color: finalScore != null ? T.brand : T.textLight, 
+                    letterSpacing: '-0.02em', lineHeight: 1, fontVariantNumeric: 'tabular-nums'
+                  }}>
+                    {finalScore != null ? finalScore : '-'}
+                  </span>
+                  <span style={{ fontSize: 12, color: T.textMute }}>/ 100</span>
+                  {finalGrade && <GradeBadge grade={finalGrade} size="md" />}
+                </div>
+              </div>
+              {currentScore != null && (
+                <>
+                  <div style={{ height: 40, width: 1, background: T.border }} />
+                  <div>
+                    <div style={{ fontSize: 10, color: T.textMute, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>
+                      현재 입력값
+                    </div>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: T.textMute, fontVariantNumeric: 'tabular-nums' }}>
+                      {currentScore}점
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            
+            {/* 우측: 버튼 */}
+            <div style={{ display: 'flex', gap: S[2] }}>
+              <Button variant="outline" size="lg" onClick={onClose}>취소</Button>
+              <Button 
+                variant="primary" 
+                size="lg" 
+                icon={CheckCircle2} 
+                onClick={() => finalScore != null && onApply(finalScore)}
+                disabled={finalScore == null}
+              >
+                이 점수 적용 ({finalScore != null ? `${finalScore}점` : '값 입력 필요'})
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KPICalcRow({ metric, value, selected, onValueChange, onToggle, computedBand, accent }) {
+  return (
+    <div style={{ 
+      padding: S[3], 
+      background: selected ? T.surface : T.surfaceAlt, 
+      border: `1px solid ${selected ? accent : T.border}`,
+      borderRadius: 6,
+      opacity: selected ? 1 : 0.6,
+      transition: 'all 0.15s'
+    }}>
+      {/* 헤더: 체크박스 + 이름 + 단위 */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: S[2], gap: S[2] }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', flex: 1, minWidth: 0 }}>
+          <input type="checkbox" checked={selected} onChange={onToggle}
+            style={{ width: 14, height: 14, accentColor: accent, marginTop: 2, flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: T.ink, lineHeight: 1.3 }}>{metric.name}</div>
+            <div style={{ fontSize: 10, color: T.textMute, marginTop: 2 }}>단위: {metric.unit}</div>
+          </div>
+        </label>
+      </div>
+      
+      {/* 입력 + 결과 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: S[2] }}>
+        <input 
+          type="number" 
+          step="0.1"
+          value={value} 
+          onChange={e => onValueChange(e.target.value)} 
+          placeholder="실측값 입력"
+          disabled={!selected}
+          style={{ 
+            flex: 1, padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 4,
+            fontSize: 13, textAlign: 'right', background: selected ? T.surface : T.surfaceAlt,
+            fontFamily: FONT, fontWeight: 600, color: T.ink, outline: 'none',
+            fontVariantNumeric: 'tabular-nums'
+          }} 
+        />
+        <div style={{ 
+          minWidth: 90, padding: '8px 10px', borderRadius: 4,
+          background: computedBand ? T[computedBand.grade] : T.surfaceAlt,
+          color: computedBand ? '#fff' : T.textLight,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+          fontSize: 12, fontWeight: 700
+        }}>
+          {computedBand ? (
+            <>
+              <span style={{ fontSize: 14 }}>{computedBand.grade}</span>
+              <span style={{ fontSize: 11, opacity: 0.9, fontVariantNumeric: 'tabular-nums' }}>· {computedBand.score}점</span>
+            </>
+          ) : (
+            <span style={{ fontSize: 11 }}>입력 대기</span>
+          )}
+        </div>
+      </div>
+      
+      {/* 가이드 */}
+      <details style={{ marginTop: S[2] }}>
+        <summary style={{ 
+          fontSize: 10, color: T.textMute, cursor: 'pointer', 
+          padding: '4px 0', userSelect: 'none'
+        }}>
+          기준표 보기
+        </summary>
+        <div style={{ 
+          marginTop: S[1], padding: S[2], background: T.surfaceAlt, 
+          borderRadius: 3, fontSize: 10, lineHeight: 1.6
+        }}>
+          <div style={{ marginBottom: 4, color: T.textMute }}>
+            <strong style={{ color: T.text }}>공식:</strong> {metric.formula}
+          </div>
+          {metric.bands.map(b => (
+            <div key={b.grade} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+              <span>
+                <span style={{ 
+                  display: 'inline-block', width: 14, height: 14, background: T[b.grade], 
+                  color: '#fff', textAlign: 'center', fontSize: 9, fontWeight: 700, 
+                  borderRadius: 2, lineHeight: '14px', marginRight: 4
+                }}>{b.grade}</span>
+                {b.range}
+              </span>
+              <span style={{ color: T.textMute, fontVariantNumeric: 'tabular-nums' }}>{b.score}점</span>
+            </div>
+          ))}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+// ============================================================
+// 승진 심사 카드 (직원 상세 패널용)
+// 직원 관리 화면의 상세 패널에서 승진 가능 여부 / 예상 시기 표시
+// ============================================================
+function PromotionStatusCard({ emp, policy, totalScore }) {
+  const status = calcPromotionStatus(emp, policy, totalScore);
+  
+  // 승진 대상이 아닌 경우 (평가 제외, 매칭되는 tier 없음 등)
+  if (!status) return null;
+  
+  const { tier, tenure, isEligible, decisionType, currentPoint, requiredPoint, pointMet, yearsMet, yearsRemaining } = status;
+  
+  // 헤더 색상: 대상자 = 빨강(액센트), 비대상자 = 회색
+  const accentColor = isEligible ? T.accent : T.textMute;
+  const allMet = decisionType === 'standard' && yearsMet && pointMet;
+  
+  return (
+    <div style={{ 
+      background: T.surface, borderRadius: 8, padding: S[5], 
+      border: `1px solid ${T.border}`,
+      borderLeft: `4px solid ${accentColor}`
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: S[3] }}>
+        <DetailSectionTitle icon={TrendingUp} noMargin>승진 심사 정보</DetailSectionTitle>
+        {isEligible && (
+          <Badge color={accentColor} variant="solid" size="sm">
+            {decisionType === 'executive' ? '경영진 결재' : (allMet ? '승진 가능' : '심사 대상')}
+          </Badge>
+        )}
+      </div>
+      
+      {/* 승진 경로 */}
+      <div style={{ 
+        display: 'flex', alignItems: 'center', gap: S[3], 
+        padding: `${S[3]}px ${S[4]}px`, background: T.surfaceAlt, borderRadius: 6,
+        marginBottom: S[3]
+      }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 10, color: T.textMute, fontWeight: 600, letterSpacing: '0.05em', marginBottom: 2 }}>
+            현재 직급
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>
+            {tier.fromLevel} <span style={{ fontSize: 11, color: T.textMute, fontWeight: 500 }}>· {tier.fromTitle}</span>
+          </div>
+        </div>
+        <ChevronRight size={16} style={{ color: accentColor }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 10, color: T.textMute, fontWeight: 600, letterSpacing: '0.05em', marginBottom: 2 }}>
+            승진 직급
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: accentColor }}>
+            {tier.toTitle}
+            {tier.increase != null && (
+              <span style={{ fontSize: 11, color: T.textMute, fontWeight: 500, marginLeft: 6 }}>
+                +{tier.increase}% 인상
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+      
+      {/* 경영진 의사결정 케이스 */}
+      {decisionType === 'executive' && (
+        <div style={{ 
+          padding: `${S[3]}px ${S[4]}px`, background: '#FFF8E6', borderRadius: 6,
+          fontSize: 12, color: T.text, lineHeight: 1.6,
+          display: 'flex', alignItems: 'flex-start', gap: S[2]
+        }}>
+          <AlertCircle size={14} style={{ color: T.warning, flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <strong style={{ color: T.warning }}>경영진 의사결정 직급</strong>입니다.
+            근속 {tenure}년 · 정량 기준이 아닌 종합 판단으로 승진이 결정됩니다.
+          </div>
+        </div>
+      )}
+      
+      {/* 일반 승진 심사 - 메트릭 3개 */}
+      {decisionType === 'standard' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: S[2] }}>
+          {/* 체류 연한 */}
+          <PromotionMetric 
+            label="체류 연한" 
+            icon={Clock}
+            value={`${tenure}년`}
+            target={`${tier.years}년`}
+            met={yearsMet}
+            extra={!yearsMet ? (yearsRemaining < 1 ? `${Math.round(yearsRemaining * 12)}개월 후` : `${yearsRemaining.toFixed(1)}년 남음`) : '충족'}
+          />
+          {/* 진급 Point */}
+          <PromotionMetric 
+            label="진급 Point" 
+            icon={Award}
+            value={currentPoint != null ? `${currentPoint}점` : '—'}
+            target={`${requiredPoint}점`}
+            met={pointMet}
+            extra={currentPoint == null ? '평가 진행 중' : (pointMet ? '충족' : '부족')}
+          />
+          {/* 종합 판정 */}
+          <div style={{ 
+            padding: S[3], borderRadius: 6, 
+            background: allMet ? T.success : T.surfaceAlt,
+            border: `1px solid ${allMet ? T.success : T.border}`,
+            color: allMet ? '#fff' : T.ink,
+            display: 'flex', flexDirection: 'column', justifyContent: 'center'
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', marginBottom: 4, opacity: allMet ? 0.85 : 1, color: allMet ? '#fff' : T.textMute, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <CheckCircle2 size={11} /> 종합 판정
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3 }}>
+              {allMet ? '승진 가능' : (isEligible ? '추가 충족 필요' : '대상 아님')}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 승진 심사 메트릭 (체류 연한 / 진급 Point)
+function PromotionMetric({ label, icon: Icon, value, target, met, extra }) {
+  return (
+    <div style={{ 
+      padding: S[3], background: T.surfaceAlt, borderRadius: 6,
+      border: `1px solid ${met ? T.success : T.border}`,
+      borderLeft: `3px solid ${met ? T.success : T.warning}`
+    }}>
+      <div style={{ fontSize: 10, color: T.textMute, fontWeight: 600, letterSpacing: '0.05em', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+        <Icon size={11} /> {label}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+        <span style={{ fontSize: 15, fontWeight: 700, color: met ? T.success : T.ink, fontVariantNumeric: 'tabular-nums' }}>
+          {value}
+        </span>
+        <span style={{ fontSize: 10, color: T.textMute }}>/ {target}</span>
+        {met && <CheckCircle2 size={11} style={{ color: T.success, marginLeft: 'auto' }} />}
+      </div>
+      <div style={{ fontSize: 10, color: met ? T.success : T.textMute, marginTop: 2 }}>
+        {extra}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// ECount 인사카드 양식 연동 모달
+// Export: 코이션 직원 → ECount 양식 CSV 다운로드
+// Import: ECount Excel/CSV → 코이션 직원 일괄 등록
+// ============================================================
+function EcountSyncModal({ employees, isExporting, onExportCSV, onExportXLSX, onImport, onClose }) {
+  const [activeTab, setActiveTab] = useState('export');  // 'export' | 'import'
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);  // { employees, errors, columnMap, headers }
+  const [importResult, setImportResult] = useState(null);  // { added, updated }
+  const [isLoading, setIsLoading] = useState(false);  // Excel 라이브러리 로딩 중
+  const fileInputRef = useRef(null);
+  
+  const handleFileSelect = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f);
+    setImportResult(null);
+    setPreview(null);
+    
+    // 파일 확장자로 처리 방식 분기
+    const ext = f.name.toLowerCase().split('.').pop();
+    const isExcel = ['xlsx', 'xls', 'xlsm'].includes(ext);
+    
+    if (isExcel) {
+      // Excel 파일 처리 - SheetJS 동적 로드 후 ArrayBuffer로 읽기
+      setIsLoading(true);
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        try {
+          const buffer = ev.target.result;
+          const result = await excelToEmployees(buffer);
+          setPreview(result);
+        } catch (err) {
+          setPreview({ 
+            employees: [], 
+            errors: [err.message || 'Excel 파일을 읽을 수 없습니다'] 
+          });
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      reader.onerror = () => {
+        setIsLoading(false);
+        setPreview({ employees: [], errors: ['Excel 파일을 읽을 수 없습니다'] });
+      };
+      reader.readAsArrayBuffer(f);
+    } else {
+      // CSV 파일 처리 (기존 로직)
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const text = ev.target.result;
+        const result = ecountCSVToEmployees(text);
+        setPreview(result);
+      };
+      reader.onerror = () => setPreview({ employees: [], errors: ['파일을 읽을 수 없습니다'] });
+      reader.readAsText(f, 'UTF-8');
+    }
+    
+    // input 초기화 (같은 파일 다시 선택 가능하도록)
+    e.target.value = '';
+  };
+  
+  const handleConfirmImport = () => {
+    if (!preview?.employees?.length) return;
+    const result = onImport(preview.employees);
+    setImportResult(result);
+  };
+  
+  // CSV 양식 다운로드
+  const downloadCSVTemplate = () => {
+    const sample = [{
+      id: 'K-260601', name: '홍길동', dept: '아카이브사업팀', position: '대리', 
+      level: 'L2', group: 'Archive', hireDate: '2026/06/01',
+      baseSalary: 3500000, allowance: 500000, mealCar: 300000, qualif: 50000,
+      email: 'sample@koition.com', status: 'active', note: '신규 입사'
+    }];
+    downloadFile(employeesToEcountCSV(sample), 'KOITION_인사카드_양식_샘플.csv');
+  };
+  
+  // Excel 양식 다운로드
+  const downloadXLSXTemplate = async () => {
+    try {
+      setIsLoading(true);
+      await downloadExcelTemplate();
+    } catch (err) {
+      alert('Excel 양식 다운로드 실패: ' + err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  return (
+    <div style={{ 
+      position: 'fixed', inset: 0, background: 'rgba(15,37,71,0.45)', 
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200,
+      padding: S[5]
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ 
+        background: T.surface, borderRadius: 10, width: '100%', maxWidth: 820, 
+        maxHeight: '92vh', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+        display: 'flex', flexDirection: 'column'
+      }}>
+        {/* 헤더 */}
+        <div style={{ 
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: `${S[5]}px ${S[6]}px`, borderBottom: `1px solid ${T.border}`,
+        }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Building2 size={16} style={{ color: T.brand }} />
+              <div style={{ fontSize: 11, fontWeight: 600, color: T.brand, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+                ECount Integration
+              </div>
+            </div>
+            <h2 style={{ margin: `${S[1]}px 0 0`, fontSize: 20, fontWeight: 700, color: T.ink }}>
+              ECount 인사카드 양방향 연동
+            </h2>
+            <div style={{ fontSize: 12, color: T.textMute, marginTop: 4 }}>
+              ECount ERP의 인사카드 양식과 호환되는 CSV로 직원 데이터를 주고받습니다
+            </div>
+          </div>
+          <button onClick={onClose} style={{ padding: 8, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}>
+            <X size={20} />
+          </button>
+        </div>
+        
+        {/* 탭 */}
+        <div style={{ display: 'flex', borderBottom: `1px solid ${T.border}`, padding: `0 ${S[6]}px` }}>
+          {[
+            { id: 'export', label: '내보내기 (Export)', icon: Download, desc: '코이션 → ECount' },
+            { id: 'import', label: '가져오기 (Import)', icon: Upload, desc: 'ECount → 코이션' },
+          ].map(t => (
+            <button key={t.id} onClick={() => setActiveTab(t.id)}
+              style={{ 
+                padding: `${S[3]}px ${S[4]}px`, background: 'transparent', border: 'none', cursor: 'pointer',
+                borderBottom: activeTab === t.id ? `3px solid ${T.brand}` : '3px solid transparent',
+                fontFamily: FONT, display: 'flex', alignItems: 'center', gap: 8,
+                color: activeTab === t.id ? T.brand : T.textMute,
+                fontWeight: activeTab === t.id ? 700 : 500, fontSize: 13,
+                marginBottom: -1
+              }}>
+              <t.icon size={14} />
+              <span>{t.label}</span>
+              <span style={{ fontSize: 10, color: T.textLight, fontWeight: 400, marginLeft: 4 }}>{t.desc}</span>
+            </button>
+          ))}
+        </div>
+        
+        {/* 본문 */}
+        <div style={{ padding: `${S[5]}px ${S[6]}px`, overflowY: 'auto', flex: 1 }}>
+          {activeTab === 'export' && (
+            <EcountExportTab 
+              employees={employees} 
+              isExporting={isExporting}
+              onExportCSV={onExportCSV} 
+              onExportXLSX={onExportXLSX}
+            />
+          )}
+          {activeTab === 'import' && (
+            <EcountImportTab 
+              file={file}
+              preview={preview}
+              importResult={importResult}
+              isLoading={isLoading}
+              fileInputRef={fileInputRef}
+              onFileSelect={handleFileSelect}
+              onDownloadCSVTemplate={downloadCSVTemplate}
+              onDownloadXLSXTemplate={downloadXLSXTemplate}
+              onConfirmImport={handleConfirmImport}
+              onReset={() => { setFile(null); setPreview(null); setImportResult(null); }}
+            />
+          )}
+        </div>
+        
+        {/* 푸터 */}
+        <div style={{ 
+          borderTop: `1px solid ${T.border}`, padding: `${S[3]}px ${S[6]}px`,
+          display: 'flex', justifyContent: 'flex-end', gap: S[2], background: T.surfaceAlt
+        }}>
+          <Button variant="outline" size="md" onClick={onClose}>닫기</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Export 탭 콘텐츠
+function EcountExportTab({ employees, isExporting, onExportCSV, onExportXLSX }) {
+  return (
+    <div>
+      {/* 안내 */}
+      <div style={{ 
+        padding: `${S[3]}px ${S[4]}px`, background: '#F0F7F1', borderLeft: `3px solid ${T.success}`, 
+        borderRadius: 4, marginBottom: S[5], display: 'flex', alignItems: 'flex-start', gap: S[2]
+      }}>
+        <CheckCircle2 size={14} style={{ color: T.success, flexShrink: 0, marginTop: 1 }} />
+        <div style={{ fontSize: 11, color: T.text, lineHeight: 1.7 }}>
+          <strong style={{ color: T.success }}>ECount 양식 호환:</strong> 한글 헤더로 된 Excel 또는 CSV 파일을 다운로드하여, ECount의 인사카드 가져오기 기능에 그대로 업로드할 수 있습니다. Excel은 컬럼 너비가 자동 조정되고, CSV는 UTF-8 BOM이 포함되어 한글이 깨지지 않습니다.
+        </div>
+      </div>
+      
+      {/* 미리보기 정보 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: S[3], marginBottom: S[5] }}>
+        <div style={{ padding: S[4], background: T.surfaceAlt, borderRadius: 6, textAlign: 'center' }}>
+          <div style={{ fontSize: 10, color: T.textMute, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>
+            대상 직원
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: T.brand, fontVariantNumeric: 'tabular-nums' }}>
+            {employees.length}<span style={{ fontSize: 12, color: T.textMute, fontWeight: 500 }}>명</span>
+          </div>
+        </div>
+        <div style={{ padding: S[4], background: T.surfaceAlt, borderRadius: 6, textAlign: 'center' }}>
+          <div style={{ fontSize: 10, color: T.textMute, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>
+            컬럼 수
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: T.brand, fontVariantNumeric: 'tabular-nums' }}>
+            {ECOUNT_HR_COLUMNS.length}<span style={{ fontSize: 12, color: T.textMute, fontWeight: 500 }}>개</span>
+          </div>
+        </div>
+        <div style={{ padding: S[4], background: T.surfaceAlt, borderRadius: 6, textAlign: 'center' }}>
+          <div style={{ fontSize: 10, color: T.textMute, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>
+            형식
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.brand, marginTop: 4, lineHeight: 1.4 }}>
+            XLSX <span style={{ color: T.textMute, fontSize: 11 }}>·</span> CSV
+          </div>
+        </div>
+      </div>
+      
+      {/* 포함되는 컬럼 */}
+      <div style={{ marginBottom: S[5] }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMute, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: S[2] }}>
+          포함되는 컬럼 ({ECOUNT_HR_COLUMNS.length}개)
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: S[2] }}>
+          {ECOUNT_HR_COLUMNS.map(col => (
+            <div key={col.key} style={{ 
+              display: 'flex', alignItems: 'center', gap: 8, 
+              padding: `${S[2]}px ${S[3]}px`, background: T.surfaceAlt, borderRadius: 4,
+              fontSize: 11
+            }}>
+              <CheckCircle2 size={11} style={{ color: T.success, flexShrink: 0 }}/>
+              <span style={{ fontWeight: 600, color: T.ink }}>{col.label}</span>
+              {col.required && <Badge color={T.danger} variant="outline" size="sm">필수</Badge>}
+              <span style={{ color: T.textLight, marginLeft: 'auto', fontSize: 10 }}>{col.desc}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      
+      {/* 내보내기 버튼 - 2가지 형식 */}
+      <div style={{ textAlign: 'center', padding: `${S[5]}px 0` }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: S[3], marginBottom: S[2] }}>
+          {/* Excel 다운로드 (권장) */}
+          <Button 
+            variant="primary" 
+            size="lg" 
+            icon={isExporting ? null : Download} 
+            onClick={onExportXLSX}
+            disabled={isExporting}
+          >
+            {isExporting ? '준비 중...' : 'Excel (.xlsx) 다운로드'}
+          </Button>
+          {/* CSV 다운로드 */}
+          <Button 
+            variant="outline" 
+            size="lg" 
+            icon={Download} 
+            onClick={onExportCSV}
+          >
+            CSV (.csv) 다운로드
+          </Button>
+        </div>
+        <div style={{ fontSize: 11, color: T.textMute, marginTop: 8 }}>
+          <strong style={{ color: T.brand }}>Excel 권장</strong> — 컬럼 너비 자동 조정 + 시트 명명 + 한글 안정성. 
+          {' '}다운로드 후 ECount → 인사관리 → 인사카드 → 가져오기 메뉴에서 업로드하세요
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Import 탭 콘텐츠
+function EcountImportTab({ file, preview, importResult, isLoading, fileInputRef, onFileSelect, onDownloadCSVTemplate, onDownloadXLSXTemplate, onConfirmImport, onReset }) {
+  return (
+    <div>
+      {/* 안내 */}
+      <div style={{ 
+        padding: `${S[3]}px ${S[4]}px`, background: '#FFF8E6', borderLeft: `3px solid ${T.warning}`, 
+        borderRadius: 4, marginBottom: S[4], display: 'flex', alignItems: 'flex-start', gap: S[2]
+      }}>
+        <AlertCircle size={14} style={{ color: T.warning, flexShrink: 0, marginTop: 1 }} />
+        <div style={{ fontSize: 11, color: T.text, lineHeight: 1.7 }}>
+          <strong style={{ color: T.warning }}>ECount에서 내보낸 인사카드 Excel(.xlsx) 또는 CSV 파일을 업로드하세요.</strong> 사번이 같으면 업데이트, 새 사번이면 신규 추가됩니다. Excel은 첫 번째 시트의 데이터를 읽습니다.
+        </div>
+      </div>
+      
+      {/* 파일 업로드 영역 */}
+      {!preview && !importResult && (
+        <div>
+          <div 
+            onClick={() => !isLoading && fileInputRef.current?.click()}
+            style={{ 
+              border: `2px dashed ${isLoading ? T.brand : T.border}`, borderRadius: 8, padding: S[6],
+              textAlign: 'center', cursor: isLoading ? 'wait' : 'pointer', transition: 'all 0.15s',
+              background: isLoading ? '#F0F4FB' : T.surfaceAlt,
+              position: 'relative'
+            }}
+            onMouseEnter={e => { 
+              if (isLoading) return;
+              e.currentTarget.style.borderColor = T.brand; 
+              e.currentTarget.style.background = '#F0F4FB'; 
+            }}
+            onMouseLeave={e => { 
+              if (isLoading) return;
+              e.currentTarget.style.borderColor = T.border; 
+              e.currentTarget.style.background = T.surfaceAlt; 
+            }}
+          >
+            {isLoading ? (
+              <>
+                <div style={{ 
+                  width: 32, height: 32, margin: '0 auto 12px', 
+                  border: `3px solid ${T.divider}`, borderTop: `3px solid ${T.brand}`,
+                  borderRadius: '50%', animation: 'spin 0.8s linear infinite'
+                }} />
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.brand, marginBottom: 4 }}>
+                  Excel 라이브러리 로딩 중...
+                </div>
+                <div style={{ fontSize: 11, color: T.textMute }}>
+                  최초 1회만 인터넷에서 SheetJS를 가져옵니다 (약 500KB)
+                </div>
+              </>
+            ) : (
+              <>
+                <Upload size={32} style={{ color: T.brand, margin: '0 auto 12px', display: 'block' }} />
+                <div style={{ fontSize: 14, fontWeight: 600, color: T.ink, marginBottom: 4 }}>
+                  Excel 또는 CSV 파일을 클릭하여 업로드
+                </div>
+                <div style={{ fontSize: 11, color: T.textMute, marginBottom: 8 }}>
+                  ECount에서 내보낸 인사카드 파일 (.xlsx · .xls · .csv)
+                </div>
+                <div style={{ 
+                  display: 'inline-flex', gap: 6, fontSize: 10, color: T.textLight,
+                  padding: '4px 10px', background: T.surface, borderRadius: 12,
+                  marginTop: 4
+                }}>
+                  <span style={{ padding: '2px 6px', background: '#E8F4E8', color: T.success, borderRadius: 3, fontWeight: 600 }}>XLSX</span>
+                  <span style={{ padding: '2px 6px', background: '#E8F4E8', color: T.success, borderRadius: 3, fontWeight: 600 }}>XLS</span>
+                  <span style={{ padding: '2px 6px', background: '#F0F0F0', color: T.textMute, borderRadius: 3, fontWeight: 600 }}>CSV</span>
+                </div>
+              </>
+            )}
+            <input ref={fileInputRef} type="file" accept=".csv,.txt,.xlsx,.xls,.xlsm" onChange={onFileSelect} 
+              style={{ display: 'none' }} disabled={isLoading} />
+          </div>
+          
+          <div style={{ textAlign: 'center', marginTop: S[4], display: 'flex', justifyContent: 'center', gap: S[2] }}>
+            <Button variant="ghost" size="sm" icon={Download} onClick={onDownloadXLSXTemplate} disabled={isLoading}>
+              Excel 양식 샘플 (.xlsx)
+            </Button>
+            <Button variant="ghost" size="sm" icon={Download} onClick={onDownloadCSVTemplate}>
+              CSV 양식 샘플 (.csv)
+            </Button>
+          </div>
+        </div>
+      )}
+      
+      {/* 가져오기 결과 (완료) */}
+      {importResult && (
+        <div style={{ 
+          padding: S[5], background: '#F0F7F1', border: `1px solid ${T.success}`,
+          borderRadius: 8, textAlign: 'center'
+        }}>
+          <CheckCircle2 size={40} style={{ color: T.success, margin: '0 auto 12px', display: 'block' }} />
+          <div style={{ fontSize: 16, fontWeight: 700, color: T.ink, marginBottom: 8 }}>
+            가져오기 완료
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: S[5], marginTop: S[4] }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 24, fontWeight: 800, color: T.success, fontVariantNumeric: 'tabular-nums' }}>
+                +{importResult.added}
+              </div>
+              <div style={{ fontSize: 11, color: T.textMute, fontWeight: 600, letterSpacing: '0.05em' }}>신규 추가</div>
+            </div>
+            <div style={{ height: 40, width: 1, background: T.border }} />
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 24, fontWeight: 800, color: T.brand, fontVariantNumeric: 'tabular-nums' }}>
+                {importResult.updated}
+              </div>
+              <div style={{ fontSize: 11, color: T.textMute, fontWeight: 600, letterSpacing: '0.05em' }}>업데이트</div>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={onReset} style={{ marginTop: S[4] }}>다시 가져오기</Button>
+        </div>
+      )}
+      
+      {/* 미리보기 (가져오기 전) */}
+      {preview && !importResult && (
+        <div>
+          {/* 요약 정보 */}
+          <div style={{ 
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+            padding: `${S[3]}px ${S[4]}px`, background: T.surfaceAlt, borderRadius: 6,
+            marginBottom: S[4]
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: S[2], flex: 1, minWidth: 0 }}>
+              <FileText size={14} style={{ color: file?.name?.match(/\.(xlsx|xls|xlsm)$/i) ? T.success : T.brand, flexShrink: 0 }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {file?.name}
+              </span>
+              <span style={{ fontSize: 11, color: T.textMute, flexShrink: 0 }}>· {(file?.size / 1024).toFixed(1)} KB</span>
+              {/* Excel 시트 정보 표시 */}
+              {preview.sheetName && (
+                <span style={{ 
+                  fontSize: 10, padding: '2px 8px', background: T.surface, 
+                  border: `1px solid ${T.success}`, color: T.success, borderRadius: 3, 
+                  fontWeight: 600, flexShrink: 0, marginLeft: 4
+                }}>
+                  📄 시트 "{preview.sheetName}"
+                  {preview.totalSheets > 1 && (
+                    <span style={{ color: T.textMute, marginLeft: 4 }}>(총 {preview.totalSheets}개 중 1번)</span>
+                  )}
+                </span>
+              )}
+            </div>
+            <Button variant="ghost" size="sm" icon={X} onClick={onReset}>다른 파일 선택</Button>
+          </div>
+          
+          {/* 여러 시트 안내 (Excel만 해당) */}
+          {preview.totalSheets > 1 && (
+            <div style={{ 
+              padding: `${S[2]}px ${S[3]}px`, background: '#FFF8E6', borderLeft: `3px solid ${T.warning}`,
+              borderRadius: 4, marginBottom: S[3], fontSize: 11, color: T.text, lineHeight: 1.6,
+              display: 'flex', alignItems: 'center', gap: 6
+            }}>
+              <AlertCircle size={12} style={{ color: T.warning, flexShrink: 0 }} />
+              <span>
+                Excel에 {preview.totalSheets}개의 시트가 있습니다. <strong>첫 번째 시트 "{preview.sheetName}"</strong>의 데이터만 가져옵니다.
+                다른 시트의 데이터가 필요하면 ECount에서 해당 시트만 별도로 내보내거나, 첫 번째 시트로 이동시켜주세요.
+              </span>
+            </div>
+          )}
+          
+          {/* 오류 표시 */}
+          {preview.errors?.length > 0 && (
+            <div style={{ 
+              padding: `${S[3]}px ${S[4]}px`, background: '#FBEAEA', border: `1px solid ${T.danger}`,
+              borderRadius: 6, marginBottom: S[4]
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                <AlertCircle size={14} style={{ color: T.danger }} />
+                <strong style={{ fontSize: 12, color: T.danger }}>오류 {preview.errors.length}건</strong>
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 20, fontSize: 11, color: T.text, lineHeight: 1.7 }}>
+                {preview.errors.slice(0, 5).map((err, i) => <li key={i}>{err}</li>)}
+                {preview.errors.length > 5 && <li>... 외 {preview.errors.length - 5}건</li>}
+              </ul>
+            </div>
+          )}
+          
+          {/* 가져올 데이터 요약 */}
+          {preview.employees.length > 0 && (
+            <>
+              <div style={{ 
+                padding: `${S[3]}px ${S[4]}px`, background: '#F0F7F1', border: `1px solid ${T.success}`,
+                borderRadius: 6, marginBottom: S[4],
+                display: 'flex', alignItems: 'center', gap: S[2]
+              }}>
+                <CheckCircle2 size={16} style={{ color: T.success }} />
+                <strong style={{ fontSize: 13, color: T.success }}>
+                  {preview.employees.length}명의 직원 데이터가 인식되었습니다
+                </strong>
+              </div>
+              
+              {/* 컬럼 매핑 미리보기 */}
+              <div style={{ marginBottom: S[4] }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.textMute, letterSpacing: '0.1em', marginBottom: S[2] }}>
+                  매핑된 컬럼 ({Object.keys(preview.columnMap || {}).length}개)
+                </div>
+                <div style={{ 
+                  display: 'flex', gap: 6, flexWrap: 'wrap', 
+                  padding: S[3], background: T.surfaceAlt, borderRadius: 6
+                }}>
+                  {Object.entries(preview.columnMap || {}).map(([idx, key]) => {
+                    const col = ECOUNT_HR_COLUMNS.find(c => c.key === key);
+                    return (
+                      <span key={idx} style={{ 
+                        padding: '3px 8px', background: T.surface, border: `1px solid ${T.border}`,
+                        borderRadius: 3, fontSize: 11, color: T.text
+                      }}>
+                        {preview.headers[idx]} → <strong style={{ color: T.brand }}>{col?.label}</strong>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+              
+              {/* 데이터 샘플 (앞 3명) */}
+              <div style={{ marginBottom: S[4] }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.textMute, letterSpacing: '0.1em', marginBottom: S[2] }}>
+                  데이터 샘플 (상위 3명)
+                </div>
+                <div style={{ overflowX: 'auto', border: `1px solid ${T.border}`, borderRadius: 6 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ background: T.surfaceAlt }}>
+                        <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 10, color: T.textMute, fontWeight: 700 }}>사번</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 10, color: T.textMute, fontWeight: 700 }}>이름</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 10, color: T.textMute, fontWeight: 700 }}>부서</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 10, color: T.textMute, fontWeight: 700 }}>직위</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 10, color: T.textMute, fontWeight: 700 }}>입사일</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preview.employees.slice(0, 3).map((emp, i) => (
+                        <tr key={i} style={{ borderTop: `1px solid ${T.divider}` }}>
+                          <td style={{ padding: '6px 10px', fontFamily: 'monospace', color: T.textMute }}>{emp.id}</td>
+                          <td style={{ padding: '6px 10px', fontWeight: 600 }}>{emp.name}</td>
+                          <td style={{ padding: '6px 10px' }}>{emp.dept || '-'}</td>
+                          <td style={{ padding: '6px 10px' }}>{emp.position || '-'}</td>
+                          <td style={{ padding: '6px 10px' }}>{emp.hireDate || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              
+              {/* 가져오기 확정 버튼 */}
+              <div style={{ textAlign: 'center', paddingTop: S[3] }}>
+                <Button variant="primary" size="lg" icon={Upload} onClick={onConfirmImport}>
+                  {preview.employees.length}명 가져오기 실행
+                </Button>
+                <div style={{ fontSize: 11, color: T.textMute, marginTop: 8 }}>
+                  사번이 같으면 업데이트, 새 사번이면 신규 추가됩니다
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// 직원 추가/수정 모달
+// ============================================================
+function EmployeeModal({ target, existingIds, onSave, onClose }) {
+  const isNew = !!target.__isNew;
+  const [form, setForm] = useState(isNew ? {
+    id: '', name: '', dept: '', position: '', level: 'L2', group: 'Archive',
+    hireDate: new Date().toISOString().slice(0, 10).replace(/-/g, '/'),
+    baseSalary: 2500000, allowance: 0, mealCar: 200000, qualif: 0,
+    evalTarget: true, status: 'active', role: '', email: '', note: ''
+  } : { ...target });
+  const [error, setError] = useState('');
+
+  const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+
+  const handleSubmit = () => {
+    if (!form.id.trim()) return setError('사번을 입력해주세요.');
+    if (!form.name.trim()) return setError('성명을 입력해주세요.');
+    if (isNew && existingIds.includes(form.id.trim())) return setError('이미 존재하는 사번입니다.');
+    if (!form.dept.trim()) return setError('부서를 입력해주세요.');
+    setError('');
+    onSave({
+      ...form,
+      id: form.id.trim(), name: form.name.trim(), dept: form.dept.trim(),
+      baseSalary: Number(form.baseSalary) || 0,
+      allowance: Number(form.allowance) || 0,
+      mealCar: Number(form.mealCar) || 0,
+      qualif: Number(form.qualif) || 0,
+    }, isNew);
+  };
+
+  return (
+    <div style={{ 
+      position: 'fixed', inset: 0, background: 'rgba(15, 37, 71, 0.45)', 
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200,
+      padding: S[5], animation: 'fadeIn 0.15s ease-out'
+    }}
+    onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ 
+        background: T.surface, borderRadius: 10, width: '100%', maxWidth: 680, 
+        maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+      }}>
+        {/* 헤더 */}
+        <div style={{ 
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: `${S[5]}px ${S[6]}px`, borderBottom: `1px solid ${T.border}`,
+          position: 'sticky', top: 0, background: T.surface, zIndex: 1
+        }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: T.brand, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+              {isNew ? 'Add Employee' : 'Edit Employee'}
+            </div>
+            <h2 style={{ margin: `${S[1]}px 0 0`, fontSize: 20, fontWeight: 700, color: T.ink }}>
+              {isNew ? '직원 추가' : `${target.name} 정보 수정`}
+            </h2>
+          </div>
+          <button onClick={onClose} style={{ padding: 8, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute, display: 'inline-flex' }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* 폼 본문 */}
+        <div style={{ padding: S[6] }}>
+          {/* 기본 정보 */}
+          <SectionTitle>기본 정보</SectionTitle>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[4], marginBottom: S[5] }}>
+            <Field label="사번" required>
+              <ModalInput value={form.id} onChange={v => set('id', v)} disabled={!isNew} placeholder="예) K-260401" />
+              {!isNew && <div style={{ fontSize: 10, color: T.textLight, marginTop: 4 }}>사번은 수정할 수 없습니다</div>}
+            </Field>
+            <Field label="성명" required>
+              <ModalInput value={form.name} onChange={v => set('name', v)} placeholder="예) 홍길동" />
+            </Field>
+            <Field label="부서" required>
+              <ModalInput value={form.dept} onChange={v => set('dept', v)} placeholder="예) 아카이브사업팀" />
+            </Field>
+            <Field label="직위">
+              <ModalInput value={form.position} onChange={v => set('position', v)} placeholder="예) 대리" />
+            </Field>
+            <Field label="직무레벨">
+              <ModalSelect value={form.level} onChange={v => set('level', v)} options={[
+                { v: 'L1', l: 'L1 · 사원·주임' }, { v: 'L2', l: 'L2 · 대리·과장' },
+                { v: 'L3', l: 'L3 · 차장·부장' }, { v: 'L4', l: 'L4 · 이사+' }
+              ]} />
+            </Field>
+            <Field label="직무군">
+              <ModalSelect value={form.group} onChange={v => set('group', v)} options={[
+                { v: 'Archive', l: 'Archive · 기록관리' }, 
+                { v: 'Tech', l: 'Tech · 기술개발' }, 
+                { v: 'Biz', l: 'Biz · 사업경영' },
+                { v: 'PM', l: 'PM · 사업수행' }
+              ]} />
+            </Field>
+            <Field label="입사일">
+              <ModalInput value={form.hireDate} onChange={v => set('hireDate', v)} placeholder="예) 2026/04/01" />
+            </Field>
+            <Field label="이메일">
+              <ModalInput value={form.email} onChange={v => set('email', v)} placeholder="예) hong@koition.com" />
+            </Field>
+            <Field label="담당 역할">
+              <ModalInput value={form.role} onChange={v => set('role', v)} placeholder="예) PM, PL, 기록전문, 팀장" />
+            </Field>
+            <Field label="재직 상태">
+              <ModalSelect value={form.status} onChange={v => set('status', v)} options={[
+                { v: 'active', l: '재직' }, { v: 'leave', l: '휴직' },
+                { v: 'freelancer', l: '프리랜서' }, { v: 'advisor', l: '자문' }
+              ]} />
+            </Field>
+          </div>
+
+          {/* 급여 정보 */}
+          <SectionTitle>급여 정보 (월 기준, 원)</SectionTitle>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[4], marginBottom: S[5] }}>
+            <Field label="기본급">
+              <ModalInput type="number" value={form.baseSalary} onChange={v => set('baseSalary', v)} />
+            </Field>
+            <Field label="직책수당">
+              <ModalInput type="number" value={form.allowance} onChange={v => set('allowance', v)} />
+            </Field>
+            <Field label="식대·차량유지비">
+              <ModalInput type="number" value={form.mealCar} onChange={v => set('mealCar', v)} />
+            </Field>
+            <Field label="자격수당">
+              <ModalInput type="number" value={form.qualif} onChange={v => set('qualif', v)} />
+            </Field>
+          </div>
+
+          {/* 평가 설정 */}
+          <SectionTitle>평가 설정</SectionTitle>
+          <div style={{ marginBottom: S[5] }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: S[3], padding: S[3], background: T.surfaceAlt, borderRadius: 6, cursor: 'pointer' }}>
+              <input type="checkbox" checked={form.evalTarget} onChange={e => set('evalTarget', e.target.checked)} style={{ width: 16, height: 16, accentColor: T.brand }} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: T.ink }}>인사평가 대상</div>
+                <div style={{ fontSize: 11, color: T.textMute, marginTop: 2 }}>체크 해제 시 평가에서 제외됩니다 (대표이사·자문·휴직 등)</div>
+              </div>
+            </label>
+          </div>
+
+          {/* 비고 / 특이사항 */}
+          <SectionTitle>비고 · 특이사항</SectionTitle>
+          <div style={{ marginBottom: S[3] }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: S[2], marginBottom: S[2] }}>
+              <StickyNote size={14} style={{ color: T.brand }} />
+              <span style={{ fontSize: 12, color: T.textMute }}>승진 이력, 휴직 사유, 계약 조건, 특기사항 등 자유롭게 기입</span>
+            </div>
+            <textarea value={form.note || ''} onChange={e => set('note', e.target.value)} rows={4}
+              placeholder="예) 2025년 우수사원 표창 / 2026.03 육아휴직 예정 / 정보관리기술사 자격 보유 / 강원랜드 아카이브 프로젝트 PM 담당"
+              style={{ 
+                width: '100%', padding: '12px 14px', border: `1px solid ${T.border}`, borderRadius: 6,
+                fontSize: 13, fontFamily: FONT, lineHeight: 1.7, background: T.surface,
+                boxSizing: 'border-box', resize: 'vertical', outline: 'none', color: T.ink
+              }}
+              onFocus={e => e.target.style.borderColor = T.brand}
+              onBlur={e => e.target.style.borderColor = T.border}
+            />
+          </div>
+
+          {error && (
+            <div style={{ 
+              fontSize: 12, color: T.danger, padding: `${S[2]}px ${S[3]}px`,
+              background: '#FBEAEA', borderRadius: 4, marginBottom: S[3],
+              display: 'flex', alignItems: 'center', gap: S[2]
+            }}>
+              <AlertCircle size={14} /> {error}
+            </div>
+          )}
+        </div>
+
+        {/* 푸터 버튼 */}
+        <div style={{ 
+          display: 'flex', justifyContent: 'flex-end', gap: S[3],
+          padding: `${S[4]}px ${S[6]}px`, borderTop: `1px solid ${T.border}`,
+          position: 'sticky', bottom: 0, background: T.surface
+        }}>
+          <Button variant="outline" size="lg" onClick={onClose}>취소</Button>
+          <Button variant="primary" size="lg" icon={CheckCircle2} onClick={handleSubmit}>
+            {isNew ? '직원 추가' : '변경사항 저장'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, required, children }) {
+  return (
+    <div>
+      <label style={{ fontSize: 12, fontWeight: 600, color: T.text, display: 'block', marginBottom: S[2] }}>
+        {label}{required && <span style={{ color: T.danger, marginLeft: 3 }}>*</span>}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function ModalInput({ value, onChange, type = 'text', placeholder, disabled }) {
+  return (
+    <input type={type} value={value} onChange={e => onChange(e.target.value)} 
+      placeholder={placeholder} disabled={disabled}
+      style={{ 
+        width: '100%', padding: '10px 12px', border: `1px solid ${T.border}`, borderRadius: 6,
+        fontSize: 13, background: disabled ? T.surfaceAlt : T.surface, boxSizing: 'border-box',
+        fontFamily: FONT, outline: 'none', color: disabled ? T.textMute : T.ink,
+        fontVariantNumeric: type === 'number' ? 'tabular-nums' : 'normal'
+      }}
+      onFocus={e => !disabled && (e.target.style.borderColor = T.brand)}
+      onBlur={e => e.target.style.borderColor = T.border}
+    />
+  );
+}
+
+function ModalSelect({ value, onChange, options }) {
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)}
+      style={{ 
+        width: '100%', padding: '10px 12px', border: `1px solid ${T.border}`, borderRadius: 6,
+        fontSize: 13, background: T.surface, boxSizing: 'border-box', fontFamily: FONT, color: T.ink, outline: 'none'
+      }}>
+      {options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+    </select>
+  );
+}
+
+function Th({ children, align = 'left' }) {
+  return <th style={{ padding: `${S[3]}px ${S[3]}px`, textAlign: align, fontSize: 11, fontWeight: 600, color: T.textMute, letterSpacing: '0.05em', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>{children}</th>;
+}
+
+function Td({ children, align = 'left', mono = false }) {
+  return <td style={{ padding: `${S[3]}px ${S[3]}px`, textAlign: align, fontFamily: mono ? '"SF Mono", Monaco, monospace' : FONT, fontVariantNumeric: mono ? 'tabular-nums' : 'normal', whiteSpace: 'nowrap' }}>{children}</td>;
+}
+
+// ============================================================
+// 승진 심사 카드 (평가 입력 화면용)
+// 평가자가 점수를 입력하는 동안 실시간으로 진급 Point 충족 여부를 표시
+// ============================================================
+function PromotionEvalCard({ emp, policy, totalScore }) {
+  const status = calcPromotionStatus(emp, policy, totalScore);
+  if (!status || !status.isEligible) return null;
+  
+  const { tier, tenure, decisionType, currentPoint, requiredPoint, pointMet, yearsMet, yearsRemaining } = status;
+  
+  // 경영진 의사결정 케이스
+  if (decisionType === 'executive') {
+    return (
+      <div style={{ 
+        marginBottom: S[5], padding: S[4],
+        background: 'linear-gradient(135deg, #FFF8E6 0%, #FFFAEC 100%)',
+        border: `2px solid ${T.warning}`,
+        borderRadius: 8,
+        display: 'flex', alignItems: 'center', gap: S[4]
+      }}>
+        <div style={{ 
+          width: 44, height: 44, borderRadius: 22, 
+          background: T.warning, color: '#fff',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0
+        }}>
+          <TrendingUp size={20} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ 
+            fontSize: 10, fontWeight: 700, color: T.warning, 
+            letterSpacing: '0.15em', marginBottom: 2
+          }}>
+            ★ 승진 심사 대상 · 경영진 의사결정
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>
+            {tier.fromTitle} → {tier.toTitle} 승진 검토
+          </div>
+          <div style={{ fontSize: 11, color: T.text, marginTop: 4, lineHeight: 1.6 }}>
+            근속 {tenure}년 · 정량 기준이 아닌 경영진 의사결정으로 승진이 결정됩니다. 평가 결과는 참고 자료로 활용됩니다.
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
+  // 일반 승진 심사
+  const allMet = yearsMet && pointMet;
+  const bgColor = allMet 
+    ? 'linear-gradient(135deg, #F0F7F1 0%, #F5FAF6 100%)'
+    : 'linear-gradient(135deg, #FFF8E6 0%, #FFFAEC 100%)';
+  const borderColor = allMet ? T.success : T.warning;
+  const iconBg = allMet ? T.success : T.warning;
+  
+  return (
+    <div style={{ 
+      marginBottom: S[5], padding: S[4],
+      background: bgColor,
+      border: `2px solid ${borderColor}`,
+      borderRadius: 8
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: S[4], marginBottom: S[3] }}>
+        <div style={{ 
+          width: 44, height: 44, borderRadius: 22, 
+          background: iconBg, color: '#fff',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0
+        }}>
+          <TrendingUp size={20} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ 
+            fontSize: 10, fontWeight: 700, color: borderColor, 
+            letterSpacing: '0.15em', marginBottom: 2
+          }}>
+            ★ 승진 심사 대상 {allMet ? '· 모든 기준 충족' : `· ${!yearsMet ? '체류 연한 미충족' : '진급 Point 미충족'}`}
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>
+            {tier.fromLevel} {tier.fromTitle} → {tier.toTitle}
+            <span style={{ fontSize: 11, color: T.textMute, fontWeight: 500, marginLeft: 8 }}>
+              승진 시 급여 +{tier.increase}% 인상
+            </span>
+          </div>
+        </div>
+      </div>
+      
+      {/* 3개 메트릭 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: S[3], paddingLeft: 60 }}>
+        {/* 체류 연한 */}
+        <div style={{ 
+          padding: `${S[3]}px ${S[3]}px`, background: 'rgba(255,255,255,0.7)', 
+          borderRadius: 6, border: `1px solid ${yearsMet ? T.success : T.border}`,
+          borderLeft: `3px solid ${yearsMet ? T.success : T.warning}`
+        }}>
+          <div style={{ fontSize: 10, color: T.textMute, fontWeight: 600, letterSpacing: '0.05em', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Clock size={11} /> 체류 연한
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+            <span style={{ fontSize: 18, fontWeight: 700, color: yearsMet ? T.success : T.ink, fontVariantNumeric: 'tabular-nums' }}>
+              {tenure}
+            </span>
+            <span style={{ fontSize: 11, color: T.textMute }}>년 / 기준 {tier.years}년</span>
+            {yearsMet && <CheckCircle2 size={13} style={{ color: T.success, marginLeft: 'auto' }} />}
+          </div>
+          {!yearsMet && (
+            <div style={{ fontSize: 10, color: T.warning, marginTop: 2 }}>
+              {yearsRemaining < 1 ? `${Math.round(yearsRemaining * 12)}개월 후 충족` : `${yearsRemaining.toFixed(1)}년 더 필요`}
+            </div>
+          )}
+        </div>
+        
+        {/* 진급 Point */}
+        <div style={{ 
+          padding: `${S[3]}px ${S[3]}px`, background: 'rgba(255,255,255,0.7)', 
+          borderRadius: 6, border: `1px solid ${pointMet ? T.success : T.border}`,
+          borderLeft: `3px solid ${pointMet ? T.success : (currentPoint == null ? T.border : T.warning)}`
+        }}>
+          <div style={{ fontSize: 10, color: T.textMute, fontWeight: 600, letterSpacing: '0.05em', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Award size={11} /> 진급 Point
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+            <span style={{ fontSize: 18, fontWeight: 700, color: pointMet ? T.success : (currentPoint == null ? T.textLight : T.ink), fontVariantNumeric: 'tabular-nums' }}>
+              {currentPoint != null ? currentPoint : '—'}
+            </span>
+            <span style={{ fontSize: 11, color: T.textMute }}>점 / 기준 {requiredPoint}점</span>
+            {pointMet && <CheckCircle2 size={13} style={{ color: T.success, marginLeft: 'auto' }} />}
+          </div>
+          <div style={{ fontSize: 10, color: T.textMute, marginTop: 2 }}>
+            {currentPoint == null ? '평가 점수 입력 후 자동 계산' : `종합점수 × ${policy.promotion.pointRate} 환산`}
+          </div>
+        </div>
+        
+        {/* 종합 판정 */}
+        <div style={{ 
+          padding: `${S[3]}px ${S[3]}px`, background: allMet ? T.success : 'rgba(255,255,255,0.7)', 
+          borderRadius: 6, border: `1px solid ${allMet ? T.success : T.border}`,
+          color: allMet ? '#fff' : T.ink
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', marginBottom: 4, opacity: allMet ? 0.85 : 1, color: allMet ? '#fff' : T.textMute, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <CheckCircle2 size={11} /> 종합 판정
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.3 }}>
+            {allMet ? '승진 가능' : '추가 충족 필요'}
+          </div>
+          <div style={{ fontSize: 10, marginTop: 2, opacity: allMet ? 0.9 : 1, color: allMet ? '#fff' : T.textMute }}>
+            {allMet ? '경영진 최종 결재 대기' : `${!yearsMet && !pointMet ? '연한·Point' : !yearsMet ? '체류 연한' : '진급 Point'} 충족 필요`}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 평가 입력
+// ============================================================
+function EvaluationView({ user, employees, scores, updateScore, selfScores, comments, updateComment, policy, selectedEmp, setSelectedEmp, results, currentYear, submissions, copySelfToEvaluator }) {
+  const [kpiCalcOpen, setKpiCalcOpen] = useState(false);
+  const targets = employees.filter(e => e.evalTarget);
+  const current = selectedEmp ? employees.find(e => e.id === selectedEmp) : targets[0];
+  if (!current) return <EmptyState icon={Users} title="평가 대상이 없습니다" desc="권한 범위 내 평가 대상자가 없습니다" />;
+  const empScores = scores[current.id] || {};
+  const empSelf = selfScores[current.id] || {};
+  const empComments = comments[current.id] || {};
+  const result = results[current.id];
+  const selfSubmitted = submissions[current.id] === 'self_submitted';
+
+  return (
+    <div>
+      <PageHeader 
+        eyebrow="Evaluation"
+        title="평가 입력"
+        subtitle={`${user.role === 'admin' ? '전사' : user.deptScope} 평가 대상자 ${targets.length}명에 대해 역량·업적 평가를 입력합니다`}
+      />
+      
+      <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: S[5] }}>
+        <div style={{ ...card(), padding: 0, height: 'fit-content', position: 'sticky', top: 96 }}>
+          <div style={{ 
+            padding: `${S[4]}px ${S[4]}px`, borderBottom: `1px solid ${T.border}`,
+            fontSize: 11, fontWeight: 600, color: T.textMute, letterSpacing: '0.1em', textTransform: 'uppercase'
+          }}>
+            평가 대상 · {targets.length}명
+          </div>
+          <div style={{ maxHeight: 600, overflowY: 'auto' }}>
+            {targets.map(emp => {
+              const r = results[emp.id]; const done = !!r?.grade; const active = current.id === emp.id;
+              const hasSelf = submissions[emp.id] === 'self_submitted';
+              return (
+                <button key={emp.id} onClick={() => setSelectedEmp(emp.id)} style={{
+                  width: '100%', padding: `${S[3]}px ${S[4]}px`, border: 'none', 
+                  background: active ? T.brand : 'transparent',
+                  color: active ? '#fff' : T.text, 
+                  borderBottom: `1px solid ${T.divider}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+                  fontSize: 13, cursor: 'pointer', textAlign: 'left', fontFamily: FONT,
+                  transition: 'all 0.1s'
+                }}
+                onMouseEnter={e => { if (!active) e.currentTarget.style.background = T.surfaceAlt; }}
+                onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: S[2] }}>
+                      {emp.name}
+                      {hasSelf && <span style={{ fontSize: 9, padding: '1px 4px', background: active ? 'rgba(255,255,255,0.2)' : T.accentSoft, color: active ? '#fff' : T.accent, borderRadius: 2, fontWeight: 700 }}>자평</span>}
+                    </div>
+                    <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{emp.position} · {emp.level}</div>
+                  </div>
+                  {done && <GradeBadge grade={r.grade.grade} size="sm" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <div style={{ ...card(), padding: S[6] }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: S[5], borderBottom: `1px solid ${T.border}`, marginBottom: S[5] }}>
+              <div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: T.ink, marginBottom: S[1] }}>{current.name}</div>
+                <div style={{ fontSize: 13, color: T.textMute, display: 'flex', gap: S[3], flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span>{current.id}</span>
+                  <span style={{ color: T.borderStrong }}>·</span>
+                  <span>{current.dept}</span>
+                  <span style={{ color: T.borderStrong }}>·</span>
+                  <span>{current.position}</span>
+                  <Badge color={T.brand} variant="outline" size="sm">{current.level}</Badge>
+                  <Badge color={T.textMute} variant="outline" size="sm">{current.group}</Badge>
+                </div>
+                {selfSubmitted && (
+                  <div style={{ marginTop: S[3] }}>
+                    <Button variant="secondary" size="sm" icon={Sparkles} onClick={() => copySelfToEvaluator(current.id)}>
+                      자기평가 점수 가져오기
+                    </Button>
+                  </div>
+                )}
+              </div>
+              {result?.grade && (
+                <div style={{ textAlign: 'center' }}>
+                  <GradeBadge grade={result.grade.grade} size="lg" />
+                  <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2] }}>
+                    종합 <strong style={{ color: T.brand, fontSize: 13 }}>{result.totalScore.toFixed(1)}</strong>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <SectionTitle accent={`가중점수 ${result?.comp != null ? result.comp.toFixed(2) : '-'} / 100`}>역량평가</SectionTitle>
+            
+            {/* 승진 심사 카드 (대상자만 표시) */}
+            <PromotionEvalCard emp={current} policy={policy} totalScore={result?.totalScore} />
+            
+            {[
+              { key: 'comp_expert', label: '직무 전문성', weight: policy.comp_expert, desc: '담당 직무 전문지식·기술 수준, 자격증' },
+              { key: 'comp_problem', label: '문제해결력', weight: policy.comp_problem, desc: '복잡한 문제 분석·해결, 의사결정 품질' },
+              { key: 'comp_learn', label: '학습·자기계발', weight: policy.comp_learn, desc: '신규 지식 습득, 교육 이수, 자격 취득' },
+              { key: 'comp_collab', label: '협업·커뮤니케이션', weight: policy.comp_collab, desc: '팀워크, 보고·소통, 다면평가 반영' },
+            ].map(it => <ScoreRow key={it.key} {...it} value={empScores[it.key]} selfValue={empSelf[it.key]} onChange={v => updateScore(current.id, it.key, v)} />)}
+            
+            <div style={{ marginTop: S[6] }}>
+              <SectionTitle accent={`가중점수 ${result?.perf != null ? result.perf.toFixed(2) : '-'} / 100`}>업적평가</SectionTitle>
+              
+              {/* KPI 계산기 버튼 - 업적평가 상단에 안내 */}
+              <div style={{ 
+                marginBottom: S[4], padding: `${S[3]}px ${S[4]}px`,
+                background: '#F0F7F1', borderLeft: `3px solid ${T.success}`, borderRadius: 4,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: S[3]
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                    <Calculator size={14} style={{ color: T.success }} />
+                    <strong style={{ fontSize: 12, color: T.success }}>KPI 자동 계산기</strong>
+                  </div>
+                  <div style={{ fontSize: 11, color: T.text, lineHeight: 1.5 }}>
+                    {current.group} 직무군 KPI 8종의 실측값을 입력하면 자동으로 KPI 달성도 점수가 산정됩니다
+                  </div>
+                </div>
+                <Button variant="secondary" size="sm" icon={Calculator} onClick={() => setKpiCalcOpen(true)}>
+                  KPI 계산기 열기
+                </Button>
+              </div>
+              
+              {[
+                { key: 'perf_kpi', label: 'KPI 달성도', weight: policy.perf_kpi, desc: '연초 설정 KPI 달성률 · 계산기 사용 권장' },
+                { key: 'perf_profit', label: '프로젝트 수익성·기여도', weight: policy.perf_profit, desc: '담당 프로젝트 수익률, 신규 수주' },
+                { key: 'perf_delivery', label: '납기 준수·완성도', weight: policy.perf_delivery, desc: '계획 대비 납기, 결과물 품질' },
+                { key: 'perf_customer', label: '고객 만족도·재계약', weight: policy.perf_customer, desc: '고객 평가, 재계약/추가 발주' },
+              ].map(it => <ScoreRow key={it.key} {...it} value={empScores[it.key]} selfValue={empSelf[it.key]} onChange={v => updateScore(current.id, it.key, v)} />)}
+            </div>
+          </div>
+
+          {/* KPI 계산기 모달 */}
+          {kpiCalcOpen && (
+            <KPICalculatorModal 
+              employee={current}
+              currentScore={empScores.perf_kpi}
+              onApply={(score) => { updateScore(current.id, 'perf_kpi', score); setKpiCalcOpen(false); }}
+              onClose={() => setKpiCalcOpen(false)}
+            />
+          )}
+
+          {(empComments.selfStrength || empComments.selfImprovement || empComments.selfGoal) && (
+            <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[6], marginTop: S[5] }}>
+              <SectionTitle>본인이 작성한 의견</SectionTitle>
+              {empComments.selfStrength && <CommentDisplay label="성과·강점" text={empComments.selfStrength} />}
+              {empComments.selfImprovement && <CommentDisplay label="개선점" text={empComments.selfImprovement} />}
+              {empComments.selfGoal && <CommentDisplay label="내년 목표·요청" text={empComments.selfGoal} />}
+            </div>
+          )}
+          
+          <div style={{ ...card(), padding: S[6], marginTop: S[5] }}>
+            <SectionTitle>평가자 의견</SectionTitle>
+            <CommentField label="강점" placeholder="우수한 점·칭찬할 부분" value={empComments.strength} onChange={v => updateComment(current.id, 'strength', v)} />
+            <CommentField label="개선점" placeholder="보완·발전이 필요한 부분" value={empComments.improvement} onChange={v => updateComment(current.id, 'improvement', v)} />
+            <CommentField label="종합 의견" placeholder="종합 평가 의견, 차년도 기대사항" value={empComments.overall} onChange={v => updateComment(current.id, 'overall', v)} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[4], marginTop: S[3] }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: T.text, display: 'block', marginBottom: S[2] }}>1차 평가자</label>
+                <input type="text" value={empComments.evaluator1 || ''} onChange={e => updateComment(current.id, 'evaluator1', e.target.value)} 
+                  placeholder="예) 이종민 부장"
+                  style={{ width: '100%', padding: '10px 14px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13, background: T.surface, boxSizing: 'border-box', fontFamily: FONT, outline: 'none' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: T.text, display: 'block', marginBottom: S[2] }}>2차 평가자</label>
+                <input type="text" value={empComments.evaluator2 || ''} onChange={e => updateComment(current.id, 'evaluator2', e.target.value)} 
+                  placeholder="예) 최영숙 이사"
+                  style={{ width: '100%', padding: '10px 14px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13, background: T.surface, boxSizing: 'border-box', fontFamily: FONT, outline: 'none' }} />
+              </div>
+            </div>
+            {result?.grade && (
+              <Button variant="primary" icon={Printer} 
+                onClick={() => printEvaluationPDF(current, result, empScores, empComments, policy, currentYear, user.role)}
+                style={{ marginTop: S[5] }}>
+                PDF 평가서 출력
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CommentDisplay({ label, text }) {
+  return (
+    <div style={{ marginBottom: S[3], padding: S[4], background: T.surfaceAlt, borderRadius: 6 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.brand, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: S[1] }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{text}</div>
+    </div>
+  );
+}
+
+// ============================================================
+// 평가 결과
+// ============================================================
+function ResultsView({ user, employees, results, comments, scores, selfScores, policy, currentYear, history, navigateToHistory }) {
+  const [expandedId, setExpandedId] = useState(null);
+  
+  return (
+    <div>
+      <PageHeader 
+        eyebrow="Results" 
+        title="평가 결과" 
+        subtitle="종합 평가 결과 일람 · 사번이나 이름을 클릭하면 평가 상세 내용이 펼쳐집니다" 
+      />
+      
+      <div style={{ ...card(), padding: 0, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: T.surfaceAlt }}>
+              <Th>사번</Th><Th>성명</Th><Th>직위</Th><Th align="center">레벨</Th>
+              <Th align="right">역량</Th><Th align="right">업적</Th><Th align="right">종합</Th>
+              <Th align="center">등급</Th><Th align="right">인상률</Th><Th align="center">PDF</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {employees.map((emp, idx) => {
+              const r = results[emp.id];
+              if (!emp.evalTarget) return (
+                <tr key={emp.id} style={{ background: T.surfaceAlt, color: T.textLight, borderBottom: `1px solid ${T.divider}` }}>
+                  <Td><code style={{ fontSize: 11 }}>{emp.id}</code></Td>
+                  <Td>{emp.name}</Td><Td>{emp.position}</Td><Td align="center">{emp.level}</Td>
+                  <td colSpan="6" style={{ padding: `${S[3]}px ${S[3]}px`, textAlign: 'center', fontStyle: 'italic', fontSize: 12 }}>
+                    {emp.status === 'leave' ? '휴직 (평가 보류)' : '평가 제외'}
+                  </td>
+                </tr>
+              );
+              const isExpanded = expandedId === emp.id;
+              return (
+                <React.Fragment key={emp.id}>
+                  <tr 
+                    onClick={() => setExpandedId(isExpanded ? null : emp.id)}
+                    style={{ 
+                      borderBottom: isExpanded ? 'none' : `1px solid ${T.divider}`, 
+                      background: isExpanded ? T.surfaceAlt : (idx % 2 === 0 ? T.surface : '#FBFCFD'),
+                      transition: 'background 0.15s',
+                      cursor: 'pointer'
+                    }}
+                    onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = T.divider; }}
+                    onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = idx % 2 === 0 ? T.surface : '#FBFCFD'; }}
+                  >
+                    <Td>
+                      <code style={{ 
+                        fontSize: 11, 
+                        color: isExpanded ? T.brand : T.textMute,
+                        fontWeight: isExpanded ? 700 : 400,
+                        transition: 'color 0.15s'
+                      }}>
+                        {emp.id}
+                      </code>
+                    </Td>
+                    <Td>
+                      <span style={{ 
+                        display: 'inline-flex', alignItems: 'center', gap: 6, 
+                        color: isExpanded ? T.brand : T.ink, 
+                        fontWeight: 600, fontSize: 13,
+                        textDecoration: isExpanded ? 'none' : 'underline',
+                        textDecorationColor: 'rgba(214,56,56,0.3)',
+                        textDecorationThickness: 1,
+                        textUnderlineOffset: 3,
+                        transition: 'color 0.15s'
+                      }}>
+                        {emp.name}
+                        <ChevronDown size={12} style={{ 
+                          color: isExpanded ? T.brand : T.textMute, 
+                          transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.2s, color 0.15s'
+                        }}/>
+                      </span>
+                    </Td>
+                    <Td>{emp.position}</Td>
+                    <Td align="center"><Badge color={T.brand} variant="outline" size="sm">{emp.level}</Badge></Td>
+                    <Td align="right" mono>{r?.comp != null ? r.comp.toFixed(2) : '-'}</Td>
+                    <Td align="right" mono>{r?.perf != null ? r.perf.toFixed(2) : '-'}</Td>
+                    <Td align="right" mono><strong>{r?.totalScore != null ? r.totalScore.toFixed(2) : '-'}</strong></Td>
+                    <Td align="center"><GradeBadge grade={r?.grade?.grade} /></Td>
+                    <Td align="right" mono>{r?.grade ? `${r.grade.increase}%` : '-'}</Td>
+                    <Td align="center" onClick={e => e.stopPropagation()}>
+                      {r?.grade && (
+                        <Button variant="ghost" size="sm" icon={Printer}
+                          onClick={() => printEvaluationPDF(emp, r, scores[emp.id] || {}, comments[emp.id] || {}, policy, currentYear, user.role)}>
+                          출력
+                        </Button>
+                      )}
+                    </Td>
+                  </tr>
+                  {isExpanded && (
+                    <tr style={{ borderBottom: `1px solid ${T.divider}`, background: T.surfaceAlt }}>
+                      <td colSpan="10" style={{ padding: 0 }}>
+                        <ResultDetailPanel 
+                          emp={emp}
+                          result={r}
+                          empScores={scores[emp.id] || {}}
+                          empSelfScores={selfScores[emp.id] || {}}
+                          empComments={comments[emp.id] || {}}
+                          policy={policy}
+                          currentYear={currentYear}
+                          history={history}
+                          onPrint={() => printEvaluationPDF(emp, r, scores[emp.id] || {}, comments[emp.id] || {}, policy, currentYear, user.role)}
+                          navigateToHistory={navigateToHistory}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 평가 결과 상세 패널 (사번/이름 클릭 시 펼쳐짐)
+// ============================================================
+function ResultDetailPanel({ emp, result, empScores, empSelfScores, empComments, policy, currentYear, history, onPrint, navigateToHistory }) {
+  // 평가 점수 항목 정의
+  const compItems = [
+    { key: 'comp_expert', label: '직무 전문성', weight: policy.comp_expert },
+    { key: 'comp_problem', label: '문제해결력', weight: policy.comp_problem },
+    { key: 'comp_learn', label: '학습·자기계발', weight: policy.comp_learn },
+    { key: 'comp_collab', label: '협업·커뮤니케이션', weight: policy.comp_collab },
+  ];
+  const perfItems = [
+    { key: 'perf_kpi', label: 'KPI 달성도', weight: policy.perf_kpi },
+    { key: 'perf_profit', label: '프로젝트 수익성·기여도', weight: policy.perf_profit },
+    { key: 'perf_delivery', label: '납기 준수·완성도', weight: policy.perf_delivery },
+    { key: 'perf_customer', label: '고객 만족도·재계약', weight: policy.perf_customer },
+  ];
+  
+  // 평가 이력 (history + 현재)
+  const evalHistory = [];
+  (history || []).forEach(h => {
+    const g = h.gradeMap?.[emp.id];
+    if (g) evalHistory.push({ year: h.year, grade: g });
+  });
+  if (result?.grade?.grade) {
+    evalHistory.push({ year: currentYear, grade: result.grade.grade, isCurrent: true });
+  }
+  evalHistory.sort((a, b) => b.year - a.year);
+  
+  // 등급별 컬러
+  const gradeColor = result?.grade ? T[result.grade.grade] : T.textMute;
+  
+  return (
+    <div style={{ padding: `${S[5]}px ${S[6]}px`, background: T.surfaceAlt, animation: 'fadeIn 0.2s ease-out' }}>
+      {/* 헤더: 아바타 + 종합 결과 요약 */}
+      <div style={{ 
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+        marginBottom: S[5], paddingBottom: S[4], borderBottom: `1px solid ${T.border}`,
+        gap: S[4], flexWrap: 'wrap'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: S[3] }}>
+          <div style={{ 
+            width: 56, height: 56, borderRadius: 10, background: gradeColor, 
+            color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 24, fontWeight: 800
+          }}>
+            {result?.grade?.grade || '?'}
+          </div>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: T.ink }}>
+              {emp.name} <span style={{ fontSize: 13, color: T.textMute, fontWeight: 500 }}>· {emp.position} · {emp.dept}</span>
+            </div>
+            <div style={{ fontSize: 12, color: T.textMute, marginTop: 4, display: 'flex', alignItems: 'center', gap: S[2] }}>
+              <code>{emp.id}</code>
+              <span>·</span>
+              <Badge color={T.brand} variant="outline" size="sm">{emp.level}</Badge>
+              <span>·</span>
+              <Badge color={groupColor(emp.group)} variant="solid" size="sm">{emp.group}</Badge>
+              {result?.grade?.label && (
+                <>
+                  <span>·</span>
+                  <span style={{ color: gradeColor, fontWeight: 600 }}>{result.grade.label}</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+        
+        <div style={{ display: 'flex', gap: S[5], alignItems: 'center' }}>
+          {/* 종합 점수 큰 표시 */}
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: T.textMute, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+              종합 점수
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: T.brand, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
+              {result?.totalScore != null ? result.totalScore.toFixed(2) : '-'}
+              <span style={{ fontSize: 14, color: T.textMute, fontWeight: 500 }}> / 100</span>
+            </div>
+          </div>
+          
+          <Button variant="primary" size="sm" icon={Printer} onClick={onPrint}>PDF 평가서 출력</Button>
+        </div>
+      </div>
+
+      {/* 2단 레이아웃: 좌측 점수 세부 / 우측 의견·이력 */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: S[5] }}>
+        {/* 좌측: 점수 상세 */}
+        <div>
+          {/* 역량평가 점수 */}
+          <ScoreBreakdownCard 
+            title="역량평가" 
+            weight={policy.weight_comp}
+            totalScore={result?.comp}
+            items={compItems}
+            scores={empScores}
+            selfScores={empSelfScores}
+            accent={T.brand}
+          />
+          
+          {/* 업적평가 점수 */}
+          <div style={{ marginTop: S[4] }}>
+            <ScoreBreakdownCard 
+              title="업적평가" 
+              weight={policy.weight_perf}
+              totalScore={result?.perf}
+              items={perfItems}
+              scores={empScores}
+              selfScores={empSelfScores}
+              accent={T.success}
+            />
+          </div>
+        </div>
+        
+        {/* 우측: 본인 의견 + 평가자 코멘트 + 보상 + 이력 */}
+        <div>
+          {/* 등급 및 보상 */}
+          <div style={{ background: T.surface, borderRadius: 8, padding: S[5], marginBottom: S[4], border: `1px solid ${T.border}` }}>
+            <DetailSectionTitle icon={Award}>등급 및 보상</DetailSectionTitle>
+            {result?.grade ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[3], fontSize: 12 }}>
+                <ResultStatItem label="기본급 인상률" value={`${result.grade.increase}%`} color={T.success} />
+                <ResultStatItem label="PI 계수" value={`× ${result.grade.piCoef.toFixed(1)}`} />
+                <ResultStatItem label="현 월급" value={`${fmtKRW(emp.baseSalary)}원`} small />
+                <ResultStatItem label="신 월급" value={`${fmtKRW(result.newSalary)}원`} color={T.brand} small />
+                <ResultStatItem label="PI (성과 인센티브)" value={result.pi > 0 ? `${fmtKRW(result.pi)}원` : '-'} small />
+                <ResultStatItem label="PS (이익 분배)" value={result.ps > 0 ? `${fmtKRW(result.ps)}원` : '-'} small />
+              </div>
+            ) : (
+              <div style={{ padding: S[3], textAlign: 'center', color: T.textLight, fontSize: 12 }}>
+                평가가 완료되지 않았습니다
+              </div>
+            )}
+          </div>
+          
+          {/* 평가 이력 */}
+          {evalHistory.length > 0 && (
+            <div style={{ background: T.surface, borderRadius: 8, padding: S[5], marginBottom: S[4], border: `1px solid ${T.border}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: S[3] }}>
+                <DetailSectionTitle icon={History} noMargin>다년도 평가 이력</DetailSectionTitle>
+                <span style={{ fontSize: 10, color: T.textMute }}>클릭 시 상세 이력 보기 →</span>
+              </div>
+              <div style={{ display: 'flex', gap: S[2], flexWrap: 'wrap' }}>
+                {evalHistory.map(h => (
+                  <button key={h.year} 
+                    onClick={() => navigateToHistory && navigateToHistory(emp.id, h.year)}
+                    style={{ 
+                      padding: `${S[2]}px ${S[3]}px`, background: T.surfaceAlt, borderRadius: 6,
+                      border: h.isCurrent ? `2px solid ${T.brand}` : `1px solid ${T.border}`,
+                      minWidth: 70, textAlign: 'center', cursor: 'pointer',
+                      fontFamily: FONT, transition: 'all 0.15s', display: 'block'
+                    }}
+                    onMouseEnter={e => { 
+                      e.currentTarget.style.background = T.brand; 
+                      e.currentTarget.style.borderColor = T.brand;
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(27,58,111,0.25)';
+                      const yearText = e.currentTarget.querySelector('.year-text');
+                      if (yearText) yearText.style.color = 'rgba(255,255,255,0.85)';
+                      const progText = e.currentTarget.querySelector('.prog-text');
+                      if (progText) progText.style.color = '#fff';
+                    }}
+                    onMouseLeave={e => { 
+                      e.currentTarget.style.background = T.surfaceAlt; 
+                      e.currentTarget.style.borderColor = h.isCurrent ? T.brand : T.border;
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = 'none';
+                      const yearText = e.currentTarget.querySelector('.year-text');
+                      if (yearText) yearText.style.color = T.textMute;
+                      const progText = e.currentTarget.querySelector('.prog-text');
+                      if (progText) progText.style.color = T.brand;
+                    }}
+                    title={`${h.year}년 평가 이력 보기`}
+                  >
+                    <div className="year-text" style={{ fontSize: 10, color: T.textMute, marginBottom: 4, transition: 'color 0.15s' }}>
+                      {h.year} {h.isCurrent && <span className="prog-text" style={{ color: T.brand, fontWeight: 600, transition: 'color 0.15s' }}>·진행</span>}
+                    </div>
+                    <GradeBadge grade={h.grade} size="sm" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* 본인 의견 */}
+          <CommentGroupCard 
+            title="본인 의견 (자기 평가)"
+            items={[
+              { label: '올해의 성과·강점', value: empComments.selfStrength },
+              { label: '개선하고 싶은 점', value: empComments.selfImprove },
+              { label: '내년 목표·요청사항', value: empComments.selfGoal },
+            ]}
+          />
+          
+          {/* 평가자 코멘트 */}
+          <div style={{ marginTop: S[4] }}>
+            <CommentGroupCard 
+              title="평가자 코멘트"
+              items={[
+                { label: '강점', value: empComments.evalStrength },
+                { label: '개선 영역', value: empComments.evalImprove },
+                { label: '총평·향후 기대', value: empComments.evalOverall },
+              ]}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 점수 세부 카드 (역량 또는 업적)
+function ScoreBreakdownCard({ title, weight, totalScore, items, scores, selfScores, accent }) {
+  return (
+    <div style={{ background: T.surface, borderRadius: 8, padding: S[5], border: `1px solid ${T.border}` }}>
+      <div style={{ 
+        display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+        marginBottom: S[3], paddingBottom: S[2], borderBottom: `2px solid ${accent}`
+      }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: S[2] }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{title}</span>
+          <span style={{ fontSize: 11, color: T.textMute }}>가중치 {weight}%</span>
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: accent, fontVariantNumeric: 'tabular-nums' }}>
+          {totalScore != null ? totalScore.toFixed(2) : '-'}
+          <span style={{ fontSize: 11, color: T.textMute, fontWeight: 500 }}> / 100</span>
+        </div>
+      </div>
+      
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <thead>
+          <tr style={{ borderBottom: `1px solid ${T.divider}` }}>
+            <th style={{ padding: '6px 4px', textAlign: 'left', fontSize: 10, fontWeight: 600, color: T.textMute, letterSpacing: '0.05em' }}>항목</th>
+            <th style={{ padding: '6px 4px', textAlign: 'center', fontSize: 10, fontWeight: 600, color: T.textMute, letterSpacing: '0.05em', width: 50 }}>배점</th>
+            <th style={{ padding: '6px 4px', textAlign: 'center', fontSize: 10, fontWeight: 600, color: T.textMute, letterSpacing: '0.05em', width: 60 }}>자기</th>
+            <th style={{ padding: '6px 4px', textAlign: 'center', fontSize: 10, fontWeight: 600, color: T.textMute, letterSpacing: '0.05em', width: 60 }}>평가</th>
+            <th style={{ padding: '6px 4px', textAlign: 'right', fontSize: 10, fontWeight: 600, color: T.textMute, letterSpacing: '0.05em', width: 70 }}>가중점수</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map(it => {
+            const selfScore = selfScores[it.key];
+            const evalScore = scores[it.key];
+            const weighted = evalScore != null ? (evalScore * it.weight / 100) : null;
+            return (
+              <tr key={it.key} style={{ borderBottom: `1px solid ${T.divider}` }}>
+                <td style={{ padding: '8px 4px', color: T.text, fontSize: 12 }}>{it.label}</td>
+                <td style={{ padding: '8px 4px', textAlign: 'center', color: T.textMute, fontSize: 11, fontVariantNumeric: 'tabular-nums' }}>{it.weight}%</td>
+                <td style={{ padding: '8px 4px', textAlign: 'center', color: T.textMute, fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
+                  {selfScore != null ? selfScore : '-'}
+                </td>
+                <td style={{ padding: '8px 4px', textAlign: 'center', color: T.ink, fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                  {evalScore != null ? evalScore : '-'}
+                </td>
+                <td style={{ padding: '8px 4px', textAlign: 'right', fontSize: 12, fontWeight: 700, color: accent, fontVariantNumeric: 'tabular-nums' }}>
+                  {weighted != null ? weighted.toFixed(2) : '-'}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// 결과 통계 항목
+function ResultStatItem({ label, value, color, small }) {
+  return (
+    <div style={{ 
+      padding: small ? `${S[2]}px ${S[3]}px` : `${S[3]}px ${S[3]}px`, 
+      background: T.surfaceAlt, borderRadius: 6 
+    }}>
+      <div style={{ fontSize: 10, color: T.textMute, marginBottom: 4 }}>{label}</div>
+      <div style={{ 
+        fontSize: small ? 12 : 14, fontWeight: 700, 
+        color: color || T.ink, fontVariantNumeric: 'tabular-nums' 
+      }}>
+        {value || '-'}
+      </div>
+    </div>
+  );
+}
+
+// 의견 표시 그룹 카드 (자기평가 또는 평가자 의견 그룹)
+function CommentGroupCard({ title, items }) {
+  const hasContent = items.some(it => it.value && it.value.trim());
+  return (
+    <div style={{ background: T.surface, borderRadius: 8, padding: S[5], border: `1px solid ${T.border}` }}>
+      <DetailSectionTitle icon={MessageSquare}>{title}</DetailSectionTitle>
+      {!hasContent ? (
+        <div style={{ fontSize: 12, color: T.textLight, padding: `${S[2]}px 0`, fontStyle: 'italic' }}>
+          작성된 내용이 없습니다
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: S[3] }}>
+          {items.map((it, i) => it.value && (
+            <div key={i}>
+              <div style={{ 
+                fontSize: 10, fontWeight: 600, color: T.textMute, 
+                letterSpacing: '0.05em', marginBottom: 4 
+              }}>
+                {it.label}
+              </div>
+              <div style={{ 
+                fontSize: 12, color: T.text, lineHeight: 1.7, 
+                padding: `${S[2]}px ${S[3]}px`, background: T.surfaceAlt, borderRadius: 4,
+                whiteSpace: 'pre-wrap'
+              }}>
+                {it.value}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// 급여 산정
+// ============================================================
+function SalaryView({ employees, results, stats }) {
+  return (
+    <div>
+      <PageHeader eyebrow="Compensation" title="급여 산정" subtitle="기본급 + 직책수당 + 식대·차량유지비 + 자격수당 + PI + PS 통합 산정" />
+      
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: S[4], marginBottom: S[6] }}>
+        <MetricCard icon={Wallet} label="2025 총 인건비" value={fmtMan(stats.total2025)} unit="원" sub="연간" />
+        <MetricCard icon={Wallet} label="2026 총 인건비" value={fmtMan(stats.total2026)} unit="원" sub="연간 예상" color={T.brand} />
+        <MetricCard icon={TrendingUp} label="증감액" value={(stats.delta >= 0 ? '+' : '') + fmtMan(stats.delta)} unit="원" color={stats.delta >= 0 ? T.success : T.danger} />
+        <MetricCard icon={TrendingUp} label="증감률" value={(stats.deltaPct >= 0 ? '+' : '') + stats.deltaPct.toFixed(2)} unit="%" color={stats.deltaPct >= 0 ? T.success : T.danger} />
+      </div>
+      
+      <div style={{ ...card(), padding: 0, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: T.surfaceAlt }}>
+              <Th>성명</Th><Th>직위</Th><Th align="center">등급</Th>
+              <Th align="right">현 월급</Th><Th align="center">인상</Th>
+              <Th align="right">신 월급</Th><Th align="right">직책</Th>
+              <Th align="right">식대·차량</Th><Th align="right">자격</Th>
+              <Th align="right">PI</Th><Th align="right">PS</Th>
+              <Th align="right">총보상(연)</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {employees.map((emp, idx) => {
+              const r = results[emp.id];
+              return (
+                <tr key={emp.id} style={{ borderBottom: `1px solid ${T.divider}`, background: r?.isExcluded ? T.surfaceAlt : (idx % 2 === 0 ? T.surface : '#FBFCFD'), color: r?.isExcluded ? T.textMute : T.text }}>
+                  <Td><strong style={{ color: T.ink }}>{emp.name}</strong></Td>
+                  <Td>{emp.position}</Td>
+                  <Td align="center">
+                    {r?.grade ? <GradeBadge grade={r.grade.grade} size="sm" /> : <span style={{ fontSize: 11, color: T.textLight }}>{emp.status === 'leave' ? '휴직' : '제외'}</span>}
+                  </Td>
+                  <Td align="right" mono>{fmtKRW(emp.baseSalary)}</Td>
+                  <Td align="center" mono>{r?.grade ? `${r.increase}%` : '-'}</Td>
+                  <Td align="right" mono><strong>{fmtKRW(r?.newSalary)}</strong></Td>
+                  <Td align="right" mono>{emp.allowance > 0 ? fmtKRW(emp.allowance) : '-'}</Td>
+                  <Td align="right" mono>{emp.mealCar > 0 ? fmtKRW(emp.mealCar) : '-'}</Td>
+                  <Td align="right" mono>{emp.qualif > 0 ? fmtKRW(emp.qualif) : '-'}</Td>
+                  <Td align="right" mono>{r?.pi > 0 ? fmtKRW(r.pi) : '-'}</Td>
+                  <Td align="right" mono>{r?.ps > 0 ? fmtKRW(r.ps) : '-'}</Td>
+                  <Td align="right" mono><strong style={{ color: T.brand }}>{fmtKRW(r?.totalComp2026)}</strong></Td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 통계 분석
+// ============================================================
+function AnalyticsView({ employees, results, policy, stats }) {
+  const deptData = useMemo(() => {
+    const map = {};
+    employees.filter(e => e.evalTarget).forEach(e => {
+      const r = results[e.id];
+      if (!map[e.dept]) map[e.dept] = { name: e.dept, count: 0, total: 0, S: 0, A: 0, B: 0, C: 0, D: 0 };
+      map[e.dept].count++;
+      if (r?.totalScore != null) map[e.dept].total += r.totalScore;
+      if (r?.grade) map[e.dept][r.grade.grade]++;
+    });
+    return Object.values(map).map(d => ({ ...d, avg: d.count > 0 ? (d.total / d.count) : 0 }));
+  }, [employees, results]);
+
+  const gradePieData = policy.grades.map(g => ({
+    name: g.grade, value: stats.gradeCount[g.grade] || 0, grade: g.grade
+  })).filter(d => d.value > 0);
+
+  return (
+    <div>
+      <PageHeader eyebrow="Analytics" title="통계 분석" subtitle="부서별·직무군별·레벨별 평가 결과 및 보상 분포 분석" />
+      
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[5], marginBottom: S[5] }}>
+        <div style={{ ...card(), padding: S[6] }}>
+          <SectionTitle>등급 분포</SectionTitle>
+          {gradePieData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <PieChart>
+                <Pie data={gradePieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} 
+                  label={({ name, value }) => `${name} · ${value}명`}>
+                  {gradePieData.map(d => <Cell key={d.grade} fill={T[d.grade]} />)}
+                </Pie>
+                <Tooltip contentStyle={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : <EmptyState icon={PieIcon} title="데이터 없음" desc="평가 입력 후 표시됩니다" />}
+        </div>
+        
+        <div style={{ ...card(), padding: S[6] }}>
+          <SectionTitle>부서별 평균 점수</SectionTitle>
+          {deptData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={deptData} margin={{ top: 20, right: 20, left: -10, bottom: 60 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
+                <XAxis dataKey="name" angle={-25} textAnchor="end" height={70} tick={{ fontSize: 11, fill: T.textMute }} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: T.textMute }} />
+                <Tooltip contentStyle={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13 }} />
+                <Bar dataKey="avg" name="평균 점수" fill={T.brand} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <EmptyState icon={BarChart3} title="데이터 없음" desc="평가 입력 후 표시됩니다" />}
+        </div>
+      </div>
+      
+      <div style={{ ...card(), padding: S[6] }}>
+        <SectionTitle>부서별 등급 분포</SectionTitle>
+        {deptData.length > 0 ? (
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={deptData} margin={{ top: 20, right: 20, left: -10, bottom: 60 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
+              <XAxis dataKey="name" angle={-25} textAnchor="end" height={70} tick={{ fontSize: 11, fill: T.textMute }} />
+              <YAxis tick={{ fontSize: 11, fill: T.textMute }} />
+              <Tooltip contentStyle={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13 }} />
+              <Legend wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
+              <Bar dataKey="S" stackId="a" fill={T.S} />
+              <Bar dataKey="A" stackId="a" fill={T.A} />
+              <Bar dataKey="B" stackId="a" fill={T.B} />
+              <Bar dataKey="C" stackId="a" fill={T.C} />
+              <Bar dataKey="D" stackId="a" fill={T.D} radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : <EmptyState icon={BarChart3} title="데이터 없음" desc="평가 입력 후 표시됩니다" />}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 다년도 이력
+// ============================================================
+function HistoryView({ history, employees, results, currentYear, highlight }) {
+  const highlightRowRef = useRef(null);
+  
+  // highlight 변경 시 해당 행으로 스크롤
+  useEffect(() => {
+    if (highlight?.empId && highlightRowRef.current) {
+      setTimeout(() => {
+        highlightRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 100);
+    }
+  }, [highlight]);
+  
+  const trendData = useMemo(() => {
+    const all = [...history];
+    const currentGradeMap = {};
+    employees.forEach(e => { const g = results[e.id]?.grade?.grade; if (g) currentGradeMap[e.id] = g; });
+    if (Object.keys(currentGradeMap).length > 0) all.push({ year: currentYear, gradeMap: currentGradeMap, isCurrent: true });
+    return all.sort((a, b) => a.year - b.year).map(h => {
+      const counts = { S: 0, A: 0, B: 0, C: 0, D: 0 };
+      Object.values(h.gradeMap || {}).forEach(g => counts[g]++);
+      return { year: h.year + (h.isCurrent ? ' (진행)' : ''), ...counts };
+    });
+  }, [history, employees, results, currentYear]);
+
+  const employeeTrend = useMemo(() => {
+    const allYears = [...history.map(h => h.year), currentYear].sort();
+    return employees.filter(e => e.evalTarget || history.some(h => h.gradeMap?.[e.id])).map(emp => {
+      const trend = {};
+      history.forEach(h => { trend[h.year] = h.gradeMap?.[emp.id] || '-'; });
+      trend[currentYear] = results[emp.id]?.grade?.grade || '-';
+      return { ...emp, trend, years: allYears };
+    });
+  }, [history, employees, results, currentYear]);
+
+  const gradeOrder = { S: 5, A: 4, B: 3, C: 2, D: 1, '-': 0 };
+
+  return (
+    <div>
+      <PageHeader eyebrow="History" title="다년도 평가 이력" subtitle={`저장된 이력 ${history.length}개년의 추이 분석`} />
+      
+      <div style={{ ...card(), padding: S[6], marginBottom: S[5] }}>
+        <SectionTitle>연도별 등급 분포 추이</SectionTitle>
+        {trendData.length > 0 ? (
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={trendData} margin={{ top: 20, right: 20, left: -10, bottom: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
+              <XAxis dataKey="year" tick={{ fontSize: 12, fill: T.textMute }} />
+              <YAxis tick={{ fontSize: 11, fill: T.textMute }} />
+              <Tooltip contentStyle={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13 }} />
+              <Legend wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
+              <Bar dataKey="S" stackId="a" fill={T.S} />
+              <Bar dataKey="A" stackId="a" fill={T.A} />
+              <Bar dataKey="B" stackId="a" fill={T.B} />
+              <Bar dataKey="C" stackId="a" fill={T.C} />
+              <Bar dataKey="D" stackId="a" fill={T.D} radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : <EmptyState icon={History} title="이력 없음" desc="평가 마감 후 이력이 누적됩니다" />}
+      </div>
+
+      <div style={{ ...card(), padding: 0, overflow: 'auto' }}>
+        <div style={{ padding: S[5] }}>
+          <SectionTitle>직원별 등급 추이</SectionTitle>
+        </div>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: T.surfaceAlt }}>
+              <Th>성명</Th><Th>부서</Th><Th>직위</Th>
+              {employeeTrend[0]?.years.map(y => (
+                <Th key={y} align="center">{y === currentYear ? `${y} (진행)` : y}</Th>
+              ))}
+              <Th align="center">추이</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {employeeTrend.map(emp => {
+              const grades = emp.years.map(y => emp.trend[y]);
+              const valid = grades.filter(g => g !== '-');
+              let icon = '—', color = T.textLight;
+              if (valid.length >= 2) {
+                const first = gradeOrder[valid[0]], last = gradeOrder[valid[valid.length - 1]];
+                if (last > first) { icon = '↑'; color = T.success; }
+                else if (last < first) { icon = '↓'; color = T.danger; }
+                else { icon = '→'; color = T.brand; }
+              }
+              const isHighlighted = highlight?.empId === emp.id;
+              return (
+                <tr key={emp.id} 
+                  ref={isHighlighted ? highlightRowRef : null}
+                  style={{ 
+                    borderBottom: `1px solid ${T.divider}`,
+                    background: isHighlighted ? 'rgba(214,56,56,0.06)' : 'transparent',
+                    transition: 'background 0.3s',
+                    outline: isHighlighted ? `2px solid ${T.accent}` : 'none',
+                    outlineOffset: isHighlighted ? '-2px' : '0',
+                  }}>
+                  <Td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {isHighlighted && (
+                        <span style={{ 
+                          fontSize: 9, fontWeight: 700, color: '#fff', 
+                          background: T.accent, padding: '2px 6px', borderRadius: 3,
+                          letterSpacing: '0.05em'
+                        }}>
+                          선택됨
+                        </span>
+                      )}
+                      <strong style={{ color: isHighlighted ? T.accent : T.ink }}>{emp.name}</strong>
+                    </div>
+                  </Td>
+                  <Td>{emp.dept}</Td><Td>{emp.position}</Td>
+                  {emp.years.map(y => {
+                    const isHighlightYear = isHighlighted && highlight?.year === y;
+                    return (
+                      <Td key={y} align="center">
+                        <div style={isHighlightYear ? { 
+                          display: 'inline-block', padding: 2, background: T.accent, 
+                          borderRadius: 5, transition: 'all 0.2s'
+                        } : {}}>
+                          {emp.trend[y] !== '-' ? <GradeBadge grade={emp.trend[y]} size="sm" /> : <span style={{ color: T.textLight, fontSize: 11 }}>-</span>}
+                        </div>
+                      </Td>
+                    );
+                  })}
+                  <Td align="center"><span style={{ fontSize: 18, fontWeight: 700, color }}>{icon}</span></Td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 이메일 통보
+// ============================================================
+function NotifyView({ employees, results, currentYear }) {
+  const [selected, setSelected] = useState([]);
+  const targets = employees.filter(e => e.evalTarget && results[e.id]?.grade);
+
+  const generateBody = (emp) => {
+    const r = results[emp.id];
+    return `안녕하세요 ${emp.name}님,\n\n${currentYear}년 정기 인사평가 결과를 안내드립니다.\n\n▶ 평가 등급: ${r.grade.grade} (${r.grade.label})\n▶ 종합 점수: ${r.totalScore.toFixed(2)} / 100점\n\n▶ ${currentYear + 1}년 보상 산정\n  · 기본급 인상률: ${r.increase}%\n  · 신규 월 기본급: ${fmtKRW(r.newSalary)}원\n  · PI: ${r.pi > 0 ? fmtKRW(r.pi) + '원' : '해당없음'}\n  · PS: ${r.ps > 0 ? fmtKRW(r.ps) + '원' : '해당없음'}\n  · 연간 총 보상: ${fmtKRW(r.totalComp2026)}원\n\n이의신청은 통보일로부터 7일 이내에 가능합니다.\n\n주식회사 코이션 인사담당`;
+  };
+
+  const sendOne = (emp) => {
+    window.location.href = `mailto:${emp.email}?subject=${encodeURIComponent(`[코이션] ${currentYear}년 인사평가 결과 통보 - ${emp.name}님`)}&body=${encodeURIComponent(generateBody(emp))}`;
+  };
+
+  return (
+    <div>
+      <PageHeader eyebrow="Notify" title="이메일 통보" subtitle="평가 결과 통보 메일을 생성합니다 (mailto: 링크)" />
+      
+      <div style={{ ...card(), padding: S[5], marginBottom: S[5] }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 14 }}>
+            <strong style={{ color: T.brand }}>{selected.length}명</strong>
+            <span style={{ color: T.textMute }}> 선택됨 / 전체 {targets.length}명</span>
+          </div>
+          <div style={{ display: 'flex', gap: S[2] }}>
+            <Button variant="outline" size="sm" onClick={() => setSelected(targets.map(e => e.id))}>전체 선택</Button>
+            <Button variant="outline" size="sm" onClick={() => setSelected([])}>선택 해제</Button>
+            <Button variant="primary" size="sm" icon={Mail} disabled={selected.length === 0}
+              onClick={() => {
+                if (!confirm(`${selected.length}명에게 메일을 발송합니다.`)) return;
+                selected.forEach((id, i) => {
+                  const emp = targets.find(e => e.id === id);
+                  if (emp) setTimeout(() => sendOne(emp), i * 500);
+                });
+              }}>
+              선택 발송
+            </Button>
+          </div>
+        </div>
+      </div>
+      
+      <div style={{ ...card(), padding: 0, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: T.surfaceAlt }}>
+              <Th align="center">
+                <input type="checkbox" checked={selected.length === targets.length && targets.length > 0} 
+                  onChange={e => setSelected(e.target.checked ? targets.map(emp => emp.id) : [])} />
+              </Th>
+              <Th>성명</Th><Th>부서</Th><Th>이메일</Th>
+              <Th align="center">등급</Th><Th align="center">발송</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {targets.map((emp, idx) => (
+              <tr key={emp.id} style={{ 
+                borderBottom: `1px solid ${T.divider}`, 
+                background: selected.includes(emp.id) ? T.surfaceAlt : (idx % 2 === 0 ? T.surface : '#FBFCFD')
+              }}>
+                <Td align="center">
+                  <input type="checkbox" checked={selected.includes(emp.id)} 
+                    onChange={() => setSelected(prev => prev.includes(emp.id) ? prev.filter(x => x !== emp.id) : [...prev, emp.id])} />
+                </Td>
+                <Td><strong style={{ color: T.ink }}>{emp.name}</strong></Td>
+                <Td>{emp.dept}</Td>
+                <Td><code style={{ fontSize: 11, color: T.textMute }}>{emp.email}</code></Td>
+                <Td align="center"><GradeBadge grade={results[emp.id].grade.grade} size="sm" /></Td>
+                <Td align="center"><Button variant="secondary" size="sm" icon={Mail} onClick={() => sendOne(emp)}>발송</Button></Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 정책 설정
+// ============================================================
+function PolicyView({ policy, setPolicy }) {
+  const [rubricTab, setRubricTab] = useState('comp');
+  const [expandedKey, setExpandedKey] = useState('comp_expert');
+  const up = (k, v) => setPolicy(prev => ({ ...prev, [k]: v }));
+  const upG = (i, k, v) => setPolicy(prev => ({ ...prev, grades: prev.grades.map((g, idx) => idx === i ? { ...g, [k]: Number(v) } : g) }));
+  
+  return (
+    <div>
+      <PageHeader eyebrow="Policy" title="정책 설정" subtitle="평가 가중치, 등급 기준, 보상 정책을 회사 방침에 맞게 조정" />
+      
+      {/* ========== 평가 척도 기준표 (Rubric) ========== */}
+      <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[6], marginBottom: S[6] }}>
+        <div style={{ 
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', 
+          marginBottom: S[5], paddingBottom: S[4], borderBottom: `1px solid ${T.border}`,
+          gap: S[4], flexWrap: 'wrap'
+        }}>
+          <div>
+            <div style={{ 
+              fontSize: 11, fontWeight: 600, color: T.brand, 
+              letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: S[1] 
+            }}>
+              Rubric · 평가 척도 기준표
+            </div>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: T.ink }}>
+              항목별 점수 판단 기준
+            </h2>
+            <div style={{ fontSize: 12, color: T.textMute, marginTop: S[1] }}>
+              각 평가 항목의 점수 구간별 행동 기준 및 정량 척도 — 평가자 참고용
+            </div>
+          </div>
+          
+          {/* 탭 전환 (역량/업적) */}
+          <div style={{ display: 'flex', gap: 0, border: `1px solid ${T.border}`, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
+            {[{ id: 'comp', label: '역량평가' }, { id: 'perf', label: '업적평가' }].map(t => (
+              <button key={t.id} 
+                onClick={() => { 
+                  setRubricTab(t.id); 
+                  setExpandedKey(RUBRICS[t.id][0].key); 
+                }} 
+                style={{
+                  padding: '8px 20px', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                  background: rubricTab === t.id ? T.brand : T.surface, 
+                  color: rubricTab === t.id ? '#fff' : T.text,
+                  fontFamily: FONT, transition: 'all 0.15s'
+                }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 아코디언 형태로 각 평가 항목 표시 */}
+        {RUBRICS[rubricTab].map(item => {
+          const isOpen = expandedKey === item.key;
+          return (
+            <div key={item.key} style={{ marginBottom: S[3] }}>
+              {/* 헤더 행 (클릭 시 펼쳐짐) */}
+              <button onClick={() => setExpandedKey(isOpen ? null : item.key)} style={{
+                width: '100%', padding: `${S[3]}px ${S[4]}px`, 
+                background: isOpen ? T.brand : T.surfaceAlt,
+                color: isOpen ? '#fff' : T.ink, 
+                border: `1px solid ${isOpen ? T.brand : T.border}`, 
+                borderRadius: isOpen ? '6px 6px 0 0' : '6px',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+                cursor: 'pointer', textAlign: 'left', fontFamily: FONT,
+                transition: 'all 0.15s'
+              }}
+              onMouseEnter={e => { if (!isOpen) e.currentTarget.style.background = T.divider; }}
+              onMouseLeave={e => { if (!isOpen) e.currentTarget.style.background = T.surfaceAlt; }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: S[3], flex: 1, minWidth: 0 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>{item.label}</div>
+                    <div style={{ fontSize: 11, opacity: isOpen ? 0.85 : 0.65 }}>{item.desc}</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: S[2], flexShrink: 0 }}>
+                  {/* 등급 미니 인디케이터 (접혔을 때만) */}
+                  {!isOpen && item.bands.map(b => (
+                    <span key={b.range} style={{ 
+                      width: 22, height: 22, background: T[b.grade], 
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', 
+                      fontSize: 10, fontWeight: 700, color: '#fff', borderRadius: 3
+                    }}>
+                      {b.label[0]}
+                    </span>
+                  ))}
+                  <ChevronRight 
+                    size={16} 
+                    style={{ 
+                      transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', 
+                      transition: 'transform 0.2s' 
+                    }} 
+                  />
+                </div>
+              </button>
+
+              {/* 펼쳐진 척도 테이블 */}
+              {isOpen && (
+                <div style={{ 
+                  border: `1px solid ${T.brand}`, 
+                  borderTop: 'none', 
+                  borderRadius: '0 0 6px 6px',
+                  overflow: 'hidden',
+                  animation: 'fadeIn 0.2s ease-out'
+                }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: T.surfaceAlt }}>
+                        <th style={{ 
+                          padding: `${S[3]}px ${S[3]}px`, textAlign: 'center', 
+                          fontSize: 11, fontWeight: 600, color: T.textMute, 
+                          letterSpacing: '0.05em', textTransform: 'uppercase',
+                          width: 100, borderRight: `1px solid ${T.border}`,
+                          borderBottom: `1px solid ${T.border}`
+                        }}>
+                          점수 구간
+                        </th>
+                        <th style={{ 
+                          padding: `${S[3]}px ${S[3]}px`, textAlign: 'center', 
+                          fontSize: 11, fontWeight: 600, color: T.textMute, 
+                          letterSpacing: '0.05em', textTransform: 'uppercase',
+                          width: 90, borderRight: `1px solid ${T.border}`,
+                          borderBottom: `1px solid ${T.border}`
+                        }}>
+                          등급
+                        </th>
+                        <th style={{ 
+                          padding: `${S[3]}px ${S[4]}px`, textAlign: 'left', 
+                          fontSize: 11, fontWeight: 600, color: T.textMute, 
+                          letterSpacing: '0.05em', textTransform: 'uppercase',
+                          borderBottom: `1px solid ${T.border}`
+                        }}>
+                          행동 기준 및 정량 척도
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {item.bands.map((b, bi) => (
+                        <tr key={b.range} style={{ 
+                          borderTop: bi > 0 ? `1px solid ${T.divider}` : 'none', 
+                          background: bi % 2 === 0 ? T.surface : '#FBFCFD' 
+                        }}>
+                          <td style={{ 
+                            padding: `${S[3]}px ${S[3]}px`, textAlign: 'center',
+                            fontVariantNumeric: 'tabular-nums', fontWeight: 700, 
+                            color: T[b.grade], borderRight: `1px solid ${T.divider}`, 
+                            whiteSpace: 'nowrap', fontSize: 13
+                          }}>
+                            {b.range}
+                          </td>
+                          <td style={{ 
+                            padding: `${S[3]}px ${S[3]}px`, textAlign: 'center',
+                            borderRight: `1px solid ${T.divider}` 
+                          }}>
+                            <span style={{ 
+                              display: 'inline-flex', alignItems: 'center', gap: 6, 
+                              flexDirection: 'column' 
+                            }}>
+                              <GradeBadge grade={b.grade} size="sm" />
+                              <span style={{ fontSize: 10, color: T[b.grade], fontWeight: 600 }}>
+                                {b.label}
+                              </span>
+                            </span>
+                          </td>
+                          <td style={{ 
+                            padding: `${S[3]}px ${S[4]}px`, 
+                            lineHeight: 1.7, color: T.text, fontSize: 12.5 
+                          }}>
+                            {b.criteria}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  
+                  {/* 평가자 유의사항 */}
+                  <div style={{ 
+                    padding: `${S[3]}px ${S[4]}px`, 
+                    background: '#FFF8E6', 
+                    borderTop: `1px solid ${T.border}`, 
+                    fontSize: 11, color: T.text, lineHeight: 1.7,
+                    display: 'flex', alignItems: 'flex-start', gap: S[2]
+                  }}>
+                    <AlertCircle size={14} style={{ color: T.warning, flexShrink: 0, marginTop: 1 }} />
+                    <div>
+                      <strong style={{ color: T.warning }}>평가자 유의사항:</strong>{' '}
+                      점수는 해당 구간의 기준을 종합적으로 판단하여 부여합니다. 
+                      단일 사례보다 기간 내 일관된 행동 패턴을 기준으로 평가하며,{' '}
+                      <strong>관찰 가능한 행동과 정량 실적</strong>에 근거해야 합니다. 
+                      헤일로 효과(halo effect) 및 관대화·가혹화 오류에 주의하십시오.
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ========== KPI 정량 측정 지표 ========== */}
+      <KPIMetricsSection />
+      
+      {/* ========== 로그인 화면 회사 정보 카드 편집 ========== */}
+      <CoverStatsEditor policy={policy} setPolicy={setPolicy} />
+      
+      {/* ========== 로그인 화면 표지 이미지 편집 ========== */}
+      <CoverImageEditor policy={policy} setPolicy={setPolicy} />
+      
+      {/* ========== 승진 정책 편집 ========== */}
+      <PromotionPolicyEditor policy={policy} setPolicy={setPolicy} />
+      
+      {/* ========== 기존 정책 입력 영역 (배점·가중치) ========== */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[5], marginBottom: S[5] }}>
+        <PolicySection title="역량평가 배점" sumK={['comp_expert', 'comp_problem', 'comp_learn', 'comp_collab']} policy={policy}>
+          <PolicyInput label="직무 전문성" value={policy.comp_expert} onChange={v => up('comp_expert', v)} />
+          <PolicyInput label="문제해결력" value={policy.comp_problem} onChange={v => up('comp_problem', v)} />
+          <PolicyInput label="학습·자기계발" value={policy.comp_learn} onChange={v => up('comp_learn', v)} />
+          <PolicyInput label="협업·커뮤니케이션" value={policy.comp_collab} onChange={v => up('comp_collab', v)} />
+        </PolicySection>
+        <PolicySection title="업적평가 배점" sumK={['perf_kpi', 'perf_profit', 'perf_delivery', 'perf_customer']} policy={policy}>
+          <PolicyInput label="KPI 달성도" value={policy.perf_kpi} onChange={v => up('perf_kpi', v)} />
+          <PolicyInput label="프로젝트 수익성" value={policy.perf_profit} onChange={v => up('perf_profit', v)} />
+          <PolicyInput label="납기·완성도" value={policy.perf_delivery} onChange={v => up('perf_delivery', v)} />
+          <PolicyInput label="고객 만족도" value={policy.perf_customer} onChange={v => up('perf_customer', v)} />
+        </PolicySection>
+        <PolicySection title="종합 가중치" sumK={['weight_comp', 'weight_perf']} policy={policy}>
+          <PolicyInput label="역량평가" value={policy.weight_comp} onChange={v => up('weight_comp', v)} />
+          <PolicyInput label="업적평가" value={policy.weight_perf} onChange={v => up('weight_perf', v)} />
+        </PolicySection>
+        <PolicySection title="PS (Profit Sharing)">
+          <PolicyInput label="2026 PS 지급률" value={policy.psRate} onChange={v => up('psRate', v)} step="0.1" />
+          <div style={{ fontSize: 11, color: T.textMute, marginTop: S[3], lineHeight: 1.8, padding: S[3], background: T.surfaceAlt, borderRadius: 4 }}>
+            영업이익 달성률 기준:<br/>· 120% 이상 → 10%<br/>· 100~119% → 5%<br/>· 80~99% → 2%<br/>· 80% 미만 → 0%
+          </div>
+        </PolicySection>
+      </div>
+
+      <div style={{ ...card(), padding: S[6], marginBottom: S[5] }}>
+        <SectionTitle>등급 기준 및 보상</SectionTitle>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: T.surfaceAlt }}>
+              <Th align="center">등급</Th><Th>설명</Th>
+              <Th align="right">최소</Th><Th align="right">최대</Th>
+              <Th align="right">권장 분포(%)</Th>
+              <Th align="right">인상률(%)</Th><Th align="right">PI 계수</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {policy.grades.map((g, i) => (
+              <tr key={g.grade} style={{ borderBottom: `1px solid ${T.divider}` }}>
+                <Td align="center"><GradeBadge grade={g.grade} /></Td>
+                <Td>{g.label}</Td>
+                <Td align="right"><MiniInput value={g.min} onChange={v => upG(i, 'min', v)} /></Td>
+                <Td align="right"><MiniInput value={g.max} onChange={v => upG(i, 'max', v)} /></Td>
+                <Td align="right"><MiniInput value={g.dist} onChange={v => upG(i, 'dist', v)} /></Td>
+                <Td align="right"><MiniInput value={g.increase} onChange={v => upG(i, 'increase', v)} step="0.1" /></Td>
+                <Td align="right"><MiniInput value={g.piCoef} onChange={v => upG(i, 'piCoef', v)} step="0.1" /></Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ ...card(), padding: S[6] }}>
+        <SectionTitle>PI 기본액 · 직무레벨별</SectionTitle>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: S[4] }}>
+          {Object.entries(policy.piBase).map(([lv, amt]) => (
+            <div key={lv} style={{ padding: S[4], background: T.surfaceAlt, borderRadius: 6 }}>
+              <div style={{ fontSize: 11, color: T.textMute, fontWeight: 600, letterSpacing: '0.05em', marginBottom: S[2] }}>
+                {lv}
+              </div>
+              <input type="number" value={amt} 
+                onChange={e => setPolicy(prev => ({ ...prev, piBase: { ...prev.piBase, [lv]: Number(e.target.value) } }))}
+                style={{ width: '100%', padding: '8px 12px', border: `1px solid ${T.border}`, borderRadius: 4, fontSize: 14, textAlign: 'right', background: T.surface, boxSizing: 'border-box', fontFamily: FONT, fontWeight: 600, color: T.ink, outline: 'none' }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// KPI 정량 측정 지표 섹션
+// ============================================================
+function KPIMetricsSection() {
+  const [activeGroup, setActiveGroup] = useState('common');
+  
+  const groups = [
+    { id: 'common', ...KPI_METRICS.common, badge: '전사', accent: T.brand },
+    { id: 'Archive', ...KPI_METRICS.Archive, badge: 'Archive', accent: T.A },
+    { id: 'Tech', ...KPI_METRICS.Tech, badge: 'Tech', accent: T.B },
+    { id: 'Biz', ...KPI_METRICS.Biz, badge: 'Biz', accent: T.C },
+  ];
+  
+  const current = groups.find(g => g.id === activeGroup);
+  
+  return (
+    <div style={{ ...card({ borderLeft: `4px solid ${T.success}` }), padding: S[6], marginBottom: S[6] }}>
+      <div style={{ 
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', 
+        marginBottom: S[5], paddingBottom: S[4], borderBottom: `1px solid ${T.border}`,
+        gap: S[4], flexWrap: 'wrap'
+      }}>
+        <div>
+          <div style={{ 
+            fontSize: 11, fontWeight: 600, color: T.success, 
+            letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: S[1] 
+          }}>
+            KPI Metrics · 정량 측정 지표
+          </div>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: T.ink }}>
+            KPI 달성도 세부 측정 기준
+          </h2>
+          <div style={{ fontSize: 12, color: T.textMute, marginTop: S[1] }}>
+            전사 공통 4종 + 직무군별 4종씩 — 모든 지표는 숫자로 측정 가능
+          </div>
+        </div>
+        
+        {/* 직무군 탭 */}
+        <div style={{ display: 'flex', gap: 0, border: `1px solid ${T.border}`, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
+          {groups.map(g => (
+            <button key={g.id} onClick={() => setActiveGroup(g.id)} style={{
+              padding: '8px 16px', border: 'none', fontSize: 12, fontWeight: 500, cursor: 'pointer',
+              background: activeGroup === g.id ? g.accent : T.surface, 
+              color: activeGroup === g.id ? '#fff' : T.text,
+              fontFamily: FONT, transition: 'all 0.15s'
+            }}>
+              {g.badge}
+            </button>
+          ))}
+        </div>
+      </div>
+      
+      {/* 현재 선택된 그룹 정보 */}
+      <div style={{ 
+        padding: `${S[3]}px ${S[4]}px`, background: T.surfaceAlt, borderRadius: 6, 
+        marginBottom: S[4], display: 'flex', alignItems: 'center', gap: S[3]
+      }}>
+        <div style={{ 
+          width: 4, height: 32, background: current.accent, borderRadius: 2
+        }}/>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{current.title}</div>
+          <div style={{ fontSize: 11, color: T.textMute, marginTop: 2 }}>{current.subtitle}</div>
+        </div>
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: T.textMute }}>
+          총 <strong style={{ color: T.ink }}>{current.metrics.length}개 지표</strong>
+        </div>
+      </div>
+      
+      {/* KPI 지표 카드 그리드 (2열) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[4] }}>
+        {current.metrics.map((m, idx) => (
+          <KPIMetricCard key={m.id} metric={m} index={idx} accent={current.accent} />
+        ))}
+      </div>
+      
+      {/* 활용 가이드 */}
+      <div style={{ 
+        marginTop: S[5], padding: `${S[3]}px ${S[4]}px`, 
+        background: '#FFF8E6', borderRadius: 6, border: `1px solid #F4E5B8`,
+        fontSize: 11, color: T.text, lineHeight: 1.7,
+        display: 'flex', alignItems: 'flex-start', gap: S[2]
+      }}>
+        <AlertCircle size={14} style={{ color: T.warning, flexShrink: 0, marginTop: 1 }} />
+        <div>
+          <strong style={{ color: T.warning }}>활용 가이드:</strong>{' '}
+          평가자는 각 직원의 직무군에 해당하는 4개 특화 지표 + 전사 공통 4개 지표 중{' '}
+          <strong>대표 4~6개를 선정</strong>하여 평가 입력 화면의 "KPI 달성도"(35%) 점수 산정에 활용합니다. 
+          각 지표는 객관적 데이터(시스템 로그, 인사 기록, 회계 자료 등)로 검증 가능해야 하며, 
+          연초에 직원과 합의된 목표값을 기준으로 평가합니다.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KPIMetricCard({ metric, index, accent }) {
+  const [expanded, setExpanded] = useState(index === 0);  // 첫 카드는 펼친 상태
+  
+  return (
+    <div style={{ 
+      background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8,
+      overflow: 'hidden'
+    }}>
+      {/* 헤더 */}
+      <button onClick={() => setExpanded(!expanded)} style={{
+        width: '100%', padding: `${S[3]}px ${S[4]}px`,
+        background: expanded ? accent : T.surfaceAlt,
+        color: expanded ? '#fff' : T.ink,
+        border: 'none', borderBottom: expanded ? 'none' : `1px solid ${T.border}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        cursor: 'pointer', textAlign: 'left', fontFamily: FONT,
+        transition: 'all 0.15s'
+      }}
+      onMouseEnter={e => { if (!expanded) e.currentTarget.style.background = T.divider; }}
+      onMouseLeave={e => { if (!expanded) e.currentTarget.style.background = T.surfaceAlt; }}
+      >
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ 
+              width: 22, height: 22, borderRadius: 11,
+              background: expanded ? 'rgba(255,255,255,0.2)' : accent,
+              color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 10, fontWeight: 700, fontFamily: FONT
+            }}>{index + 1}</span>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>{metric.name}</span>
+          </div>
+          <div style={{ fontSize: 10, opacity: 0.8, marginTop: 4, paddingLeft: 30 }}>
+            단위: {metric.unit}
+          </div>
+        </div>
+        <ChevronDown size={16} style={{ 
+          transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', 
+          transition: 'transform 0.2s' 
+        }}/>
+      </button>
+      
+      {/* 펼쳐진 내용 */}
+      {expanded && (
+        <div style={{ padding: `${S[3]}px ${S[4]}px`, animation: 'fadeIn 0.2s' }}>
+          {/* 측정 공식 */}
+          <div style={{ marginBottom: S[3] }}>
+            <div style={{ 
+              fontSize: 10, fontWeight: 600, color: T.textMute, 
+              letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4
+            }}>
+              측정 공식
+            </div>
+            <div style={{ 
+              fontSize: 12, color: T.text, padding: '8px 12px', 
+              background: T.surfaceAlt, borderRadius: 4,
+              fontFamily: '"SF Mono", Monaco, monospace', lineHeight: 1.5
+            }}>
+              {metric.formula}
+            </div>
+          </div>
+          
+          {/* 등급 구간 테이블 */}
+          <div style={{ marginBottom: S[3] }}>
+            <div style={{ 
+              fontSize: 10, fontWeight: 600, color: T.textMute, 
+              letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 6
+            }}>
+              등급별 기준
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <tbody>
+                {metric.bands.map((b, bi) => (
+                  <tr key={b.grade} style={{ borderBottom: bi < metric.bands.length - 1 ? `1px solid ${T.divider}` : 'none' }}>
+                    <td style={{ padding: '6px 8px', width: 36 }}>
+                      <GradeBadge grade={b.grade} size="sm" />
+                    </td>
+                    <td style={{ padding: '6px 8px', fontVariantNumeric: 'tabular-nums', fontWeight: 500, color: T[b.grade], fontSize: 12.5 }}>
+                      {b.range}
+                    </td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right', fontSize: 11, color: T.textMute }}>
+                      → <strong style={{ color: T.ink, fontVariantNumeric: 'tabular-nums' }}>{b.score}점</strong>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          
+          {/* 측정 예시 */}
+          <div style={{ 
+            padding: `${S[2]}px ${S[3]}px`, background: '#F0F7F1', 
+            borderLeft: `3px solid ${T.success}`, borderRadius: 4,
+            fontSize: 11, color: T.text, lineHeight: 1.6
+          }}>
+            <strong style={{ color: T.success }}>예시:</strong> {metric.examples}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// 로그인 화면 회사 정보 카드 편집기 (admin 전용)
+// ============================================================
+function CoverStatsEditor({ policy, setPolicy }) {
+  // 마운트 시 coverStats가 없으면 자동으로 기본값 주입
+  useEffect(() => {
+    if (!policy.coverStats) {
+      setPolicy(prev => ({ 
+        ...prev, 
+        coverStats: INITIAL_POLICY.coverStats 
+      }));
+    } else if (!policy.coverStats.items) {
+      setPolicy(prev => ({
+        ...prev,
+        coverStats: { ...prev.coverStats, items: INITIAL_POLICY.coverStats.items }
+      }));
+    }
+  }, []);
+  
+  const cs = policy.coverStats || INITIAL_POLICY.coverStats;
+  
+  const setEnabled = (v) => {
+    setPolicy(prev => ({ 
+      ...prev, 
+      coverStats: { ...(prev.coverStats || INITIAL_POLICY.coverStats), enabled: v } 
+    }));
+  };
+  const setItem = (idx, key, value) => {
+    setPolicy(prev => {
+      const current = prev.coverStats || INITIAL_POLICY.coverStats;
+      return ({ 
+        ...prev, 
+        coverStats: { 
+          ...current, 
+          items: current.items.map((it, i) => i === idx ? { ...it, [key]: value } : it) 
+        } 
+      });
+    });
+  };
+  const addItem = () => {
+    if (cs.items.length >= 4) return;
+    setPolicy(prev => {
+      const current = prev.coverStats || INITIAL_POLICY.coverStats;
+      return ({
+        ...prev,
+        coverStats: {
+          ...current,
+          items: [...current.items, { label: '새 항목', value: '내용', highlight: false }]
+        }
+      });
+    });
+  };
+  const removeItem = (idx) => {
+    setPolicy(prev => {
+      const current = prev.coverStats || INITIAL_POLICY.coverStats;
+      return ({
+        ...prev,
+        coverStats: {
+          ...current,
+          items: current.items.filter((_, i) => i !== idx)
+        }
+      });
+    });
+  };
+  
+  return (
+    <div style={{ ...card({ borderLeft: `4px solid ${T.accent}` }), padding: S[6], marginBottom: S[6] }}>
+      {/* 헤더 + 토글 */}
+      <div style={{ 
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', 
+        marginBottom: S[5], paddingBottom: S[4], borderBottom: `1px solid ${T.border}`,
+        gap: S[4]
+      }}>
+        <div>
+          <div style={{ 
+            fontSize: 11, fontWeight: 600, color: T.accent, 
+            letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: S[1] 
+          }}>
+            Cover Stats · 로그인 화면 회사 정보
+          </div>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: T.ink }}>
+            로그인 화면 회사 정보 카드
+          </h2>
+          <div style={{ fontSize: 12, color: T.textMute, marginTop: S[1] }}>
+            로그인 화면 좌측 하단에 표시되는 회사 정보 — 사업 변화에 따라 수정하거나 숨길 수 있습니다
+          </div>
+        </div>
+        
+        {/* 표시 ON/OFF 토글 */}
+        <label style={{ 
+          display: 'flex', alignItems: 'center', gap: S[3], cursor: 'pointer',
+          padding: `${S[2]}px ${S[3]}px`, background: cs.enabled ? T.surfaceAlt : 'transparent',
+          border: `1px solid ${cs.enabled ? T.success : T.border}`, borderRadius: 6,
+          transition: 'all 0.15s'
+        }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: cs.enabled ? T.success : T.textMute }}>
+            {cs.enabled ? '표시 ON' : '표시 OFF'}
+          </span>
+          <div style={{ 
+            width: 36, height: 20, background: cs.enabled ? T.success : T.divider, 
+            borderRadius: 10, position: 'relative', transition: 'all 0.2s'
+          }}>
+            <div style={{ 
+              position: 'absolute', top: 2, left: cs.enabled ? 18 : 2,
+              width: 16, height: 16, background: '#fff', borderRadius: 8,
+              transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+            }} />
+          </div>
+          <input type="checkbox" checked={cs.enabled} onChange={e => setEnabled(e.target.checked)} 
+            style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }} />
+        </label>
+      </div>
+      
+      {!cs.enabled && (
+        <div style={{ 
+          padding: `${S[4]}px ${S[5]}px`, background: T.surfaceAlt, borderRadius: 6,
+          fontSize: 12, color: T.textMute, lineHeight: 1.7, textAlign: 'center'
+        }}>
+          현재 로그인 화면에서 이 영역이 숨겨져 있습니다. 다시 표시하려면 위 토글을 클릭하세요.
+        </div>
+      )}
+      
+      {cs.enabled && (
+        <>
+          {/* 항목 편집 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: S[3], marginBottom: S[4] }}>
+            {cs.items.map((item, idx) => (
+              <div key={idx} style={{ 
+                display: 'flex', gap: S[3], alignItems: 'center',
+                padding: S[3], background: T.surfaceAlt, borderRadius: 6,
+                borderLeft: item.highlight ? `3px solid ${T.accent}` : `3px solid ${T.border}`
+              }}>
+                {/* 순서 번호 */}
+                <div style={{ 
+                  width: 28, height: 28, borderRadius: 14, 
+                  background: T.brand, color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 12, fontWeight: 700, flexShrink: 0
+                }}>
+                  {idx + 1}
+                </div>
+                
+                {/* 라벨 입력 */}
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 10, fontWeight: 600, color: T.textMute, display: 'block', marginBottom: 4, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                    라벨
+                  </label>
+                  <input type="text" value={item.label} onChange={e => setItem(idx, 'label', e.target.value)}
+                    placeholder="예: 강원랜드 산업유산"
+                    style={{ 
+                      width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 4,
+                      fontSize: 12, background: T.surface, boxSizing: 'border-box',
+                      fontFamily: FONT, outline: 'none', color: T.ink
+                    }}
+                    onFocus={e => e.target.style.borderColor = T.brand}
+                    onBlur={e => e.target.style.borderColor = T.border}
+                  />
+                </div>
+                
+                {/* 값 입력 */}
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 10, fontWeight: 600, color: T.textMute, display: 'block', marginBottom: 4, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                    값
+                  </label>
+                  <input type="text" value={item.value} onChange={e => setItem(idx, 'value', e.target.value)}
+                    placeholder="예: 아카이브 PM"
+                    style={{ 
+                      width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 4,
+                      fontSize: 13, background: T.surface, boxSizing: 'border-box',
+                      fontFamily: FONT, outline: 'none', color: T.ink, fontWeight: 600
+                    }}
+                    onFocus={e => e.target.style.borderColor = T.brand}
+                    onBlur={e => e.target.style.borderColor = T.border}
+                  />
+                </div>
+                
+                {/* 강조 표시 토글 */}
+                <label style={{ 
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                  cursor: 'pointer', minWidth: 60
+                }}>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: T.textMute, letterSpacing: '0.1em', textTransform: 'uppercase' }}>강조</span>
+                  <input type="checkbox" checked={item.highlight} onChange={e => setItem(idx, 'highlight', e.target.checked)}
+                    style={{ width: 16, height: 16, accentColor: T.accent }} />
+                </label>
+                
+                {/* 삭제 버튼 */}
+                <button onClick={() => removeItem(idx)} title="삭제"
+                  style={{ 
+                    padding: 8, background: 'transparent', border: `1px solid ${T.border}`, 
+                    borderRadius: 4, cursor: 'pointer', color: T.danger, display: 'inline-flex',
+                    alignSelf: 'flex-end', marginBottom: 1
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#FBEAEA'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+          
+          {/* 추가 버튼 */}
+          {cs.items.length < 4 && (
+            <Button variant="secondary" size="md" icon={Plus} onClick={addItem}>
+              항목 추가 ({cs.items.length}/4)
+            </Button>
+          )}
+          {cs.items.length >= 4 && (
+            <div style={{ fontSize: 11, color: T.textMute, padding: `${S[2]}px 0` }}>
+              최대 4개까지 추가 가능합니다
+            </div>
+          )}
+          
+          {/* 미리보기 */}
+          {cs.items.length > 0 && (
+            <div style={{ marginTop: S[5], paddingTop: S[4], borderTop: `1px solid ${T.divider}` }}>
+              <div style={{ 
+                fontSize: 11, fontWeight: 600, color: T.textMute, 
+                letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: S[3]
+              }}>
+                미리보기 (로그인 화면)
+              </div>
+              <div style={{
+                padding: `${S[4]}px ${S[5]}px`, 
+                background: 'linear-gradient(135deg, #0F2547 0%, #1B3A6F 100%)',
+                borderRadius: 8,
+                display: 'grid', 
+                gridTemplateColumns: `repeat(${cs.items.length}, 1fr)`, 
+                gap: S[4]
+              }}>
+                {cs.items.map((item, i) => (
+                  <div key={i} style={{ 
+                    padding: '4px 0', 
+                    borderLeft: item.highlight ? `2px solid ${T.accent}` : `2px solid rgba(255,255,255,0.15)`,
+                    paddingLeft: 12
+                  }}>
+                    <div style={{ 
+                      fontSize: 9, color: 'rgba(255,255,255,0.5)', 
+                      letterSpacing: '0.12em', fontWeight: 500, 
+                      textTransform: 'uppercase', marginBottom: 4
+                    }}>
+                      {item.label}
+                    </div>
+                    <div style={{ 
+                      fontSize: 13, color: item.highlight ? '#fff' : 'rgba(255,255,255,0.9)', 
+                      fontWeight: item.highlight ? 700 : 600
+                    }}>
+                      {item.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// 로그인 화면 표지 이미지 편집기 (admin 전용)
+// ============================================================
+function CoverImageEditor({ policy, setPolicy }) {
+  // 마운트 시 coverImage가 없으면 자동으로 기본값 주입
+  useEffect(() => {
+    if (!policy.coverImage) {
+      setPolicy(prev => ({ ...prev, coverImage: INITIAL_POLICY.coverImage }));
+    }
+  }, []);
+  
+  const ci = policy.coverImage || INITIAL_POLICY.coverImage;
+  
+  const setField = (key, value) => {
+    setPolicy(prev => ({ 
+      ...prev, 
+      coverImage: { 
+        ...(prev.coverImage || INITIAL_POLICY.coverImage), 
+        [key]: value 
+      } 
+    }));
+  };
+  
+  // 추천 이미지 URL 예시 (Unsplash 무료)
+  const suggestions = [
+    { 
+      label: '디지털 전환', 
+      url: 'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=800&auto=format', 
+      caption: '디지털 전환 · 지식 보존' 
+    },
+    { 
+      label: '데이터 분석', 
+      url: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&auto=format', 
+      caption: '데이터 기반 의사결정' 
+    },
+    { 
+      label: '아카이브', 
+      url: 'https://images.unsplash.com/photo-1568667256549-094345857637?w=800&auto=format', 
+      caption: '기록물 관리·보존' 
+    },
+  ];
+  
+  return (
+    <div style={{ ...card({ borderLeft: `4px solid ${T.accent}` }), padding: S[6], marginBottom: S[6] }}>
+      {/* 헤더 + 토글 */}
+      <div style={{ 
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', 
+        marginBottom: S[5], paddingBottom: S[4], borderBottom: `1px solid ${T.border}`,
+        gap: S[4]
+      }}>
+        <div>
+          <div style={{ 
+            fontSize: 11, fontWeight: 600, color: T.accent, 
+            letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: S[1] 
+          }}>
+            Cover Image · 표지 이미지
+          </div>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: T.ink }}>
+            로그인 화면 우측 상단 이미지
+          </h2>
+          <div style={{ fontSize: 12, color: T.textMute, marginTop: S[1] }}>
+            외부에 호스팅된 이미지 URL을 입력하면 로그인 화면 우측 상단에 표시됩니다 (admin이 언제든 교체 가능)
+          </div>
+        </div>
+        
+        <label style={{ 
+          display: 'flex', alignItems: 'center', gap: S[3], cursor: 'pointer',
+          padding: `${S[2]}px ${S[3]}px`, background: ci.enabled ? T.surfaceAlt : 'transparent',
+          border: `1px solid ${ci.enabled ? T.success : T.border}`, borderRadius: 6,
+        }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: ci.enabled ? T.success : T.textMute }}>
+            {ci.enabled ? '표시 ON' : '표시 OFF'}
+          </span>
+          <div style={{ 
+            width: 36, height: 20, background: ci.enabled ? T.success : T.divider, 
+            borderRadius: 10, position: 'relative', transition: 'all 0.2s'
+          }}>
+            <div style={{ 
+              position: 'absolute', top: 2, left: ci.enabled ? 18 : 2,
+              width: 16, height: 16, background: '#fff', borderRadius: 8,
+              transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+            }} />
+          </div>
+          <input type="checkbox" checked={ci.enabled} onChange={e => setField('enabled', e.target.checked)} 
+            style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }} />
+        </label>
+      </div>
+      
+      {!ci.enabled && (
+        <div style={{ 
+          padding: `${S[4]}px ${S[5]}px`, background: T.surfaceAlt, borderRadius: 6,
+          fontSize: 12, color: T.textMute, lineHeight: 1.7, textAlign: 'center'
+        }}>
+          현재 로그인 화면에서 이 이미지가 숨겨져 있습니다. 다시 표시하려면 위 토글을 클릭하세요.
+        </div>
+      )}
+      
+      {ci.enabled && (
+        <>
+          {/* URL 입력 */}
+          <div style={{ marginBottom: S[4] }}>
+            <label style={{ 
+              fontSize: 11, fontWeight: 600, color: T.text, 
+              display: 'block', marginBottom: S[2], letterSpacing: '0.05em'
+            }}>
+              이미지 URL <span style={{ color: T.textMute, fontWeight: 400 }}>(https://...)</span>
+            </label>
+            <input type="text" value={ci.url || ''} onChange={e => setField('url', e.target.value)}
+              placeholder="https://example.com/image.jpg"
+              style={{ 
+                width: '100%', padding: '10px 14px', border: `1px solid ${T.border}`, borderRadius: 6,
+                fontSize: 13, background: T.surface, boxSizing: 'border-box', 
+                fontFamily: '"SF Mono", Monaco, monospace', outline: 'none', color: T.ink
+              }}
+              onFocus={e => e.target.style.borderColor = T.brand}
+              onBlur={e => e.target.style.borderColor = T.border}
+            />
+            <div style={{ fontSize: 10, color: T.textLight, marginTop: 4, lineHeight: 1.6 }}>
+              💡 권장: Unsplash, 회사 웹사이트, 클라우드 스토리지(Google Drive/Dropbox 공유 링크) 등 공개 접근 가능한 URL
+            </div>
+          </div>
+          
+          {/* 캡션 입력 */}
+          <div style={{ marginBottom: S[4] }}>
+            <label style={{ 
+              fontSize: 11, fontWeight: 600, color: T.text, 
+              display: 'block', marginBottom: S[2], letterSpacing: '0.05em'
+            }}>
+              이미지 캡션 <span style={{ color: T.textMute, fontWeight: 400 }}>(우상단에 작게 표시)</span>
+            </label>
+            <input type="text" value={ci.caption || ''} onChange={e => setField('caption', e.target.value)}
+              placeholder="예: 디지털 전환 · 지식 보존"
+              style={{ 
+                width: '100%', padding: '10px 14px', border: `1px solid ${T.border}`, borderRadius: 6,
+                fontSize: 13, background: T.surface, boxSizing: 'border-box', 
+                fontFamily: FONT, outline: 'none', color: T.ink
+              }}
+              onFocus={e => e.target.style.borderColor = T.brand}
+              onBlur={e => e.target.style.borderColor = T.border}
+            />
+          </div>
+          
+          {/* 추천 이미지 빠른 적용 */}
+          <div style={{ marginBottom: S[5] }}>
+            <div style={{ 
+              fontSize: 11, fontWeight: 600, color: T.textMute, 
+              letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: S[2]
+            }}>
+              추천 이미지 빠른 적용
+            </div>
+            <div style={{ display: 'flex', gap: S[2], flexWrap: 'wrap' }}>
+              {suggestions.map((s, i) => (
+                <button key={i} 
+                  onClick={() => { setField('url', s.url); setField('caption', s.caption); }}
+                  style={{
+                    padding: `${S[2]}px ${S[3]}px`, background: T.surfaceAlt,
+                    border: `1px solid ${T.border}`, borderRadius: 6,
+                    fontSize: 11, cursor: 'pointer', fontFamily: FONT,
+                    color: T.text, display: 'inline-flex', alignItems: 'center', gap: 6,
+                    transition: 'all 0.15s'
+                  }}
+                  onMouseEnter={e => { 
+                    e.currentTarget.style.background = T.brand; 
+                    e.currentTarget.style.color = '#fff'; 
+                    e.currentTarget.style.borderColor = T.brand;
+                  }}
+                  onMouseLeave={e => { 
+                    e.currentTarget.style.background = T.surfaceAlt; 
+                    e.currentTarget.style.color = T.text;
+                    e.currentTarget.style.borderColor = T.border;
+                  }}>
+                  <Sparkles size={11} /> {s.label}
+                </button>
+              ))}
+              <button onClick={() => { setField('url', ''); setField('caption', ''); }}
+                style={{
+                  padding: `${S[2]}px ${S[3]}px`, background: 'transparent',
+                  border: `1px solid ${T.border}`, borderRadius: 6,
+                  fontSize: 11, cursor: 'pointer', fontFamily: FONT,
+                  color: T.textMute, display: 'inline-flex', alignItems: 'center', gap: 6
+                }}>
+                <X size={11} /> 초기화
+              </button>
+            </div>
+          </div>
+          
+          {/* 미리보기 */}
+          <div style={{ paddingTop: S[4], borderTop: `1px solid ${T.divider}` }}>
+            <div style={{ 
+              fontSize: 11, fontWeight: 600, color: T.textMute, 
+              letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: S[3]
+            }}>
+              미리보기 (로그인 화면 우측 상단)
+            </div>
+            <div style={{
+              padding: `${S[5]}px ${S[6]}px`,
+              background: 'linear-gradient(135deg, #0F2547 0%, #1B3A6F 100%)',
+              borderRadius: 8,
+              display: 'flex', justifyContent: 'center'
+            }}>
+              <CoverImageDisplay coverImage={ci} />
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// 승진 정책 편집기 (admin 전용)
+// 직급별 체류연한·진급Point·인상률 직접 수정
+// ============================================================
+function PromotionPolicyEditor({ policy, setPolicy }) {
+  // 마운트 시 promotion이 없으면 기본값 주입
+  useEffect(() => {
+    if (!policy.promotion) {
+      setPolicy(prev => ({ ...prev, promotion: INITIAL_POLICY.promotion }));
+    }
+  }, []);
+  
+  const pm = policy.promotion || INITIAL_POLICY.promotion;
+  
+  const setEnabled = (v) => {
+    setPolicy(prev => ({ 
+      ...prev, 
+      promotion: { ...(prev.promotion || INITIAL_POLICY.promotion), enabled: v } 
+    }));
+  };
+  
+  const setPointRate = (v) => {
+    setPolicy(prev => ({ 
+      ...prev, 
+      promotion: { ...(prev.promotion || INITIAL_POLICY.promotion), pointRate: v } 
+    }));
+  };
+  
+  const setTier = (idx, key, value) => {
+    setPolicy(prev => {
+      const current = prev.promotion || INITIAL_POLICY.promotion;
+      return ({ 
+        ...prev, 
+        promotion: { 
+          ...current, 
+          tiers: current.tiers.map((t, i) => i === idx ? { ...t, [key]: value } : t) 
+        } 
+      });
+    });
+  };
+  
+  const resetToDefault = () => {
+    if (window.confirm('승진 정책을 기본값으로 초기화하시겠습니까?')) {
+      setPolicy(prev => ({ ...prev, promotion: INITIAL_POLICY.promotion }));
+    }
+  };
+  
+  return (
+    <div style={{ ...card({ borderLeft: `4px solid ${T.accent}` }), padding: S[6], marginBottom: S[6] }}>
+      {/* 헤더 + 토글 */}
+      <div style={{ 
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', 
+        marginBottom: S[5], paddingBottom: S[4], borderBottom: `1px solid ${T.border}`,
+        gap: S[4]
+      }}>
+        <div>
+          <div style={{ 
+            fontSize: 11, fontWeight: 600, color: T.accent, 
+            letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: S[1] 
+          }}>
+            Promotion Policy · 승진 체계
+          </div>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: T.ink }}>
+            승진 정책 · 직급별 인상률 편집
+          </h2>
+          <div style={{ fontSize: 12, color: T.textMute, marginTop: S[1] }}>
+            직급별 체류 연한·진급 Point 기준·승진 시 급여 인상률을 수정할 수 있습니다
+          </div>
+        </div>
+        
+        <div style={{ display: 'flex', gap: S[2], alignItems: 'center' }}>
+          <Button variant="outline" size="sm" onClick={resetToDefault}>기본값 복원</Button>
+          
+          {/* 표시 ON/OFF 토글 */}
+          <label style={{ 
+            display: 'flex', alignItems: 'center', gap: S[3], cursor: 'pointer',
+            padding: `${S[2]}px ${S[3]}px`, background: pm.enabled ? T.surfaceAlt : 'transparent',
+            border: `1px solid ${pm.enabled ? T.success : T.border}`, borderRadius: 6,
+          }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: pm.enabled ? T.success : T.textMute }}>
+              {pm.enabled ? '활성 ON' : '비활성'}
+            </span>
+            <div style={{ 
+              width: 36, height: 20, background: pm.enabled ? T.success : T.divider, 
+              borderRadius: 10, position: 'relative', transition: 'all 0.2s'
+            }}>
+              <div style={{ 
+                position: 'absolute', top: 2, left: pm.enabled ? 18 : 2,
+                width: 16, height: 16, background: '#fff', borderRadius: 8,
+                transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+              }} />
+            </div>
+            <input type="checkbox" checked={pm.enabled} onChange={e => setEnabled(e.target.checked)} 
+              style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }} />
+          </label>
+        </div>
+      </div>
+      
+      {!pm.enabled && (
+        <div style={{ 
+          padding: `${S[4]}px ${S[5]}px`, background: T.surfaceAlt, borderRadius: 6,
+          fontSize: 12, color: T.textMute, lineHeight: 1.7, textAlign: 'center'
+        }}>
+          승진 심사 기능이 비활성화되어 있습니다. 평가 입력 화면과 직원 상세 패널에 승진 심사 정보가 표시되지 않습니다.
+        </div>
+      )}
+      
+      {pm.enabled && (
+        <>
+          {/* 진급 Point 환산률 (전역) */}
+          <div style={{ 
+            marginBottom: S[5], padding: `${S[3]}px ${S[4]}px`,
+            background: '#F0F7F1', borderLeft: `3px solid ${T.success}`, borderRadius: 4,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: S[3]
+          }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.success, marginBottom: 2 }}>
+                진급 Point 환산률
+              </div>
+              <div style={{ fontSize: 11, color: T.text, lineHeight: 1.5 }}>
+                평가 종합점수에 곱해서 진급 Point를 계산합니다 (예: 종합점수 90 × 0.15 = 13.5 Point)
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="number" step="0.01" min="0.05" max="0.30"
+                value={pm.pointRate}
+                onChange={e => setPointRate(Number(e.target.value) || 0.15)}
+                style={{ 
+                  width: 80, padding: '6px 10px', border: `1px solid ${T.border}`, borderRadius: 4,
+                  fontSize: 13, textAlign: 'center', background: T.surface,
+                  fontFamily: '"SF Mono", Monaco, monospace', fontWeight: 600, color: T.ink, outline: 'none'
+                }}
+              />
+              <span style={{ fontSize: 11, color: T.textMute }}>× 종합점수</span>
+            </div>
+          </div>
+          
+          {/* 직급별 정책 테이블 */}
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: T.surfaceAlt }}>
+                  <th style={{ padding: '10px 8px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: T.textMute, letterSpacing: '0.05em', borderBottom: `2px solid ${T.brand}` }}>직급</th>
+                  <th style={{ padding: '10px 8px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: T.textMute, letterSpacing: '0.05em', borderBottom: `2px solid ${T.brand}` }}>호칭 (From)</th>
+                  <th style={{ padding: '10px 8px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: T.textMute, letterSpacing: '0.05em', borderBottom: `2px solid ${T.brand}` }}>승진 직급 (To)</th>
+                  <th style={{ padding: '10px 8px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: T.textMute, letterSpacing: '0.05em', borderBottom: `2px solid ${T.brand}`, minWidth: 90 }}>체류연한</th>
+                  <th style={{ padding: '10px 8px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: T.textMute, letterSpacing: '0.05em', borderBottom: `2px solid ${T.brand}`, minWidth: 90 }}>진급 Point</th>
+                  <th style={{ padding: '10px 8px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: T.accent, letterSpacing: '0.05em', borderBottom: `2px solid ${T.accent}`, minWidth: 90 }}>인상률 (%)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pm.tiers.map((tier, idx) => {
+                  const isExecutive = tier.years === null;
+                  return (
+                    <tr key={idx} style={{ 
+                      borderBottom: `1px solid ${T.divider}`,
+                      background: isExecutive ? '#FFFAEC' : (idx % 2 === 0 ? T.surface : '#FBFCFD')
+                    }}>
+                      <td style={{ padding: '8px', fontWeight: 700, color: T.ink, fontSize: 12 }}>
+                        {tier.fromLevel}
+                      </td>
+                      <td style={{ padding: '8px', color: T.text }}>{tier.fromTitle}</td>
+                      <td style={{ padding: '8px', color: T.text }}>
+                        <ChevronRight size={11} style={{ display: 'inline', verticalAlign: 'middle', color: T.textMute, marginRight: 4 }}/>
+                        <strong style={{ color: T.brand }}>{tier.toTitle}</strong>
+                      </td>
+                      {/* 체류 연한 */}
+                      <td style={{ padding: '8px', textAlign: 'center' }}>
+                        {isExecutive ? (
+                          <span style={{ fontSize: 10, color: T.warning, fontWeight: 600 }}>경영진 의사결정</span>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                            <input type="number" min="0" step="1"
+                              value={tier.years}
+                              onChange={e => setTier(idx, 'years', Number(e.target.value) || 0)}
+                              style={{ 
+                                width: 50, padding: '5px 6px', border: `1px solid ${T.border}`, borderRadius: 4,
+                                fontSize: 12, textAlign: 'center', background: T.surface,
+                                fontFamily: '"SF Mono", Monaco, monospace', fontWeight: 600, color: T.ink, outline: 'none'
+                              }}
+                            />
+                            <span style={{ fontSize: 10, color: T.textMute }}>년</span>
+                          </div>
+                        )}
+                      </td>
+                      {/* 진급 Point */}
+                      <td style={{ padding: '8px', textAlign: 'center' }}>
+                        {isExecutive ? (
+                          <span style={{ fontSize: 10, color: T.textMute }}>—</span>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                            <input type="number" min="0" step="0.5"
+                              value={tier.requiredPoint}
+                              onChange={e => setTier(idx, 'requiredPoint', Number(e.target.value) || 0)}
+                              style={{ 
+                                width: 60, padding: '5px 6px', border: `1px solid ${T.border}`, borderRadius: 4,
+                                fontSize: 12, textAlign: 'center', background: T.surface,
+                                fontFamily: '"SF Mono", Monaco, monospace', fontWeight: 600, color: T.ink, outline: 'none'
+                              }}
+                            />
+                            <span style={{ fontSize: 10, color: T.textMute }}>점</span>
+                          </div>
+                        )}
+                      </td>
+                      {/* 인상률 - 강조 */}
+                      <td style={{ padding: '8px', textAlign: 'center', background: 'rgba(214,56,56,0.03)' }}>
+                        {tier.increase === null ? (
+                          <span style={{ fontSize: 10, color: T.warning, fontWeight: 600 }}>경영진 의사결정</span>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                            <input type="number" min="0" max="20" step="0.5"
+                              value={tier.increase}
+                              onChange={e => setTier(idx, 'increase', Number(e.target.value) || 0)}
+                              style={{ 
+                                width: 60, padding: '5px 6px', border: `1px solid ${T.accent}`, borderRadius: 4,
+                                fontSize: 12, textAlign: 'center', background: T.surface,
+                                fontFamily: '"SF Mono", Monaco, monospace', fontWeight: 700, color: T.accent, outline: 'none'
+                              }}
+                              onFocus={e => e.target.style.borderWidth = '2px'}
+                              onBlur={e => e.target.style.borderWidth = '1px'}
+                            />
+                            <span style={{ fontSize: 11, color: T.accent, fontWeight: 600 }}>%</span>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          
+          {/* 안내 */}
+          <div style={{ 
+            marginTop: S[4], padding: `${S[3]}px ${S[4]}px`,
+            background: T.surfaceAlt, borderRadius: 6,
+            fontSize: 11, color: T.textMute, lineHeight: 1.7
+          }}>
+            <strong style={{ color: T.text }}>💡 인상률은 어떻게 적용되나요?</strong><br/>
+            승진이 확정된 직원의 다음 연도 기본급 인상에 적용됩니다. 예를 들어 4급 대리가 과장으로 승진하면 +4% 인상되며, 이는 평가 등급에 따른 일반 인상률(S 7%, A 5%, B 3%...)에 추가로 적용되지 않고 둘 중 큰 값이 적용됩니다.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PolicySection({ title, sumK, policy, children }) {
+  const sum = sumK ? sumK.reduce((s, k) => s + (policy[k] || 0), 0) : null;
+  const ok = sum === 100;
+  return (
+    <div style={{ ...card(), padding: S[6] }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: S[4], paddingBottom: S[2], borderBottom: `2px solid ${T.brand}` }}>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.ink }}>{title}</h3>
+        {sum !== null && (
+          <Badge color={ok ? T.success : T.danger} variant="outline">
+            합계 {sum}%{!ok && ' ⚠'}
+          </Badge>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function PolicyInput({ label, value, onChange, step = "1" }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: `${S[2]}px 0`, borderBottom: `1px solid ${T.divider}` }}>
+      <span style={{ fontSize: 13, color: T.text }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: S[1] }}>
+        <MiniInput value={value} onChange={onChange} step={step} />
+        <span style={{ fontSize: 12, color: T.textMute, width: 14 }}>%</span>
+      </div>
+    </div>
+  );
+}
+
+function MiniInput({ value, onChange, step = "1" }) {
+  return (
+    <input type="number" step={step} value={value} onChange={e => onChange(Number(e.target.value))}
+      style={{ width: 70, padding: '6px 10px', border: `1px solid ${T.border}`, borderRadius: 4, fontSize: 13, textAlign: 'right', background: T.surface, fontFamily: FONT, color: T.ink, outline: 'none', fontWeight: 600 }} />
+  );
+}
+
+// ============================================================
+// PDF 평가서
+// ============================================================
+function printEvaluationPDF(emp, result, scores, comments, policy, year, userRole) {
+  const win = window.open('', '_blank');
+  if (!win) { alert('팝업 차단을 해제해주세요.'); return; }
+  const today = new Date().toISOString().slice(0, 10);
+  const gColor = { S: '#1B7F4F', A: '#4A9D6E', B: '#1B3A6F', C: '#D97706', D: '#B91C1C' };
+  
+  // 인건비 정보 표시 권한 (admin·manager만)
+  // userRole이 전달되지 않으면 기본 안전 모드로 인건비 숨김
+  const canIncludeSalary = userRole === 'admin' || userRole === 'manager';
+  const html = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>인사평가서 - ${emp.name}</title>
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Pretendard', sans-serif; color: #2C3540; padding: 40px 50px; line-height: 1.6; }
+@media print { body { padding: 20px 30px; } .no-print { display: none !important; } @page { size: A4; margin: 15mm; } }
+.header { border-bottom: 3px solid #1B3A6F; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: flex-end; }
+.logo { display: flex; align-items: center; gap: 14px; }
+.logo svg { width: 44px; height: 44px; flex-shrink: 0; }
+.logo .text-block { display: flex; flex-direction: column; line-height: 1; }
+.logo .koitionk-korea { font-size: 9px; font-weight: 500; color: #1B3A6F; letter-spacing: 0.35em; padding-left: 4px; margin-bottom: 4px; }
+.logo .koitionk-line { height: 1.5px; background: #D63838; width: 100%; }
+.logo .koitionk-main { font-size: 24px; font-weight: 800; color: #1B3A6F; letter-spacing: 0.02em; padding: 4px 0; line-height: 0.95; }
+.logo .koitionk-innov { font-size: 9px; font-weight: 500; color: #1B3A6F; letter-spacing: 0.35em; padding-right: 4px; margin-top: 4px; text-align: right; }
+.doc-meta { text-align: right; font-size: 11px; color: #6B7280; }
+.doc-meta strong { color: #1B3A6F; }
+h2 { font-size: 15px; font-weight: 700; color: #1A1A1A; margin: 28px 0 14px; padding-bottom: 8px; border-bottom: 2px solid #1B3A6F; }
+.eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: #1B3A6F; margin-bottom: 10px; }
+.info-box { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding: 20px; background: #F8F9FB; border-left: 4px solid #1B3A6F; border-radius: 4px; margin-bottom: 24px; }
+.info-item .label { font-size: 10px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+.info-item .value { font-size: 14px; font-weight: 600; color: #1A1A1A; }
+.info-item .value.large { font-size: 20px; font-weight: 700; }
+.grade-display { text-align: center; padding: 32px; background: ${gColor[result.grade.grade]}; color: #fff; margin-bottom: 28px; border-radius: 6px; }
+.grade-display .grade-letter { font-size: 72px; font-weight: 800; line-height: 1; }
+.grade-display .grade-label { font-size: 14px; opacity: 0.9; margin-top: 10px; letter-spacing: 0.15em; }
+.grade-display .grade-score { font-size: 13px; opacity: 0.85; margin-top: 8px; }
+.score-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 13px; }
+.score-table th { background: #1B3A6F; color: #fff; padding: 10px 14px; text-align: left; font-weight: 600; font-size: 11px; letter-spacing: 0.05em; }
+.score-table td { padding: 10px 14px; border-bottom: 1px solid #E5E7EB; }
+.score-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.score-table .total-row { background: #F8F9FB; font-weight: 700; }
+.comment-block { background: #F8F9FB; border-left: 3px solid #1B3A6F; padding: 16px 20px; margin-bottom: 12px; border-radius: 4px; }
+.comment-block .comment-label { font-size: 11px; font-weight: 700; color: #1B3A6F; margin-bottom: 8px; letter-spacing: 0.05em; text-transform: uppercase; }
+.comment-block .comment-text { font-size: 13px; color: #2C3540; line-height: 1.8; white-space: pre-wrap; }
+.salary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.salary-box { padding: 16px 20px; background: #F8F9FB; border: 1px solid #E5E7EB; border-radius: 6px; }
+.salary-box .label { font-size: 10px; color: #6B7280; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 600; }
+.salary-box .value { font-size: 20px; font-weight: 700; margin-top: 6px; color: #1B3A6F; }
+.salary-box.highlight { background: #1B3A6F; color: #fff; border-color: #1B3A6F; }
+.salary-box.highlight .label { color: rgba(255,255,255,0.7); }
+.salary-box.highlight .value { color: #fff; }
+.interview-notice { padding: 18px 22px; background: #FFF8E6; border-left: 4px solid #D97706; border-radius: 4px; margin: 24px 0 16px; }
+.interview-notice-label { font-size: 11px; font-weight: 700; color: #D97706; letter-spacing: 0.1em; margin-bottom: 6px; }
+.interview-notice-text { font-size: 12px; color: #2C3540; line-height: 1.7; }
+.signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; margin-top: 40px; padding: 30px 0; border-top: 1px solid #E5E7EB; border-bottom: 1px solid #E5E7EB; }
+.sig-box { text-align: center; font-size: 11px; }
+.sig-box .sig-label { color: #6B7280; margin-bottom: 32px; }
+.sig-box .sig-name { border-top: 1px solid #6B7280; padding-top: 10px; font-weight: 600; color: #1A1A1A; }
+.footer { margin-top: 28px; padding-top: 16px; display: flex; justify-content: space-between; font-size: 10px; color: #9CA3AF; letter-spacing: 0.05em; }
+.print-btn { position: fixed; top: 20px; right: 20px; padding: 12px 24px; background: #1B3A6F; color: #fff; border: none; font-size: 14px; font-weight: 600; cursor: pointer; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+</style></head><body>
+<button class="print-btn no-print" onclick="window.print()">🖨 PDF 저장 / 인쇄</button>
+<div class="header">
+  <div class="logo">
+    <svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+      <rect x="8" y="8" width="14" height="44" fill="#1B3A6F" rx="1" />
+      <rect x="30" y="8" width="14" height="14" fill="#1B3A6F" rx="1" />
+      <rect x="45" y="8" width="7" height="7" fill="#D63838" rx="1" />
+      <rect x="30" y="24" width="14" height="12" fill="#1B3A6F" rx="1" />
+      <rect x="30" y="38" width="14" height="14" fill="#1B3A6F" rx="1" />
+    </svg>
+    <div class="text-block">
+      <div class="koitionk-korea">KOREA</div>
+      <div class="koitionk-line"></div>
+      <div class="koitionk-main">KOITION</div>
+      <div class="koitionk-line"></div>
+      <div class="koitionk-innov">INNOVATION</div>
+    </div>
+  </div>
+  <div class="doc-meta">
+    <div style="font-size: 16px; font-weight: 700; color: #1A1A1A; margin-bottom: 4px;">
+      인사평가서${!canIncludeSalary ? ' <span style="font-size: 10px; padding: 2px 8px; background: #D97706; color: #fff; border-radius: 3px; font-weight: 700; letter-spacing: 0.05em; margin-left: 4px; vertical-align: middle;">면담용</span>' : ''}
+    </div>
+    <div>문서번호: <strong>HR-${year}-${emp.id}${!canIncludeSalary ? '-INT' : ''}</strong></div>
+    <div>발행일: <strong>${today}</strong></div>
+    <div style="font-size: 10px; margin-top: 4px; color: ${canIncludeSalary ? '#6B7280' : '#D97706'};">${canIncludeSalary ? '인사 기록물 (보상 정보 포함)' : '면담용 발췌본 (보상 정보 제외)'}</div>
+  </div>
+</div>
+<div class="eyebrow">Employee Information · 평가 대상자</div>
+<div class="info-box">
+  <div class="info-item"><div class="label">성명</div><div class="value large">${emp.name}</div></div>
+  <div class="info-item"><div class="label">사번</div><div class="value">${emp.id}</div></div>
+  <div class="info-item"><div class="label">부서</div><div class="value">${emp.dept}</div></div>
+  <div class="info-item"><div class="label">직위 / 레벨</div><div class="value">${emp.position} · ${emp.level}</div></div>
+  <div class="info-item"><div class="label">직무군</div><div class="value"><span style="display: inline-block; padding: 3px 10px; background: ${({Archive:'#4A9D6E',Tech:'#1556C9',Biz:'#D63838',PM:'#7C3AED'})[emp.group] || '#6B7280'}; color: #fff; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em;">${emp.group}</span></div></div>
+  <div class="info-item"><div class="label">입사일</div><div class="value">${emp.hireDate}</div></div>
+  <div class="info-item"><div class="label">담당 역할</div><div class="value">${emp.role || '-'}</div></div>
+  <div class="info-item"><div class="label">평가 연도</div><div class="value">${year}년 정기평가</div></div>
+</div>
+<div class="grade-display">
+  <div class="eyebrow" style="color: rgba(255,255,255,0.7);">Final Grade · 종합 평가 등급</div>
+  <div class="grade-letter">${result.grade.grade}</div>
+  <div class="grade-label">${result.grade.label.toUpperCase()}</div>
+  <div class="grade-score">종합 점수 ${result.totalScore.toFixed(2)} / 100${canIncludeSalary ? ` · 기본급 인상률 ${result.grade.increase}% · PI 계수 ${result.grade.piCoef}x` : ''}</div>
+</div>
+<h2>역량평가 (Competency Assessment)</h2>
+<table class="score-table">
+<thead><tr><th style="width: 50%;">평가 항목</th><th style="width: 20%; text-align: right;">배점</th><th style="width: 15%; text-align: right;">점수</th><th style="width: 15%; text-align: right;">가중점수</th></tr></thead>
+<tbody>
+<tr><td>직무 전문성</td><td class="num">${policy.comp_expert}%</td><td class="num">${scores.comp_expert ?? '-'}</td><td class="num">${scores.comp_expert != null ? (scores.comp_expert * policy.comp_expert / 100).toFixed(2) : '-'}</td></tr>
+<tr><td>문제해결력</td><td class="num">${policy.comp_problem}%</td><td class="num">${scores.comp_problem ?? '-'}</td><td class="num">${scores.comp_problem != null ? (scores.comp_problem * policy.comp_problem / 100).toFixed(2) : '-'}</td></tr>
+<tr><td>학습·자기계발</td><td class="num">${policy.comp_learn}%</td><td class="num">${scores.comp_learn ?? '-'}</td><td class="num">${scores.comp_learn != null ? (scores.comp_learn * policy.comp_learn / 100).toFixed(2) : '-'}</td></tr>
+<tr><td>협업·커뮤니케이션</td><td class="num">${policy.comp_collab}%</td><td class="num">${scores.comp_collab ?? '-'}</td><td class="num">${scores.comp_collab != null ? (scores.comp_collab * policy.comp_collab / 100).toFixed(2) : '-'}</td></tr>
+<tr class="total-row"><td>역량평가 가중점수</td><td class="num">100%</td><td></td><td class="num">${result.comp != null ? result.comp.toFixed(2) : '-'}</td></tr>
+</tbody></table>
+<h2>업적평가 (Performance Assessment)</h2>
+<table class="score-table">
+<thead><tr><th style="width: 50%;">평가 항목</th><th style="width: 20%; text-align: right;">배점</th><th style="width: 15%; text-align: right;">점수</th><th style="width: 15%; text-align: right;">가중점수</th></tr></thead>
+<tbody>
+<tr><td>KPI 달성도</td><td class="num">${policy.perf_kpi}%</td><td class="num">${scores.perf_kpi ?? '-'}</td><td class="num">${scores.perf_kpi != null ? (scores.perf_kpi * policy.perf_kpi / 100).toFixed(2) : '-'}</td></tr>
+<tr><td>프로젝트 수익성</td><td class="num">${policy.perf_profit}%</td><td class="num">${scores.perf_profit ?? '-'}</td><td class="num">${scores.perf_profit != null ? (scores.perf_profit * policy.perf_profit / 100).toFixed(2) : '-'}</td></tr>
+<tr><td>납기·완성도</td><td class="num">${policy.perf_delivery}%</td><td class="num">${scores.perf_delivery ?? '-'}</td><td class="num">${scores.perf_delivery != null ? (scores.perf_delivery * policy.perf_delivery / 100).toFixed(2) : '-'}</td></tr>
+<tr><td>고객 만족도</td><td class="num">${policy.perf_customer}%</td><td class="num">${scores.perf_customer ?? '-'}</td><td class="num">${scores.perf_customer != null ? (scores.perf_customer * policy.perf_customer / 100).toFixed(2) : '-'}</td></tr>
+<tr class="total-row"><td>업적평가 가중점수</td><td class="num">100%</td><td></td><td class="num">${result.perf != null ? result.perf.toFixed(2) : '-'}</td></tr>
+</tbody></table>
+<h2>평가자 의견 (Evaluator Comments)</h2>
+<div class="comment-block"><div class="comment-label">▶ 강점</div><div class="comment-text">${comments.strength || '의견 미작성'}</div></div>
+<div class="comment-block"><div class="comment-label">▶ 개선점</div><div class="comment-text">${comments.improvement || '의견 미작성'}</div></div>
+<div class="comment-block"><div class="comment-label">▶ 종합 의견</div><div class="comment-text">${comments.overall || '의견 미작성'}</div></div>
+${canIncludeSalary ? `
+<h2>${year + 1}년도 보상 산정</h2>
+<div class="salary-grid">
+<div class="salary-box"><div class="label">현재 월 기본급</div><div class="value">${fmtKRW(emp.baseSalary)}원</div></div>
+<div class="salary-box highlight"><div class="label">${year + 1}년 월 기본급 (+${result.increase}%)</div><div class="value">${fmtKRW(result.newSalary)}원</div></div>
+<div class="salary-box"><div class="label">월 직책수당</div><div class="value">${emp.allowance > 0 ? fmtKRW(emp.allowance) + '원' : '해당없음'}</div></div>
+<div class="salary-box"><div class="label">PI · Project Incentive</div><div class="value">${result.pi > 0 ? fmtKRW(result.pi) + '원' : '해당없음'}</div></div>
+<div class="salary-box"><div class="label">PS · Profit Sharing</div><div class="value">${result.ps > 0 ? fmtKRW(result.ps) + '원' : '해당없음'}</div></div>
+<div class="salary-box highlight"><div class="label">${year + 1}년 총 보상 (연)</div><div class="value">${fmtKRW(result.totalComp2026)}원</div></div>
+</div>
+` : `
+<div class="interview-notice">
+  <div class="interview-notice-label">📋 면담용 평가서</div>
+  <div class="interview-notice-text">본 평가서는 면담 목적으로 출력되었으며, 보상·인건비 관련 정보는 별도 통보됩니다. 평가 결과는 인사 담당자(HR)를 통해 공식적으로 안내됩니다.</div>
+</div>
+`}
+<div class="signatures">
+<div class="sig-box"><div class="sig-label">1차 평가자<br/>(직속상사)</div><div class="sig-name">${comments.evaluator1 || '_________________'}</div></div>
+<div class="sig-box"><div class="sig-label">2차 평가자<br/>(차상위)</div><div class="sig-name">${comments.evaluator2 || '_________________'}</div></div>
+<div class="sig-box"><div class="sig-label">인사 담당<br/>(확인)</div><div class="sig-name">_________________</div></div>
+</div>
+<div class="footer">
+  <div>주식회사 코이션 · KOITION CO., LTD.</div>
+  <div>${canIncludeSalary ? '본 평가서는 인사 기록물로 5년간 보존됩니다.' : '본 발췌본은 면담용으로만 사용되며, 외부 유출을 금합니다.'}</div>
+</div>
+<script>setTimeout(() => { window.print(); }, 600);</script>
+</body></html>`;
+  win.document.write(html); win.document.close();
+}
