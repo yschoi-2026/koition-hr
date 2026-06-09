@@ -817,7 +817,11 @@ function CardStat({ label, value, highlight }) {
 // ============================================================
 // 사용자 계정
 // ============================================================
-const USERS = [
+// ============================================================
+// 사용자 계정 (초기 데이터 - 처음 로드 시 비밀번호 해시 적용)
+// ⚠️ 모든 계정은 첫 로그인 후 즉시 비밀번호를 변경하셔야 합니다
+// ============================================================
+const INITIAL_USERS = [
   { username: 'admin', password: 'admin', role: 'admin', name: '인사담당자', empId: null, deptScope: '전체' },
   { username: 'jiy', password: '1234', role: 'manager', name: '정일영', empId: 'K-140401', deptScope: '경영기획본부' },
   { username: 'cjk', password: '1234', role: 'manager', name: '최재교', empId: 'K-140402', deptScope: '공공사업본부' },
@@ -833,6 +837,97 @@ const USERS = [
   { username: 'jeh', password: '1234', role: 'employee', name: '조은희', empId: 'K-240401' },
   { username: 'gyh', password: '1234', role: 'employee', name: '고영훈', empId: 'K-240202' },
 ];
+
+// ============================================================
+// 비밀번호 보안 유틸
+// SHA-256 단방향 해시 + 복잡성 검증
+// ============================================================
+
+// SHA-256 해시 (Web Crypto API 사용 - 브라우저 기본 제공)
+async function hashPassword(plaintext) {
+  if (!plaintext) return '';
+  const encoder = new TextEncoder();
+  const data = encoder.encode(plaintext);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// 비밀번호 검증 (입력값과 저장된 해시 비교)
+async function verifyPassword(plaintext, hash) {
+  const computed = await hashPassword(plaintext);
+  return computed === hash;
+}
+
+// 비밀번호 복잡성 검증
+// 반환: { valid: boolean, score: 0~4, errors: string[], warnings: string[] }
+function validatePassword(password, username, name) {
+  const errors = [];
+  const warnings = [];
+  let score = 0;
+  
+  if (!password || password.length < 8) {
+    errors.push('최소 8자 이상이어야 합니다');
+  } else {
+    score++;
+  }
+  
+  // 문자 종류 검증
+  const hasLower = /[a-z]/.test(password);
+  const hasUpper = /[A-Z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const hasSpecial = /[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\;'/`~]/.test(password);
+  const typeCount = [hasLower, hasUpper, hasNumber, hasSpecial].filter(Boolean).length;
+  
+  if (typeCount >= 3) score++;
+  if (typeCount === 4) score++;
+  if (password.length >= 12) score++;
+  
+  if (typeCount < 3) {
+    errors.push('영문 대/소문자, 숫자, 특수문자 중 3종류 이상 포함되어야 합니다');
+  }
+  
+  // 흔한 비밀번호 차단
+  const weakPasswords = ['12345678', 'password', 'admin1234', 'qwerty', 'abc12345', '11111111', 'koition1', 'koition12'];
+  if (weakPasswords.includes(password.toLowerCase())) {
+    errors.push('너무 흔한 비밀번호입니다');
+  }
+  
+  // 사용자 ID/이름과 동일성 검증
+  if (username && password.toLowerCase().includes(username.toLowerCase())) {
+    errors.push('아이디(username)를 비밀번호에 포함할 수 없습니다');
+  }
+  if (name && password.includes(name)) {
+    errors.push('본인 이름을 비밀번호에 포함할 수 없습니다');
+  }
+  
+  // 기본 비밀번호 경고
+  if (['1234', 'admin', 'koition', 'password'].includes(password)) {
+    errors.push('기본 비밀번호는 사용할 수 없습니다');
+  }
+  
+  // 연속 문자 경고
+  if (/(.)\1{3,}/.test(password)) {
+    warnings.push('동일 문자가 4번 이상 반복됩니다');
+  }
+  if (/(?:0123|1234|2345|3456|4567|5678|6789|abcd|qwer)/i.test(password)) {
+    warnings.push('연속된 문자/숫자 사용은 피하세요');
+  }
+  
+  return {
+    valid: errors.length === 0,
+    score: Math.min(score, 4),
+    errors,
+    warnings,
+    typeCount,
+    length: password.length,
+  };
+}
+
+// 비밀번호 강도 라벨
+function passwordStrengthLabel(score) {
+  return ['약함', '약함', '보통', '강함', '매우 강함'][score] || '약함';
+}
 
 // ============================================================
 // ECount 인사카드 연동 헬퍼
@@ -1918,6 +2013,8 @@ function calcSalary(emp, scores, policy) {
 // ============================================================
 export default function App() {
   const [user, setUser] = useState(null);
+  const [users, setUsers] = useState([]);  // 해시된 비밀번호 포함 사용자 배열
+  const [usersInitialized, setUsersInitialized] = useState(false);
   const [tab, setTab] = useState('dashboard');
   const [employees, setEmployees] = useState(INITIAL_EMPLOYEES);
   const [policy, setPolicy] = useState(INITIAL_POLICY);
@@ -1929,7 +2026,98 @@ export default function App() {
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [historyHighlight, setHistoryHighlight] = useState(null);  // {empId, year}
   const [toast, setToast] = useState(null);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);  // 본인 비밀번호 변경
+  const [adminResetTarget, setAdminResetTarget] = useState(null);     // admin이 타인 비밀번호 초기화할 대상
   const currentYear = 2026;
+  
+  // 사용자 데이터 초기 로드 (최초 1회 비밀번호 해시화)
+  useEffect(() => {
+    const initializeUsers = async () => {
+      try {
+        const stored = localStorage.getItem('koition_hr_users');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          // 이미 해시된 데이터: passwordHash 필드 존재
+          if (parsed.length > 0 && parsed[0].passwordHash) {
+            setUsers(parsed);
+            setUsersInitialized(true);
+            return;
+          }
+        }
+        // 첫 실행: INITIAL_USERS의 평문 비밀번호를 해시로 변환해 저장
+        const hashedUsers = await Promise.all(
+          INITIAL_USERS.map(async u => ({
+            username: u.username,
+            passwordHash: await hashPassword(u.password),
+            role: u.role,
+            name: u.name,
+            empId: u.empId,
+            deptScope: u.deptScope,
+            mustChangePassword: true,  // 첫 로그인 시 비밀번호 변경 권장
+            lastPasswordChange: null,
+          }))
+        );
+        localStorage.setItem('koition_hr_users', JSON.stringify(hashedUsers));
+        setUsers(hashedUsers);
+        setUsersInitialized(true);
+      } catch (e) {
+        console.error('User initialization failed:', e);
+        setUsersInitialized(true);  // 실패해도 로그인 화면은 표시
+      }
+    };
+    initializeUsers();
+  }, []);
+  
+  // users 변경 시 자동 저장
+  useEffect(() => {
+    if (usersInitialized && users.length > 0) {
+      try {
+        localStorage.setItem('koition_hr_users', JSON.stringify(users));
+      } catch (e) {
+        console.error('User save failed:', e);
+      }
+    }
+  }, [users, usersInitialized]);
+  
+  // 본인 비밀번호 변경
+  const handleChangeOwnPassword = async (currentPassword, newPassword) => {
+    const currentUser = users.find(u => u.username === user.username);
+    if (!currentUser) return { success: false, error: '사용자를 찾을 수 없습니다' };
+    
+    const isCurrentValid = await verifyPassword(currentPassword, currentUser.passwordHash);
+    if (!isCurrentValid) return { success: false, error: '현재 비밀번호가 일치하지 않습니다' };
+    
+    const validation = validatePassword(newPassword, currentUser.username, currentUser.name);
+    if (!validation.valid) return { success: false, error: validation.errors.join(' / ') };
+    
+    const newHash = await hashPassword(newPassword);
+    setUsers(prev => prev.map(u => 
+      u.username === user.username 
+        ? { ...u, passwordHash: newHash, mustChangePassword: false, lastPasswordChange: new Date().toISOString() }
+        : u
+    ));
+    setUser(prev => ({ ...prev, mustChangePassword: false }));
+    return { success: true };
+  };
+  
+  // admin이 타인 비밀번호 초기화
+  const handleAdminResetPassword = async (targetUsername, newPassword) => {
+    if (user.role !== 'admin') return { success: false, error: '권한이 없습니다' };
+    
+    const targetUser = users.find(u => u.username === targetUsername);
+    if (!targetUser) return { success: false, error: '대상 사용자를 찾을 수 없습니다' };
+    
+    const validation = validatePassword(newPassword, targetUser.username, targetUser.name);
+    if (!validation.valid) return { success: false, error: validation.errors.join(' / ') };
+    
+    const newHash = await hashPassword(newPassword);
+    setUsers(prev => prev.map(u => 
+      u.username === targetUsername 
+        ? { ...u, passwordHash: newHash, mustChangePassword: true, lastPasswordChange: new Date().toISOString() }
+        : u
+    ));
+    return { success: true };
+  };
 
   useEffect(() => {
     try {
@@ -2063,7 +2251,19 @@ export default function App() {
     setTimeout(() => setHistoryHighlight(null), 5000);
   };
 
-  if (!user) return <LoginView onLogin={setUser} policy={policy} />;
+  if (!user) {
+    if (!usersInitialized) {
+      return (
+        <div style={{ 
+          minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: T.surface, fontFamily: FONT, fontSize: 13, color: T.textMute
+        }}>
+          시스템 초기화 중...
+        </div>
+      );
+    }
+    return <LoginView onLogin={setUser} policy={policy} users={users} />;
+  }
 
   const allMenus = [
     { id: 'dashboard', label: '대시보드', icon: BarChart3, roles: ['admin', 'manager', 'evaluator', 'employee'] },
@@ -2089,7 +2289,8 @@ export default function App() {
       <GlobalStyles />
       <div style={{ minHeight: '100vh', background: T.bg, fontFamily: FONT, color: T.text }}>
         <Header user={user} onLogout={() => { setUser(null); setTab('dashboard'); }} 
-          handleSave={handleSave} handleExport={handleExport} handleImport={handleImport} />
+          handleSave={handleSave} handleExport={handleExport} handleImport={handleImport}
+          onChangePassword={() => setPasswordModalOpen(true)} />
         
         <div style={{ display: 'flex', minHeight: 'calc(100vh - 72px)' }}>
           <Sidebar visibleMenus={visibleMenus} tab={tab} setTab={setTab} user={user} stats={stats} />
@@ -2097,7 +2298,11 @@ export default function App() {
           <main style={{ flex: 1, padding: `${S[7]}px ${S[8]}px`, overflow: 'auto', maxWidth: `calc(100vw - ${SIDEBAR_W}px)` }}>
             {tab === 'dashboard' && <DashboardView user={user} stats={stats} employees={visibleEmployees} results={results} policy={policy} setTab={setTab} submissions={submissions} />}
             {tab === 'self' && <SelfEvalView user={user} employees={employees} selfScores={selfScores} updateSelfScore={updateSelfScore} comments={comments} updateComment={updateComment} policy={policy} submissions={submissions} submitSelfEval={submitSelfEval} />}
-            {tab === 'employees' && <EmployeesView employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} deleteEmployee={deleteEmployee} history={history} results={results} currentYear={currentYear} policy={policy} />}
+            {tab === 'employees' && <EmployeesView user={user} users={users} employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} deleteEmployee={deleteEmployee} history={history} results={results} currentYear={currentYear} policy={policy} onResetPassword={(emp) => {
+              const target = users.find(u => u.empId === emp.id || (u.empId === null && emp.id === 'K-admin'));
+              if (target) setAdminResetTarget(target);
+              else showToast(`${emp.name}님의 계정을 찾을 수 없습니다`);
+            }} />}
             {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} />}
             {tab === 'results' && <ResultsView user={user} employees={visibleEmployees} results={results} comments={comments} scores={scores} selfScores={selfScores} policy={policy} currentYear={currentYear} history={history} navigateToHistory={navigateToHistory} />}
             {tab === 'salary' && <SalaryView employees={employees} results={results} stats={stats} />}
@@ -2109,6 +2314,68 @@ export default function App() {
         </div>
         
         {toast && <Toast {...toast} />}
+        
+        {/* 본인 비밀번호 변경 모달 */}
+        {passwordModalOpen && (
+          <PasswordChangeModal
+            user={user}
+            onChangePassword={handleChangeOwnPassword}
+            onClose={() => setPasswordModalOpen(false)}
+            onSuccess={() => {
+              showToast('비밀번호가 변경되었습니다');
+              setPasswordModalOpen(false);
+            }}
+          />
+        )}
+        
+        {/* admin이 타인 비밀번호 초기화 모달 */}
+        {adminResetTarget && (
+          <AdminPasswordResetModal
+            targetUser={adminResetTarget}
+            onReset={handleAdminResetPassword}
+            onClose={() => setAdminResetTarget(null)}
+            onSuccess={(targetName) => {
+              showToast(`${targetName}님의 비밀번호가 초기화되었습니다`);
+              setAdminResetTarget(null);
+            }}
+          />
+        )}
+        
+        {/* 첫 로그인 시 비밀번호 변경 권장 배너 */}
+        {user?.mustChangePassword && !passwordModalOpen && (
+          <div style={{ 
+            position: 'fixed', bottom: 20, right: 20, 
+            background: '#fff', border: `2px solid ${T.danger}`, borderRadius: 8,
+            boxShadow: '0 8px 24px rgba(185,28,28,0.25)', padding: `${S[4]}px ${S[5]}px`,
+            display: 'flex', alignItems: 'center', gap: S[3], maxWidth: 380,
+            zIndex: 100, fontFamily: FONT
+          }}>
+            <div style={{ 
+              width: 36, height: 36, borderRadius: 18, background: T.danger,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+            }}>
+              <AlertCircle size={18} style={{ color: '#fff' }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.danger, marginBottom: 2 }}>
+                보안 경고: 비밀번호 변경 필요
+              </div>
+              <div style={{ fontSize: 11, color: T.text, lineHeight: 1.6 }}>
+                기본 비밀번호를 사용 중입니다. 보안을 위해 즉시 변경해주세요.
+              </div>
+            </div>
+            <button 
+              onClick={() => setPasswordModalOpen(true)}
+              style={{ 
+                padding: '6px 12px', background: T.danger, color: '#fff',
+                border: 'none', borderRadius: 4, fontSize: 11, fontWeight: 600,
+                cursor: 'pointer', fontFamily: FONT, flexShrink: 0
+              }}
+            >
+              지금 변경
+            </button>
+          </div>
+        )}
       </div>
     </>
   );
@@ -2276,9 +2543,405 @@ function GradeBadge({ grade, size = 'md' }) {
 }
 
 // ============================================================
+// 본인 비밀번호 변경 모달
+// 현재 비밀번호 검증 + 새 비밀번호 복잡성 검증 + 강도 시각화
+// ============================================================
+function PasswordChangeModal({ user, onChangePassword, onClose, onSuccess }) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  
+  const validation = validatePassword(newPassword, user.username, user.name);
+  const passwordsMatch = newPassword === confirmPassword && confirmPassword.length > 0;
+  const canSubmit = currentPassword && newPassword && confirmPassword && validation.valid && passwordsMatch && !loading;
+  
+  const handleSubmit = async () => {
+    if (!canSubmit) return;
+    setError('');
+    setLoading(true);
+    try {
+      const result = await onChangePassword(currentPassword, newPassword);
+      if (result.success) {
+        onSuccess();
+      } else {
+        setError(result.error || '비밀번호 변경에 실패했습니다');
+      }
+    } catch (e) {
+      setError('처리 중 오류가 발생했습니다');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const strengthColors = [T.danger, T.danger, T.warning, T.brand, T.success];
+  const strengthColor = strengthColors[validation.score];
+  
+  return (
+    <div style={{ 
+      position: 'fixed', inset: 0, background: 'rgba(15,37,71,0.45)', 
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200,
+      padding: S[5], fontFamily: FONT
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ 
+        background: T.surface, borderRadius: 10, width: '100%', maxWidth: 480, 
+        boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden'
+      }}>
+        {/* 헤더 */}
+        <div style={{ 
+          padding: `${S[5]}px ${S[6]}px`, borderBottom: `1px solid ${T.border}`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: S[3]
+        }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: T.brand, letterSpacing: '0.15em', marginBottom: 2 }}>
+              SECURITY · 비밀번호 변경
+            </div>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: T.ink }}>
+              내 비밀번호 변경
+            </h2>
+            <div style={{ fontSize: 11, color: T.textMute, marginTop: 4 }}>
+              {user.name} ({user.username}) · 본인 계정 비밀번호를 변경합니다
+            </div>
+          </div>
+          <button onClick={onClose} style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}>
+            <X size={18} />
+          </button>
+        </div>
+        
+        {/* 본문 */}
+        <div style={{ padding: `${S[5]}px ${S[6]}px` }}>
+          {/* 현재 비밀번호 */}
+          <div style={{ marginBottom: S[4] }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: T.text, display: 'block', marginBottom: 6 }}>
+              현재 비밀번호
+            </label>
+            <div style={{ position: 'relative' }}>
+              <input 
+                type={showCurrent ? 'text' : 'password'} 
+                value={currentPassword} 
+                onChange={e => setCurrentPassword(e.target.value)}
+                placeholder="현재 사용 중인 비밀번호"
+                autoFocus
+                style={{ 
+                  width: '100%', padding: '10px 38px 10px 14px', 
+                  border: `1px solid ${T.border}`, borderRadius: 6,
+                  fontSize: 14, fontFamily: FONT, boxSizing: 'border-box', outline: 'none'
+                }}
+              />
+              <button onClick={() => setShowCurrent(!showCurrent)} type="button"
+                style={{ 
+                  position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  fontSize: 10, color: T.textMute, fontFamily: FONT
+                }}>
+                {showCurrent ? '숨김' : '보기'}
+              </button>
+            </div>
+          </div>
+          
+          {/* 새 비밀번호 */}
+          <div style={{ marginBottom: S[4] }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: T.text, display: 'block', marginBottom: 6 }}>
+              새 비밀번호
+            </label>
+            <div style={{ position: 'relative' }}>
+              <input 
+                type={showNew ? 'text' : 'password'} 
+                value={newPassword} 
+                onChange={e => setNewPassword(e.target.value)}
+                placeholder="8자 이상, 대/소문자·숫자·특수문자 중 3종 이상"
+                style={{ 
+                  width: '100%', padding: '10px 38px 10px 14px', 
+                  border: `1px solid ${T.border}`, borderRadius: 6,
+                  fontSize: 14, fontFamily: FONT, boxSizing: 'border-box', outline: 'none'
+                }}
+              />
+              <button onClick={() => setShowNew(!showNew)} type="button"
+                style={{ 
+                  position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  fontSize: 10, color: T.textMute, fontFamily: FONT
+                }}>
+                {showNew ? '숨김' : '보기'}
+              </button>
+            </div>
+            
+            {/* 강도 표시 바 */}
+            {newPassword && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ display: 'flex', gap: 3, marginBottom: 4 }}>
+                  {[0, 1, 2, 3].map(i => (
+                    <div key={i} style={{ 
+                      flex: 1, height: 4, borderRadius: 2,
+                      background: i < validation.score ? strengthColor : T.divider,
+                      transition: 'all 0.2s'
+                    }} />
+                  ))}
+                </div>
+                <div style={{ fontSize: 10, color: strengthColor, fontWeight: 600 }}>
+                  비밀번호 강도: {passwordStrengthLabel(validation.score)} · {validation.length}자 · {validation.typeCount}종 문자
+                </div>
+              </div>
+            )}
+            
+            {/* 검증 오류 */}
+            {newPassword && validation.errors.length > 0 && (
+              <ul style={{ margin: '8px 0 0', paddingLeft: 16, fontSize: 10, color: T.danger, lineHeight: 1.7 }}>
+                {validation.errors.map((err, i) => <li key={i}>{err}</li>)}
+              </ul>
+            )}
+            {newPassword && validation.warnings.length > 0 && (
+              <ul style={{ margin: '4px 0 0', paddingLeft: 16, fontSize: 10, color: T.warning, lineHeight: 1.7 }}>
+                {validation.warnings.map((w, i) => <li key={i}>{w}</li>)}
+              </ul>
+            )}
+          </div>
+          
+          {/* 새 비밀번호 확인 */}
+          <div style={{ marginBottom: S[4] }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: T.text, display: 'block', marginBottom: 6 }}>
+              새 비밀번호 확인
+            </label>
+            <input 
+              type={showNew ? 'text' : 'password'} 
+              value={confirmPassword} 
+              onChange={e => setConfirmPassword(e.target.value)}
+              placeholder="새 비밀번호를 다시 입력"
+              style={{ 
+                width: '100%', padding: '10px 14px', 
+                border: `1px solid ${confirmPassword && !passwordsMatch ? T.danger : T.border}`, 
+                borderRadius: 6, fontSize: 14, fontFamily: FONT, 
+                boxSizing: 'border-box', outline: 'none'
+              }}
+            />
+            {confirmPassword && !passwordsMatch && (
+              <div style={{ fontSize: 10, color: T.danger, marginTop: 4 }}>
+                비밀번호가 일치하지 않습니다
+              </div>
+            )}
+            {confirmPassword && passwordsMatch && (
+              <div style={{ fontSize: 10, color: T.success, marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <CheckCircle2 size={11} /> 비밀번호가 일치합니다
+              </div>
+            )}
+          </div>
+          
+          {/* 오류 메시지 */}
+          {error && (
+            <div style={{ 
+              padding: '10px 12px', background: '#FBEAEA', border: `1px solid ${T.danger}`,
+              borderRadius: 4, marginBottom: S[3], fontSize: 11, color: T.danger,
+              display: 'flex', alignItems: 'center', gap: 6
+            }}>
+              <AlertCircle size={13} /> {error}
+            </div>
+          )}
+        </div>
+        
+        {/* 푸터 */}
+        <div style={{ 
+          padding: `${S[3]}px ${S[6]}px`, borderTop: `1px solid ${T.border}`,
+          background: T.surfaceAlt, display: 'flex', justifyContent: 'flex-end', gap: S[2]
+        }}>
+          <Button variant="outline" size="md" onClick={onClose}>취소</Button>
+          <Button variant="primary" size="md" onClick={handleSubmit} disabled={!canSubmit}>
+            {loading ? '변경 중...' : '비밀번호 변경'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// admin이 타인 비밀번호 초기화 모달
+// ============================================================
+function AdminPasswordResetModal({ targetUser, onReset, onClose, onSuccess }) {
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  
+  const validation = validatePassword(newPassword, targetUser.username, targetUser.name);
+  const passwordsMatch = newPassword === confirmPassword && confirmPassword.length > 0;
+  const canSubmit = newPassword && confirmPassword && validation.valid && passwordsMatch && !loading;
+  
+  // 임시 비밀번호 자동 생성 (8자, 영문+숫자+특수문자 혼합)
+  const generateTempPassword = () => {
+    const lower = 'abcdefghjkmnpqrstuvwxyz';
+    const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const numbers = '23456789';
+    const special = '!@#$%&*';
+    const all = lower + upper + numbers + special;
+    let pwd = '';
+    pwd += lower[Math.floor(Math.random() * lower.length)];
+    pwd += upper[Math.floor(Math.random() * upper.length)];
+    pwd += numbers[Math.floor(Math.random() * numbers.length)];
+    pwd += special[Math.floor(Math.random() * special.length)];
+    for (let i = 0; i < 6; i++) {
+      pwd += all[Math.floor(Math.random() * all.length)];
+    }
+    // 셔플
+    pwd = pwd.split('').sort(() => Math.random() - 0.5).join('');
+    setNewPassword(pwd);
+    setConfirmPassword(pwd);
+  };
+  
+  const handleSubmit = async () => {
+    if (!canSubmit) return;
+    setError('');
+    setLoading(true);
+    try {
+      const result = await onReset(targetUser.username, newPassword);
+      if (result.success) {
+        onSuccess(targetUser.name);
+      } else {
+        setError(result.error || '비밀번호 초기화에 실패했습니다');
+      }
+    } catch (e) {
+      setError('처리 중 오류가 발생했습니다');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  return (
+    <div style={{ 
+      position: 'fixed', inset: 0, background: 'rgba(15,37,71,0.45)', 
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200,
+      padding: S[5], fontFamily: FONT
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ 
+        background: T.surface, borderRadius: 10, width: '100%', maxWidth: 480, 
+        boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden'
+      }}>
+        {/* 헤더 */}
+        <div style={{ 
+          padding: `${S[5]}px ${S[6]}px`, borderBottom: `1px solid ${T.border}`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: S[3],
+          background: 'linear-gradient(135deg, #FFF8E6 0%, #FFFAEC 100%)'
+        }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: T.warning, letterSpacing: '0.15em', marginBottom: 2 }}>
+              ⚠ ADMIN ACTION · 타인 비밀번호 초기화
+            </div>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: T.ink }}>
+              {targetUser.name}님 비밀번호 초기화
+            </h2>
+            <div style={{ fontSize: 11, color: T.text, marginTop: 4, lineHeight: 1.6 }}>
+              계정: <strong>{targetUser.username}</strong> · 역할: {targetUser.role}<br/>
+              초기화 후 본인이 첫 로그인 시 새 비밀번호로 변경하도록 안내됩니다
+            </div>
+          </div>
+          <button onClick={onClose} style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}>
+            <X size={18} />
+          </button>
+        </div>
+        
+        {/* 본문 */}
+        <div style={{ padding: `${S[5]}px ${S[6]}px` }}>
+          {/* 임시 비밀번호 생성 */}
+          <div style={{ 
+            padding: `${S[3]}px ${S[4]}px`, background: T.surfaceAlt, borderRadius: 6,
+            marginBottom: S[4], display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+          }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.brand }}>임시 비밀번호 자동 생성</div>
+              <div style={{ fontSize: 10, color: T.textMute, marginTop: 2 }}>
+                8자 길이, 영문 대/소문자·숫자·특수문자 혼합으로 자동 생성
+              </div>
+            </div>
+            <Button variant="outline" size="sm" icon={Sparkles} onClick={generateTempPassword}>
+              자동 생성
+            </Button>
+          </div>
+          
+          {/* 새 비밀번호 */}
+          <div style={{ marginBottom: S[4] }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: T.text, display: 'block', marginBottom: 6 }}>
+              새 비밀번호
+            </label>
+            <input 
+              type="text"  // admin이 메모하기 쉽도록 표시
+              value={newPassword} 
+              onChange={e => setNewPassword(e.target.value)}
+              placeholder="새 비밀번호 입력 또는 자동 생성"
+              autoFocus
+              style={{ 
+                width: '100%', padding: '10px 14px', 
+                border: `1px solid ${T.border}`, borderRadius: 6,
+                fontSize: 14, fontFamily: '"SF Mono", Monaco, monospace', 
+                boxSizing: 'border-box', outline: 'none', letterSpacing: '0.05em'
+              }}
+            />
+            {newPassword && validation.errors.length > 0 && (
+              <ul style={{ margin: '8px 0 0', paddingLeft: 16, fontSize: 10, color: T.danger, lineHeight: 1.7 }}>
+                {validation.errors.map((err, i) => <li key={i}>{err}</li>)}
+              </ul>
+            )}
+          </div>
+          
+          {/* 확인 */}
+          <div style={{ marginBottom: S[4] }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: T.text, display: 'block', marginBottom: 6 }}>
+              새 비밀번호 확인
+            </label>
+            <input 
+              type="text"
+              value={confirmPassword} 
+              onChange={e => setConfirmPassword(e.target.value)}
+              placeholder="동일하게 다시 입력"
+              style={{ 
+                width: '100%', padding: '10px 14px', 
+                border: `1px solid ${confirmPassword && !passwordsMatch ? T.danger : T.border}`, 
+                borderRadius: 6, fontSize: 14, fontFamily: '"SF Mono", Monaco, monospace', 
+                boxSizing: 'border-box', outline: 'none', letterSpacing: '0.05em'
+              }}
+            />
+          </div>
+          
+          {/* 안내 */}
+          <div style={{ 
+            padding: `${S[3]}px ${S[4]}px`, background: '#FFF8E6', borderLeft: `3px solid ${T.warning}`,
+            borderRadius: 4, fontSize: 11, color: T.text, lineHeight: 1.7
+          }}>
+            <strong style={{ color: T.warning }}>📋 다음 단계:</strong> 비밀번호 초기화 후 새 비밀번호를 본인에게 직접 전달하세요. 
+            본인은 첫 로그인 시 즉시 새 비밀번호로 다시 변경하도록 안내됩니다.
+          </div>
+          
+          {error && (
+            <div style={{ 
+              padding: '10px 12px', background: '#FBEAEA', border: `1px solid ${T.danger}`,
+              borderRadius: 4, marginTop: S[3], fontSize: 11, color: T.danger,
+              display: 'flex', alignItems: 'center', gap: 6
+            }}>
+              <AlertCircle size={13} /> {error}
+            </div>
+          )}
+        </div>
+        
+        {/* 푸터 */}
+        <div style={{ 
+          padding: `${S[3]}px ${S[6]}px`, borderTop: `1px solid ${T.border}`,
+          background: T.surfaceAlt, display: 'flex', justifyContent: 'flex-end', gap: S[2]
+        }}>
+          <Button variant="outline" size="md" onClick={onClose}>취소</Button>
+          <Button variant="danger" size="md" onClick={handleSubmit} disabled={!canSubmit}>
+            {loading ? '초기화 중...' : '비밀번호 초기화'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // Header
 // ============================================================
-function Header({ user, onLogout, handleSave, handleExport, handleImport }) {
+function Header({ user, onLogout, handleSave, handleExport, handleImport, onChangePassword }) {
   const roleConfig = {
     admin: { label: '관리자', color: T.brand },
     manager: { label: '부서장', color: T.brandLight },
@@ -2324,14 +2987,39 @@ function Header({ user, onLogout, handleSave, handleExport, handleImport }) {
 
         {/* 사용자 + 액션 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: S[2] }}>
-          <div style={{ 
-            display: 'flex', alignItems: 'center', gap: S[2],
-            padding: `${S[1]}px ${S[3]}px`, borderRadius: 6,
-            background: T.surfaceAlt
-          }}>
+          {/* 사용자 정보 + 비밀번호 변경 버튼 */}
+          <button
+            onClick={onChangePassword}
+            title="클릭하여 비밀번호 변경"
+            style={{ 
+              display: 'flex', alignItems: 'center', gap: S[2],
+              padding: `${S[1]}px ${S[3]}px`, borderRadius: 6,
+              background: T.surfaceAlt, border: `1px solid ${T.border}`,
+              cursor: 'pointer', fontFamily: FONT, transition: 'all 0.15s'
+            }}
+            onMouseEnter={e => { 
+              e.currentTarget.style.background = T.surface; 
+              e.currentTarget.style.borderColor = T.brand;
+              e.currentTarget.style.boxShadow = '0 1px 3px rgba(27,58,111,0.1)';
+            }}
+            onMouseLeave={e => { 
+              e.currentTarget.style.background = T.surfaceAlt; 
+              e.currentTarget.style.borderColor = T.border;
+              e.currentTarget.style.boxShadow = 'none';
+            }}
+          >
             <Badge color={r.color} variant="solid" size="sm">{r.label}</Badge>
             <span style={{ fontSize: 13, color: T.ink, fontWeight: 500 }}>{user.name}</span>
-          </div>
+            {user.mustChangePassword && (
+              <span style={{ 
+                fontSize: 9, fontWeight: 700, color: '#fff', background: T.danger,
+                padding: '1px 5px', borderRadius: 2, letterSpacing: '0.05em', marginLeft: 2
+              }}>
+                ⚠ 변경 필요
+              </span>
+            )}
+          </button>
+          
           {user.role === 'admin' && (
             <>
               <Button variant="outline" size="sm" icon={Save} onClick={handleSave}>저장</Button>
@@ -2425,15 +3113,45 @@ function Stat({ label, value, highlight }) {
 // ============================================================
 // 로그인 화면
 // ============================================================
-function LoginView({ onLogin, policy }) {
+function LoginView({ onLogin, policy, users }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   
-  const handleSubmit = () => {
-    const u = USERS.find(x => x.username === username && x.password === password);
-    if (u) { onLogin(u); }
-    else { setError('아이디 또는 비밀번호가 일치하지 않습니다.'); }
+  const handleSubmit = async () => {
+    if (loading) return;
+    setError('');
+    setLoading(true);
+    
+    try {
+      const u = users.find(x => x.username === username);
+      if (!u) {
+        setError('아이디 또는 비밀번호가 일치하지 않습니다.');
+        setLoading(false);
+        return;
+      }
+      
+      const isValid = await verifyPassword(password, u.passwordHash);
+      if (isValid) {
+        // 사용자 정보에 mustChangePassword 플래그 포함 전달
+        onLogin({
+          username: u.username,
+          role: u.role,
+          name: u.name,
+          empId: u.empId,
+          deptScope: u.deptScope,
+          mustChangePassword: u.mustChangePassword,
+        });
+      } else {
+        setError('아이디 또는 비밀번호가 일치하지 않습니다.');
+      }
+    } catch (err) {
+      setError('로그인 처리 중 오류가 발생했습니다');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -2666,31 +3384,35 @@ function LoginView({ onLogin, policy }) {
               </div>
             )}
             
-            <button onClick={handleSubmit} style={{
+            <button onClick={handleSubmit} disabled={loading} style={{
               width: '100%', padding: '14px',
-              background: T.brand, color: '#fff', border: 'none', borderRadius: 6,
-              fontSize: 14, fontWeight: 600, cursor: 'pointer',
+              background: loading ? T.textMute : T.brand, color: '#fff', border: 'none', borderRadius: 6,
+              fontSize: 14, fontWeight: 600, cursor: loading ? 'wait' : 'pointer',
               letterSpacing: '0.05em', fontFamily: FONT,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: S[2],
               transition: 'background 0.15s', marginTop: S[4]
             }}
-            onMouseEnter={e => e.target.style.background = T.brandDark}
-            onMouseLeave={e => e.target.style.background = T.brand}
+            onMouseEnter={e => !loading && (e.target.style.background = T.brandDark)}
+            onMouseLeave={e => !loading && (e.target.style.background = T.brand)}
             >
-              <LogIn size={16} /> 로그인
+              <LogIn size={16} /> {loading ? '로그인 중...' : '로그인'}
             </button>
             
+            {/* 보안 안내 */}
             <div style={{ 
-              marginTop: S[7], padding: S[4],
-              background: T.surfaceAlt, borderRadius: 6,
-              fontSize: 11, color: T.textMute, lineHeight: 1.8
+              marginTop: S[6], padding: `${S[3]}px ${S[4]}px`,
+              background: T.surfaceAlt, borderLeft: `3px solid ${T.brand}`, borderRadius: 4,
+              fontSize: 11, color: T.text, lineHeight: 1.7,
+              display: 'flex', alignItems: 'flex-start', gap: S[2]
             }}>
-              <div style={{ fontWeight: 600, color: T.ink, marginBottom: S[2], fontSize: 11, letterSpacing: '0.05em' }}>
-                테스트 계정
+              <AlertCircle size={13} style={{ color: T.brand, flexShrink: 0, marginTop: 2 }} />
+              <div>
+                <strong style={{ color: T.brand }}>보안 안내</strong>
+                <div style={{ marginTop: 4, fontSize: 10.5, color: T.textMute }}>
+                  계정 정보는 인사 담당자에게 문의하세요. 비밀번호를 잊으셨다면 인사팀에 초기화를 요청하세요. 
+                  본 시스템은 인사평가·급여·승진 등 민감 정보를 다루므로 비밀번호를 타인과 공유하지 마세요.
+                </div>
               </div>
-              <div><code style={{ background: T.surface, padding: '1px 5px', borderRadius: 3, color: T.brand }}>admin</code> / admin · 인사담당자</div>
-              <div><code style={{ background: T.surface, padding: '1px 5px', borderRadius: 3, color: T.brand }}>ljm</code> / 1234 · 이종민 부서장</div>
-              <div><code style={{ background: T.surface, padding: '1px 5px', borderRadius: 3, color: T.brand }}>owk</code> / 1234 · 오윤경 (직원)</div>
             </div>
           </div>
         </div>
@@ -3668,7 +4390,7 @@ function EmptyState({ icon: Icon, title, desc }) {
 // ============================================================
 // 직원 관리
 // ============================================================
-function EmployeesView({ employees, addEmployee, updateEmployee, deleteEmployee, history, results, currentYear, policy }) {
+function EmployeesView({ user, users, employees, addEmployee, updateEmployee, deleteEmployee, history, results, currentYear, policy, onResetPassword }) {
   const [search, setSearch] = useState('');
   const [filterDept, setFilterDept] = useState('전체');
   const [filterStatus, setFilterStatus] = useState('전체');
@@ -3923,10 +4645,13 @@ function EmployeesView({ employees, addEmployee, updateEmployee, deleteEmployee,
                           results={results}
                           currentYear={currentYear}
                           policy={policy}
+                          currentUser={user}
+                          allUsers={users}
                           onAddMemo={(memo) => handleAddMemo(emp.id, memo)}
                           onDeleteMemo={(memoId) => handleDeleteMemo(emp.id, memoId)}
                           onUpdateNote={(note) => handleUpdateNote(emp.id, note)}
                           onEdit={() => setEditTarget(emp)}
+                          onResetPassword={() => onResetPassword(emp)}
                         />
                       </td>
                     </tr>
@@ -3981,7 +4706,10 @@ function EmployeesView({ employees, addEmployee, updateEmployee, deleteEmployee,
 // ============================================================
 // 직원 상세 패널 (이름 클릭 시 펼쳐지는 콘텐츠)
 // ============================================================
-function EmployeeDetailPanel({ emp, history, results, currentYear, policy, onAddMemo, onDeleteMemo, onUpdateNote, onEdit }) {
+function EmployeeDetailPanel({ emp, history, results, currentYear, policy, currentUser, allUsers, onAddMemo, onDeleteMemo, onUpdateNote, onEdit, onResetPassword }) {
+  // 해당 직원의 계정 정보 찾기
+  const empAccount = allUsers?.find(u => u.empId === emp.id);
+  const isAdmin = currentUser?.role === 'admin';
   const [memoForm, setMemoForm] = useState({ date: new Date().toISOString().slice(0, 10), category: '평가', content: '' });
   const [noteEdit, setNoteEdit] = useState(emp.note || '');
   const [noteEditing, setNoteEditing] = useState(false);
@@ -4058,8 +4786,44 @@ function EmployeeDetailPanel({ emp, history, results, currentYear, policy, onAdd
             </div>
           </div>
         </div>
-        <Button variant="secondary" size="sm" icon={Pencil} onClick={onEdit}>전체 정보 수정</Button>
+        <div style={{ display: 'flex', gap: S[2], alignItems: 'center' }}>
+          {isAdmin && empAccount && onResetPassword && (
+            <Button variant="outline" size="sm" onClick={onResetPassword}>
+              🔑 비밀번호 초기화
+            </Button>
+          )}
+          <Button variant="secondary" size="sm" icon={Pencil} onClick={onEdit}>전체 정보 수정</Button>
+        </div>
       </div>
+      
+      {/* admin에게만 계정 정보 표시 */}
+      {isAdmin && empAccount && (
+        <div style={{ 
+          padding: `${S[3]}px ${S[4]}px`, background: T.surfaceAlt, borderRadius: 6,
+          marginBottom: S[4], display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+          gap: S[3], flexWrap: 'wrap'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: S[3] }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.textMute, letterSpacing: '0.1em' }}>계정 정보</div>
+            <div style={{ fontSize: 12, color: T.ink }}>
+              <strong>아이디:</strong> <code style={{ background: T.surface, padding: '2px 6px', borderRadius: 3, fontFamily: '"SF Mono", monospace', fontSize: 11 }}>{empAccount.username}</code>
+            </div>
+            <div style={{ fontSize: 11, color: T.textMute }}>
+              마지막 변경: {empAccount.lastPasswordChange 
+                ? new Date(empAccount.lastPasswordChange).toLocaleDateString('ko-KR') 
+                : '없음 (기본값)'}
+            </div>
+          </div>
+          {empAccount.mustChangePassword && (
+            <span style={{ 
+              padding: '3px 8px', background: T.danger, color: '#fff', 
+              borderRadius: 3, fontSize: 9, fontWeight: 700, letterSpacing: '0.05em'
+            }}>
+              ⚠ 비밀번호 변경 필요
+            </span>
+          )}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: S[5] }}>
         {/* 좌측: 기본 정보 + 평가 이력 */}
@@ -6986,9 +7750,10 @@ function KPIMetricsSection() {
   
   const groups = [
     { id: 'common', ...KPI_METRICS.common, badge: '전사', accent: T.brand },
-    { id: 'Archive', ...KPI_METRICS.Archive, badge: 'Archive', accent: T.A },
-    { id: 'Tech', ...KPI_METRICS.Tech, badge: 'Tech', accent: T.B },
-    { id: 'Biz', ...KPI_METRICS.Biz, badge: 'Biz', accent: T.C },
+    { id: 'Archive', ...KPI_METRICS.Archive, badge: 'Archive', accent: T.groupArchive },
+    { id: 'Tech', ...KPI_METRICS.Tech, badge: 'Tech', accent: T.groupTech },
+    { id: 'Biz', ...KPI_METRICS.Biz, badge: 'Biz', accent: T.groupBiz },
+    { id: 'PM', ...KPI_METRICS.PM, badge: 'PM', accent: T.groupPM },
   ];
   
   const current = groups.find(g => g.id === activeGroup);
