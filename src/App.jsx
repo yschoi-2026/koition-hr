@@ -2276,6 +2276,7 @@ export default function App() {
     { id: 'history', label: '다년도 이력', icon: History, roles: ['admin'] },
     { id: 'notify', label: '이메일 통보', icon: Mail, roles: ['admin'] },
     { id: 'policy', label: '정책 설정', icon: Settings, roles: ['admin'] },
+    { id: 'guide', label: '사용 가이드', icon: AlertCircle, roles: ['admin', 'manager', 'evaluator', 'employee'] },
   ];
   const visibleMenus = allMenus.filter(m => m.roles.includes(user.role));
   const visibleEmployees = employees.filter(e => {
@@ -2310,6 +2311,7 @@ export default function App() {
             {tab === 'history' && <HistoryView history={history} employees={employees} results={results} currentYear={currentYear} highlight={historyHighlight} />}
             {tab === 'notify' && <NotifyView employees={employees} results={results} currentYear={currentYear} />}
             {tab === 'policy' && <PolicyView policy={policy} setPolicy={setPolicy} />}
+            {tab === 'guide' && <GuideView user={user} />}
           </main>
         </div>
         
@@ -8851,6 +8853,1176 @@ ${canIncludeSalary ? `
   <div>${canIncludeSalary ? '본 평가서는 인사 기록물로 5년간 보존됩니다.' : '본 발췌본은 면담용으로만 사용되며, 외부 유출을 금합니다.'}</div>
 </div>
 <script>setTimeout(() => { window.print(); }, 600);</script>
+</body></html>`;
+  win.document.write(html); win.document.close();
+}
+
+// ============================================================
+// 매뉴얼 콘텐츠 데이터
+// 시스템 내 가이드 화면 + Word/PDF 매뉴얼 양쪽에서 공통 사용
+// ============================================================
+const MANUAL_CONTENT = {
+  title: '코이션 인사평가·보상 관리 시스템 매뉴얼',
+  subtitle: 'KOITION HR Evaluation & Compensation System User Guide',
+  version: 'v6.0',
+  company: '주식회사 코이션 · KOITION CO., LTD.',
+  
+  sections: [
+    {
+      id: 'overview',
+      title: '1. 시스템 개요',
+      audience: 'all',
+      blocks: [
+        {
+          type: 'paragraph',
+          text: '코이션 인사평가·보상 관리 시스템은 강원랜드 석탄광업 산업유산 아카이브 사업을 수행하는 전문 인력의 인사평가, 급여 산정, 승진 심사를 통합 관리하는 디지털 플랫폼입니다.',
+        },
+        {
+          type: 'subtitle',
+          text: '1.1 시스템의 목적',
+        },
+        {
+          type: 'list',
+          items: [
+            '평가 기준의 객관성·공정성 확보 (RUBRICS 5단계 기준 + KPI 정량 지표 16종)',
+            '직무군별 특화 평가 (Archive · Tech · Biz · PM 4가지 직무군)',
+            '보상 시뮬레이션 자동화 (평가 등급 → 인상률·PI·PS 자동 산정)',
+            '승진 심사 자동화 (체류연한·진급Point 자동 충족 여부 판정)',
+            'ECount ERP 양방향 연동 (인사카드 데이터 동기화)',
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '1.2 평가 사이클',
+        },
+        {
+          type: 'paragraph',
+          text: '연 1회 정기 평가 → 자기평가 (직원) → 평가자 검토 (부서장) → 등급 확정 (인사 담당자) → 보상 산정 → 면담 → 다음 연도 적용 순으로 진행됩니다.',
+        },
+      ],
+    },
+    {
+      id: 'first-login',
+      title: '2. 첫 로그인 & 비밀번호 변경',
+      audience: 'all',
+      blocks: [
+        {
+          type: 'subtitle',
+          text: '2.1 로그인',
+        },
+        {
+          type: 'list',
+          items: [
+            '시스템 URL 접속 후 로그인 화면에서 인사 담당자에게 전달받은 아이디·임시 비밀번호 입력',
+            '비밀번호는 SHA-256 해시로 저장되어 평문이 노출되지 않습니다',
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '2.2 첫 로그인 후 즉시 비밀번호 변경',
+        },
+        {
+          type: 'callout',
+          variant: 'warning',
+          title: '⚠ 보안 필수 절차',
+          text: '첫 로그인 시 우측 하단에 "보안 경고: 비밀번호 변경 필요" 배너가 표시됩니다. "지금 변경" 버튼을 눌러 즉시 변경하세요. 본인의 인사·급여 정보 보호의 첫 단계입니다.',
+        },
+        {
+          type: 'subtitle',
+          text: '2.3 비밀번호 규칙',
+        },
+        {
+          type: 'list',
+          items: [
+            '최소 8자 이상',
+            '영문 대문자·소문자·숫자·특수문자 중 3종 이상 포함',
+            '본인 ID나 이름을 비밀번호에 포함 금지',
+            '"1234", "admin", "password" 등 흔한 비밀번호 금지',
+            '비밀번호 강도 4단계로 시각화 (약함 → 매우 강함)',
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '2.4 비밀번호 분실 시',
+        },
+        {
+          type: 'paragraph',
+          text: '비밀번호를 잊으셨다면 인사 담당자(admin)에게 초기화를 요청하세요. admin은 직원 관리 화면에서 해당 직원의 비밀번호를 임시 비밀번호로 초기화할 수 있으며, 본인은 첫 로그인 시 즉시 새 비밀번호로 다시 변경하도록 안내됩니다.',
+        },
+      ],
+    },
+    {
+      id: 'roles',
+      title: '3. 권한별 안내',
+      audience: 'all',
+      blocks: [
+        {
+          type: 'subtitle',
+          text: '3.1 admin (인사 담당자)',
+        },
+        {
+          type: 'paragraph',
+          text: '시스템 전체 운영 권한을 가진 최고 관리자입니다. 모든 메뉴 접근 가능, 모든 직원의 인건비·평가·승진 정보 조회 가능.',
+        },
+        {
+          type: 'list',
+          items: [
+            '직원 관리: CRUD + 메모 + 비밀번호 초기화',
+            '평가 입력 (모든 직원 대상)',
+            '평가 결과 (전체 직원 결과 + 등급 분포 + PDF 출력)',
+            '급여 산정 (인상률·PI·PS 자동 계산)',
+            '통계 분석',
+            '다년도 이력',
+            '이메일 통보',
+            '정책 설정 (가중치·등급 기준·승진 정책·KPI 지표·표지)',
+            'ECount ERP 양방향 연동',
+            '데이터 백업·복원 (JSON 내보내기·불러오기)',
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '3.2 manager (본부장급)',
+        },
+        {
+          type: 'paragraph',
+          text: '본부 단위 운영 권한. 본인 본부 소속 직원의 평가·결과·분석 가능.',
+        },
+        {
+          type: 'list',
+          items: [
+            '대시보드 (본인 본부 + 인건비 정보 확인 가능)',
+            '내 평가 (본인 자기평가)',
+            '평가 입력 (본인 본부 직원)',
+            '평가 결과 (본인 본부 결과)',
+            '통계 분석 (본인 본부)',
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '3.3 evaluator (부서장·팀장)',
+        },
+        {
+          type: 'paragraph',
+          text: '부서·팀 단위 평가 권한. 본인 부서 소속 직원 평가만 가능.',
+        },
+        {
+          type: 'list',
+          items: [
+            '대시보드 (본인 부서 + 인건비 정보는 비공개)',
+            '내 평가 (본인 자기평가)',
+            '평가 입력 (본인 부서 직원)',
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '3.4 employee (일반 직원)',
+        },
+        {
+          type: 'paragraph',
+          text: '본인 데이터에만 접근 가능. 자기평가 작성 및 본인 평가 결과 확인.',
+        },
+        {
+          type: 'list',
+          items: [
+            '대시보드 (본인 정보 + 인건비 정보는 비공개)',
+            '내 평가 (본인 자기평가 작성 + 제출)',
+          ],
+        },
+      ],
+    },
+    {
+      id: 'self-eval',
+      title: '4. 자기 평가 작성 가이드',
+      audience: 'all',
+      blocks: [
+        {
+          type: 'subtitle',
+          text: '4.1 자기 평가의 의미',
+        },
+        {
+          type: 'paragraph',
+          text: '자기 평가는 본인의 한 해를 돌아보고, 평가자(상사)에게 본인의 성과를 효과적으로 어필하는 첫 단계입니다. 평가자는 자기 평가를 참고하여 최종 평가를 작성하므로 구체적이고 정량적인 작성이 매우 중요합니다.',
+        },
+        {
+          type: 'subtitle',
+          text: '4.2 8개 평가 항목',
+        },
+        {
+          type: 'paragraph',
+          text: '역량 4개 + 업적 4개 = 총 8개 항목을 0~100점으로 자기 평가합니다.',
+        },
+        {
+          type: 'table',
+          headers: ['구분', '항목', '가중치', '핵심 평가 요소'],
+          rows: [
+            ['역량', '직무 전문성', '15%', '담당 직무 전문지식·기술 수준, 자격증'],
+            ['역량', '문제해결력', '15%', '복잡한 문제 분석·해결, 의사결정 품질'],
+            ['역량', '학습·자기계발', '10%', '신규 지식 습득, 교육 이수, 자격 취득'],
+            ['역량', '협업·커뮤니케이션', '10%', '팀워크, 보고·소통, 다면평가 반영'],
+            ['업적', 'KPI 달성도', '15%', '담당 KPI 달성률 (정량 측정)'],
+            ['업적', '프로젝트 수익성', '15%', '담당 프로젝트의 이익률, 원가 관리'],
+            ['업적', '납기·완성도', '10%', '약정 납기 준수, 결과물 품질'],
+            ['업적', '고객 만족도', '10%', '발주처 CSAT, 재계약 기여'],
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '4.3 점수 등급 구간',
+        },
+        {
+          type: 'table',
+          headers: ['등급', '점수 구간', '의미', '기본급 인상률', 'PI 계수'],
+          rows: [
+            ['S', '90~100점', 'EXCELLENT - 탁월', '7%', '2.5x'],
+            ['A', '80~89점', 'GOOD - 우수', '5%', '1.8x'],
+            ['B', '70~79점', 'AVERAGE - 보통', '3%', '1.0x'],
+            ['C', '60~69점', 'BELOW - 미흡', '1.5%', '0.3x'],
+            ['D', '0~59점', 'POOR - 부진', '0%', '0x'],
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '4.4 직급별 기대 수준 (L1~L4)',
+        },
+        {
+          type: 'list',
+          items: [
+            'L1 (신입·견습): B~C급 (60~79점) 기대 - 결과보다 학습 태도와 성장 가능성 평가',
+            'L2 (실무 담당): B~A급 (70~89점) 기대 - "독립 실무 담당"이 핵심 키워드',
+            'L3 (시니어·팀장): A~S급 (80~100점) 기대 - 본인 성과 + 팀 기여 모두 평가',
+            'L4 (본부장·임원): A~S급 (80~100점) 기대 - 본부 운영 성과로 평가',
+          ],
+        },
+        {
+          type: 'callout',
+          variant: 'info',
+          title: '💡 L1·L2 직원은 화면에서 자동 안내',
+          text: '자기평가 화면 상단에 본인 직급의 기대 수준 가이드 패널이 자동 펼침으로 표시됩니다. 각 평가 항목 옆 "평가 기준 보기" 버튼으로 5단계 RUBRICS 기준을 확인할 수 있습니다.',
+        },
+        {
+          type: 'subtitle',
+          text: '4.5 의견란 작성 원칙',
+        },
+        {
+          type: 'paragraph',
+          text: '3개 의견란(성과·강점, 개선점, 내년 목표)에 본인 의견을 작성합니다. 각 의견란마다 "작성 가이드 + 예시 보기" 버튼이 있어 직무군별 좋은 예시를 참고할 수 있습니다.',
+        },
+        {
+          type: 'list',
+          items: [
+            '정량 수치 우선 ("많이 했다" 보다 "X건 처리", "Y% 향상")',
+            '시점 명시 ("올해", "1분기", "Q3 프로젝트")',
+            '본인 기여 명확화 ("팀이 했다" 보다 "내가 담당했다")',
+            '결과의 영향 설명 (단순 활동이 아닌 결과의 임팩트)',
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '4.6 제출 후',
+        },
+        {
+          type: 'paragraph',
+          text: '자기평가 제출 후에는 수정할 수 없습니다. 평가자(부서장)가 검토한 후 최종 점수를 입력하며, 본인은 평가 면담을 통해 결과를 확인합니다.',
+        },
+      ],
+    },
+    {
+      id: 'evaluator',
+      title: '5. 평가자 가이드 (evaluator·manager)',
+      audience: 'evaluator',
+      blocks: [
+        {
+          type: 'subtitle',
+          text: '5.1 평가 입력 흐름',
+        },
+        {
+          type: 'list',
+          items: [
+            '사이드바 "평가 입력" 메뉴 클릭',
+            '평가할 직원 선택 (본인 부서/본부 직원만 표시)',
+            '직원의 자기 평가 결과를 참고하며 점수 입력',
+            '필요 시 "KPI 자동 계산기" 버튼으로 정량 KPI 산정',
+            '평가자 의견 3개 작성 (강점·개선점·종합 의견)',
+            '저장 → 등급 자동 산정 → 평가 결과 화면에서 확인',
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '5.2 KPI 자동 계산기',
+        },
+        {
+          type: 'paragraph',
+          text: '업적평가의 KPI 달성도 입력 시 "KPI 자동 계산기 열기" 버튼을 클릭하면 직무군별 정량 지표 8개(전사 공통 4 + 직무군 4)로 정확한 점수를 산정할 수 있습니다.',
+        },
+        {
+          type: 'list',
+          items: [
+            '전사 공통 (4개): KPI 달성률, 근태 준수율, 교육 이수 시간, 자격증 점수',
+            'Archive (4개): 아카이브 등록 건수, 메타데이터 품질 통과율, 분류표 정확도, 디지털 보존 처리율',
+            'Tech (4개): 서비스 릴리즈 건수, 버그 발생률, 시스템 가용성, 코드 리뷰 참여',
+            'Biz (4개): 신규 수주 금액, 영업이익률, 재계약 성공률, 입찰 낙찰률',
+            'PM (4개): 프로젝트 수행 건수, 납기 준수율, 프로젝트 이익률, 고객 만족도 CSAT',
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '5.3 평가 시 주의사항',
+        },
+        {
+          type: 'list',
+          items: [
+            '본인 직급의 기대 등급 범위를 고려하여 평가 (L1은 B~C급 기대, L2는 B~A급 기대 등)',
+            '권장 등급 분포 (S 10%, A 20%, B 40%, C 20%, D 10%)를 참고하되, 절대 평가 원칙 유지',
+            '자기 평가와 본인 평가의 차이가 큰 경우 평가자 의견란에 사유 명시',
+            'PM 겸임 직원의 경우 KPI 계산기에서 PM 지표도 선택적으로 활용 가능',
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '5.4 평가자 의견 작성',
+        },
+        {
+          type: 'list',
+          items: [
+            '강점: 직원이 잘한 부분을 구체적으로 명시',
+            '개선점: 직원에게 도움될 건설적 피드백 (인격 비판 금지)',
+            '종합 의견: 평가 등급의 근거 + 내년 기대 + 면담 시 논의할 핵심 주제',
+          ],
+        },
+      ],
+    },
+    {
+      id: 'results',
+      title: '6. 평가 결과 확인 (manager·admin)',
+      audience: 'admin',
+      blocks: [
+        {
+          type: 'subtitle',
+          text: '6.1 결과 화면',
+        },
+        {
+          type: 'paragraph',
+          text: '평가 결과 메뉴에서 전체 직원의 평가 결과를 한눈에 볼 수 있습니다. 등급, 종합 점수, 인상률, PDF 출력 버튼이 표시됩니다.',
+        },
+        {
+          type: 'subtitle',
+          text: '6.2 행 클릭으로 상세 패널 확장',
+        },
+        {
+          type: 'paragraph',
+          text: '각 행을 클릭하면 아래로 상세 패널이 펼쳐집니다. 역량·업적 점수 상세, 자기 평가 vs 평가자 평가 비교, 다년도 이력, 평가자 코멘트가 표시됩니다.',
+        },
+        {
+          type: 'subtitle',
+          text: '6.3 다년도 이력 네비게이션',
+        },
+        {
+          type: 'paragraph',
+          text: '상세 패널의 "다년도 평가 이력" 섹션에서 연도 배지를 클릭하면 "다년도 이력" 메뉴로 자동 이동하면서 해당 직원의 해당 연도가 강조 표시됩니다 (5초간).',
+        },
+        {
+          type: 'subtitle',
+          text: '6.4 PDF 평가서 출력',
+        },
+        {
+          type: 'paragraph',
+          text: '각 행의 "출력" 버튼 또는 상세 패널의 "PDF 출력" 버튼으로 평가서를 PDF로 출력할 수 있습니다.',
+        },
+        {
+          type: 'callout',
+          variant: 'info',
+          title: '🔒 권한별 자동 분기',
+          text: 'admin·manager가 출력하면 "인사 기록물 (보상 정보 포함)" 평가서, evaluator·employee가 출력하면 "면담용 발췌본 (보상 정보 제외)" 평가서가 자동 생성됩니다. 면담용은 문서번호에 "-INT" 접미사가 붙고 빨간 "면담용" 배지가 표시됩니다.',
+        },
+      ],
+    },
+    {
+      id: 'promotion',
+      title: '7. 승진 심사',
+      audience: 'all',
+      blocks: [
+        {
+          type: 'subtitle',
+          text: '7.1 승진 체계',
+        },
+        {
+          type: 'paragraph',
+          text: '코이션은 9단계 직급 체계를 운영합니다. 각 직급별로 체류 연한과 진급 Point 기준이 정해져 있습니다.',
+        },
+        {
+          type: 'table',
+          headers: ['직급', '호칭', '승진 직급', '체류 연한', '진급 Point', '인상률'],
+          rows: [
+            ['1급', '부장(연구소장)', '임원', '경영진 의사결정', '-', '-'],
+            ['2급', '차장', '부장', '4년', '13.5점', '2%'],
+            ['3급', '과장', '차장', '3년', '10점', '3%'],
+            ['4급', '대리', '과장', '3년', '10점', '4%'],
+            ['5급', '주임', '대리', '경영진 의사결정', '-', '5%'],
+            ['6급(석사)', '사원', '대리', '2년', '7점', '8%'],
+            ['7급(초대졸/대졸)', '사원', '대리', '3년', '10점', '8%'],
+            ['8급(고졸)', '사원', '대리', '4년', '14점', '8%'],
+            ['사원급', '사원', '주임', '경영진 의사결정', '-', '3%'],
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '7.2 진급 Point 계산',
+        },
+        {
+          type: 'paragraph',
+          text: '진급 Point = 평가 종합점수 × 0.15 (환산률은 정책 설정에서 조정 가능)',
+        },
+        {
+          type: 'list',
+          items: [
+            'S등급 (90점) → 13.5 Point (2급/차장 기준 충족)',
+            'A등급 (85점) → 12.75 Point',
+            'B등급 (75점) → 11.25 Point',
+            '70점 → 10.5 Point (3·4·7급 충족 기준)',
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '7.3 승진 대상자 자동 판정',
+        },
+        {
+          type: 'paragraph',
+          text: '체류 연한을 충족했거나 1년 이내 충족 예정인 직원은 자동으로 "심사 대상"으로 표시됩니다. 평가 입력 화면과 직원 상세 패널에 승진 심사 카드가 자동으로 나타납니다.',
+        },
+      ],
+    },
+    {
+      id: 'admin',
+      title: '8. 관리자 가이드 (admin)',
+      audience: 'admin',
+      blocks: [
+        {
+          type: 'subtitle',
+          text: '8.1 직원 관리',
+        },
+        {
+          type: 'list',
+          items: [
+            '직원 추가: 우측 상단 "직원 추가" 버튼 → 사번, 이름, 부서, 직급, 직무군, 입사일, 급여 등 입력',
+            '직원 수정: 직원 행 클릭 → 상세 패널 우측 상단 "전체 정보 수정" 버튼',
+            '직원 삭제: 직원 수정 모달 하단의 삭제 버튼 (신중히 사용)',
+            '메모 추가: 상세 패널의 메모 타임라인에서 7가지 카테고리(평가/근태/교육/계약/징계/포상/기타)로 분류 가능',
+            '비밀번호 초기화: 상세 패널 상단의 "🔑 비밀번호 초기화" 버튼',
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '8.2 ECount ERP 연동',
+        },
+        {
+          type: 'paragraph',
+          text: '직원 관리 헤더의 "ECount 연동" 버튼으로 양방향 데이터 동기화가 가능합니다.',
+        },
+        {
+          type: 'list',
+          items: [
+            '내보내기 (Export): 22명 직원 데이터를 Excel(.xlsx) 또는 CSV로 다운로드 → ECount 인사관리 → 인사카드 → 가져오기',
+            '가져오기 (Import): ECount에서 내보낸 Excel/CSV 업로드 → 사번 기준 자동 매칭 → 신규 추가 또는 업데이트',
+            '컬럼 매핑 자동 인식, 사번 중복 처리 자동, 미리보기 단계에서 검증',
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '8.3 정책 설정',
+        },
+        {
+          type: 'list',
+          items: [
+            '평가 가중치: 역량/업적 비율, 8개 항목별 가중치 (합계 100% 필수)',
+            '등급 기준: S/A/B/C/D 점수 구간, 인상률, PI 계수',
+            'PI/PS 정책: 직무레벨별 PI 기본액, 영업이익 달성률별 PS 비율',
+            '승진 정책: 9개 직급별 체류연한·진급Point·인상률 (활성 ON/OFF 토글)',
+            'KPI 지표: 직무군별 정량 측정 기준 (Archive·Tech·Biz·PM)',
+            '로그인 화면 표지: URL 직접 입력, 캡션 편집, 회사 정보 카드 4개 편집',
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '8.4 데이터 백업·복원',
+        },
+        {
+          type: 'list',
+          items: [
+            '헤더의 "저장" 버튼: localStorage에 즉시 저장',
+            '헤더의 "내보내기" 버튼: JSON 파일로 전체 데이터 다운로드',
+            '헤더의 "불러오기" 버튼: 백업 JSON 파일 업로드 → 시스템 복원',
+            '※ 데이터 손실 방지를 위해 정기 백업 권장 (주 1회 이상)',
+          ],
+        },
+      ],
+    },
+    {
+      id: 'security',
+      title: '9. 보안 및 개인정보 보호',
+      audience: 'all',
+      blocks: [
+        {
+          type: 'subtitle',
+          text: '9.1 비밀번호 보안',
+        },
+        {
+          type: 'list',
+          items: [
+            '비밀번호는 SHA-256 해시로 저장 (평문 보관 안 됨)',
+            '8자 이상, 3종 이상 문자 혼합 필수',
+            '본인 ID·이름 포함 금지, 흔한 비밀번호 차단',
+            '비밀번호를 타인과 공유하지 마세요',
+            '주기적 변경 권장 (3~6개월)',
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '9.2 인건비 정보 보호',
+        },
+        {
+          type: 'paragraph',
+          text: '예상 인건비·증감액·급여 정보는 admin·manager만 확인 가능합니다. evaluator·employee의 대시보드에서는 인건비 카드가 자동 숨김되며, 메뉴 자체도 권한별로 분리됩니다.',
+        },
+        {
+          type: 'subtitle',
+          text: '9.3 평가서 PDF 출력 시 자동 마스킹',
+        },
+        {
+          type: 'paragraph',
+          text: 'evaluator·employee가 PDF를 출력하면 자동으로 "면담용 발췌본"이 생성됩니다. 등급·점수·코멘트는 포함되지만 기본급·인상률·PI·PS 등 인건비 정보는 완전히 제외됩니다.',
+        },
+        {
+          type: 'subtitle',
+          text: '9.4 외부 유출 방지',
+        },
+        {
+          type: 'callout',
+          variant: 'warning',
+          title: '⚠ 평가서 외부 유출 금지',
+          text: '면담용 발췌본 PDF에는 "본 발췌본은 면담용으로만 사용되며, 외부 유출을 금합니다"라는 경고가 표시됩니다. 평가 결과를 타인에게 공유하거나 외부로 유출하지 마세요.',
+        },
+      ],
+    },
+    {
+      id: 'faq',
+      title: '10. 자주 묻는 질문 (FAQ)',
+      audience: 'all',
+      blocks: [
+        {
+          type: 'qa',
+          q: 'Q1. 비밀번호를 잊었습니다.',
+          a: '인사 담당자(admin)에게 비밀번호 초기화를 요청하세요. 임시 비밀번호를 받으면 첫 로그인 시 즉시 새 비밀번호로 변경해야 합니다.',
+        },
+        {
+          type: 'qa',
+          q: 'Q2. 자기 평가를 제출했는데 수정하고 싶습니다.',
+          a: '제출 후에는 본인이 직접 수정할 수 없습니다. 인사 담당자에게 자기평가 제출 취소를 요청하세요. 평가자가 이미 검토를 시작한 경우 수정이 불가능할 수 있습니다.',
+        },
+        {
+          type: 'qa',
+          q: 'Q3. 다른 사람의 점수나 등급을 알 수 있나요?',
+          a: '권한에 따라 다릅니다. employee는 본인 정보만 조회 가능, evaluator는 본인 부서 직원, manager는 본인 본부, admin은 전체 조회 가능합니다. 권한을 벗어난 정보 조회 시도는 시스템 로그에 남습니다.',
+        },
+        {
+          type: 'qa',
+          q: 'Q4. L1 신입인데 자기평가에서 너무 낮은 점수를 줘야 하나요?',
+          a: 'L1은 B~C급(60~79점)이 기대 수준입니다. 자기 평가는 본인의 실제 수준을 솔직하게 표현하는 것이 중요합니다. 무리하게 높은 점수를 주기보다 학습 의지와 성장 가능성을 의견란에서 어필하세요.',
+        },
+        {
+          type: 'qa',
+          q: 'Q5. 평가 결과에 동의하지 않습니다.',
+          a: '평가 면담에서 평가자와 직접 논의하세요. 평가자의 코멘트와 본인의 자기평가를 비교해 차이가 큰 부분을 짚어 이야기하는 것이 효과적입니다. 면담 후에도 이의가 있다면 인사 담당자에게 공식 이의 신청이 가능합니다.',
+        },
+        {
+          type: 'qa',
+          q: 'Q6. PM 겸임 인력은 어떻게 평가받나요?',
+          a: '본인의 기본 직무군(Archive·Tech·Biz)으로 평가받되, 평가자가 KPI 계산기에서 PM 지표 4개를 추가로 선택할 수 있습니다. 본인의 실제 PM 업무 비중에 따라 평가자와 협의됩니다.',
+        },
+        {
+          type: 'qa',
+          q: 'Q7. 승진 대상인데 카드가 표시되지 않습니다.',
+          a: '체류 연한이 1년 이상 남은 경우 카드가 표시되지 않습니다. 또한 정책 설정에서 승진 심사 기능이 비활성화된 경우에도 표시되지 않습니다. 인사 담당자에게 확인을 요청하세요.',
+        },
+        {
+          type: 'qa',
+          q: 'Q8. 시스템 오류가 발생했을 때는?',
+          a: '브라우저 새로고침을 먼저 시도하세요. 작성 중이던 평가는 자동 저장되어 있으므로 데이터 손실은 없습니다. 지속적인 오류 시 인사 담당자에게 화면 캡처와 함께 보고하세요.',
+        },
+      ],
+    },
+    {
+      id: 'contact',
+      title: '11. 문의처',
+      audience: 'all',
+      blocks: [
+        {
+          type: 'paragraph',
+          text: '시스템 사용 중 문의사항이나 오류가 발생하면 다음 담당자에게 문의하세요.',
+        },
+        {
+          type: 'list',
+          items: [
+            '인사 평가·승진 관련: 경영지원부 인사 담당자',
+            '계정·비밀번호 관련: 경영지원부 인사 담당자 (시스템 admin)',
+            '시스템 오류·기술 문의: 서비스개발부',
+            '회사 정보: 주식회사 코이션 · 강원도 정선군 사북읍',
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+// ============================================================
+// GuideView - 시스템 내 사용 가이드 화면
+// 좌측 사이드바 목차 + 우측 본문 + 검색 + 매뉴얼 다운로드 버튼
+// ============================================================
+function GuideView({ user }) {
+  const [activeSection, setActiveSection] = useState('overview');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [downloading, setDownloading] = useState(null);  // 'docx' | 'pdf' | null
+  
+  // 권한별 표시 섹션 필터링
+  const visibleSections = MANUAL_CONTENT.sections.filter(s => {
+    if (s.audience === 'all') return true;
+    if (s.audience === 'admin' && user.role === 'admin') return true;
+    if (s.audience === 'evaluator' && ['admin', 'manager', 'evaluator'].includes(user.role)) return true;
+    return false;
+  });
+  
+  // 검색 결과
+  const searchMatches = searchQuery.trim() 
+    ? visibleSections.filter(s => {
+        const haystack = [
+          s.title,
+          ...s.blocks.flatMap(b => [
+            b.text || '', 
+            ...(b.items || []),
+            ...(b.headers || []),
+            ...(b.rows || []).flat(),
+            b.q || '', b.a || '',
+            b.title || ''
+          ])
+        ].join(' ').toLowerCase();
+        return haystack.includes(searchQuery.toLowerCase());
+      })
+    : visibleSections;
+  
+  const current = visibleSections.find(s => s.id === activeSection) || visibleSections[0];
+  
+  const handleDownloadDocx = async () => {
+    try {
+      setDownloading('docx');
+      await downloadManualAsDocx();
+    } catch (e) {
+      alert('Word 매뉴얼 다운로드 실패: ' + e.message);
+    } finally {
+      setDownloading(null);
+    }
+  };
+  
+  const handleDownloadPdf = () => {
+    try {
+      setDownloading('pdf');
+      openManualForPrint();
+    } finally {
+      setTimeout(() => setDownloading(null), 1000);
+    }
+  };
+  
+  return (
+    <div>
+      <PageHeader 
+        eyebrow="USER GUIDE · 사용 가이드"
+        title="시스템 사용 매뉴얼"
+        subtitle={`코이션 인사평가·보상 관리 시스템 ${MANUAL_CONTENT.version} · ${user.name}님 권한 기준`}
+        action={
+          <div style={{ display: 'flex', gap: S[2] }}>
+            <Button variant="outline" size="md" icon={Download} onClick={handleDownloadPdf} disabled={downloading}>
+              {downloading === 'pdf' ? 'PDF 준비 중...' : 'PDF 인쇄'}
+            </Button>
+            <Button variant="primary" size="md" icon={Download} onClick={handleDownloadDocx} disabled={downloading}>
+              {downloading === 'docx' ? 'Word 생성 중...' : 'Word 다운로드'}
+            </Button>
+          </div>
+        }
+      />
+      
+      <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: S[5] }}>
+        {/* 좌측 목차 */}
+        <div style={{ position: 'sticky', top: 90, alignSelf: 'flex-start' }}>
+          {/* 검색 */}
+          <div style={{ marginBottom: S[4] }}>
+            <div style={{ position: 'relative' }}>
+              <input 
+                type="text" 
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="가이드 검색"
+                style={{ 
+                  width: '100%', padding: '8px 32px 8px 12px', 
+                  border: `1px solid ${T.border}`, borderRadius: 6,
+                  fontSize: 12, fontFamily: FONT, outline: 'none',
+                  background: T.surface, boxSizing: 'border-box'
+                }}
+              />
+              <Search size={13} style={{ 
+                position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                color: T.textMute
+              }} />
+            </div>
+            {searchQuery && (
+              <div style={{ fontSize: 10, color: T.textMute, marginTop: 4 }}>
+                {searchMatches.length}개 섹션 일치
+              </div>
+            )}
+          </div>
+          
+          {/* 목차 */}
+          <div style={{ 
+            background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6,
+            padding: `${S[3]}px 0`, fontSize: 12
+          }}>
+            <div style={{ 
+              fontSize: 10, fontWeight: 700, color: T.textMute, 
+              letterSpacing: '0.1em', padding: `0 ${S[4]}px`, marginBottom: S[2]
+            }}>
+              목차
+            </div>
+            {searchMatches.map(s => (
+              <button
+                key={s.id}
+                onClick={() => setActiveSection(s.id)}
+                style={{ 
+                  display: 'block', width: '100%', textAlign: 'left',
+                  padding: `${S[2]}px ${S[4]}px`, 
+                  background: activeSection === s.id ? T.surfaceAlt : 'transparent',
+                  borderLeft: activeSection === s.id ? `3px solid ${T.brand}` : '3px solid transparent',
+                  border: 'none', cursor: 'pointer',
+                  fontSize: 12, fontFamily: FONT,
+                  color: activeSection === s.id ? T.brand : T.text,
+                  fontWeight: activeSection === s.id ? 700 : 500,
+                  transition: 'all 0.15s'
+                }}
+                onMouseEnter={e => activeSection !== s.id && (e.currentTarget.style.background = T.surfaceAlt)}
+                onMouseLeave={e => activeSection !== s.id && (e.currentTarget.style.background = 'transparent')}
+              >
+                {s.title}
+              </button>
+            ))}
+          </div>
+          
+          {/* 인쇄 안내 */}
+          <div style={{ 
+            marginTop: S[3], padding: S[3], background: T.surfaceAlt, borderRadius: 6,
+            fontSize: 10, color: T.textMute, lineHeight: 1.6
+          }}>
+            <strong style={{ color: T.brand, display: 'block', marginBottom: 4 }}>💡 매뉴얼 활용</strong>
+            <div>• <strong>Word 다운로드</strong>: 편집·수정 가능</div>
+            <div>• <strong>PDF 인쇄</strong>: 새 창 인쇄 다이얼로그</div>
+            <div>• <strong>이 화면</strong>: 검색·실시간 확인</div>
+          </div>
+        </div>
+        
+        {/* 우측 본문 */}
+        <div style={{ ...card(), padding: S[7] }}>
+          {current && <ManualSection section={current} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 매뉴얼 섹션 렌더링 (블록 타입별 분기)
+function ManualSection({ section }) {
+  return (
+    <div>
+      <h1 style={{ 
+        fontSize: 24, fontWeight: 700, color: T.ink, 
+        margin: 0, paddingBottom: S[3], marginBottom: S[5],
+        borderBottom: `2px solid ${T.brand}`
+      }}>
+        {section.title}
+      </h1>
+      
+      {section.blocks.map((block, i) => {
+        if (block.type === 'subtitle') {
+          return (
+            <h2 key={i} style={{ 
+              fontSize: 16, fontWeight: 700, color: T.brand,
+              marginTop: S[5], marginBottom: S[3],
+              paddingLeft: S[2], borderLeft: `3px solid ${T.brand}`
+            }}>
+              {block.text}
+            </h2>
+          );
+        }
+        if (block.type === 'paragraph') {
+          return (
+            <p key={i} style={{ 
+              fontSize: 13, lineHeight: 1.8, color: T.text,
+              marginBottom: S[3]
+            }}>
+              {block.text}
+            </p>
+          );
+        }
+        if (block.type === 'list') {
+          return (
+            <ul key={i} style={{ 
+              fontSize: 13, lineHeight: 1.9, color: T.text,
+              marginBottom: S[3], paddingLeft: S[5]
+            }}>
+              {block.items.map((item, j) => <li key={j} style={{ marginBottom: 4 }}>{item}</li>)}
+            </ul>
+          );
+        }
+        if (block.type === 'table') {
+          return (
+            <div key={i} style={{ overflowX: 'auto', marginBottom: S[3] }}>
+              <table style={{ 
+                width: '100%', borderCollapse: 'collapse', fontSize: 12,
+                border: `1px solid ${T.border}`, borderRadius: 4, overflow: 'hidden'
+              }}>
+                <thead>
+                  <tr style={{ background: T.brand, color: '#fff' }}>
+                    {block.headers.map((h, j) => (
+                      <th key={j} style={{ padding: `${S[2]}px ${S[3]}px`, textAlign: 'left', fontWeight: 700, fontSize: 11 }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {block.rows.map((row, j) => (
+                    <tr key={j} style={{ 
+                      borderBottom: `1px solid ${T.divider}`,
+                      background: j % 2 === 0 ? T.surface : T.surfaceAlt
+                    }}>
+                      {row.map((cell, k) => (
+                        <td key={k} style={{ padding: `${S[2]}px ${S[3]}px`, color: T.text, lineHeight: 1.6 }}>
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+        if (block.type === 'callout') {
+          const variants = {
+            info: { bg: '#F0F4FB', border: T.brand, color: T.brand },
+            warning: { bg: '#FFF8E6', border: T.warning, color: T.warning },
+            success: { bg: '#F0F7F1', border: T.success, color: T.success },
+            danger: { bg: '#FBEAEA', border: T.danger, color: T.danger },
+          };
+          const v = variants[block.variant] || variants.info;
+          return (
+            <div key={i} style={{ 
+              padding: `${S[3]}px ${S[4]}px`, background: v.bg, 
+              borderLeft: `3px solid ${v.border}`, borderRadius: 4,
+              marginBottom: S[3]
+            }}>
+              {block.title && (
+                <div style={{ fontSize: 12, fontWeight: 700, color: v.color, marginBottom: 4 }}>
+                  {block.title}
+                </div>
+              )}
+              <div style={{ fontSize: 12, color: T.text, lineHeight: 1.7 }}>
+                {block.text}
+              </div>
+            </div>
+          );
+        }
+        if (block.type === 'qa') {
+          return (
+            <div key={i} style={{ 
+              padding: `${S[3]}px ${S[4]}px`, background: T.surfaceAlt, 
+              borderRadius: 6, marginBottom: S[3]
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.brand, marginBottom: 6 }}>
+                {block.q}
+              </div>
+              <div style={{ fontSize: 12, color: T.text, lineHeight: 1.8 }}>
+                {block.a}
+              </div>
+            </div>
+          );
+        }
+        return null;
+      })}
+    </div>
+  );
+}
+
+// ============================================================
+// 매뉴얼 다운로드 - Word(.docx) 형식
+// docx 라이브러리를 CDN에서 동적 로드
+// ============================================================
+let _docxLibPromise = null;
+function loadDocxLib() {
+  if (window.docx) return Promise.resolve(window.docx);
+  if (_docxLibPromise) return _docxLibPromise;
+  _docxLibPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.min.js';
+    script.async = true;
+    script.onload = () => {
+      if (window.docx) resolve(window.docx);
+      else reject(new Error('docx 라이브러리 로드 실패'));
+    };
+    script.onerror = () => {
+      _docxLibPromise = null;
+      reject(new Error('Word 라이브러리를 불러올 수 없습니다. 인터넷 연결을 확인해주세요'));
+    };
+    document.head.appendChild(script);
+  });
+  return _docxLibPromise;
+}
+
+async function downloadManualAsDocx() {
+  const docx = await loadDocxLib();
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType } = docx;
+  
+  // 색상 (#RRGGBB → 16진수)
+  const COLORS = {
+    brand: '1B3A6F', text: '2C3540', mute: '6B7280', 
+    warning: 'D97706', success: '1B7F4F', danger: 'B91C1C',
+    accent: 'D63838', divider: 'F0F2F5'
+  };
+  
+  const children = [
+    // 표지 - 회사명
+    new Paragraph({
+      children: [new TextRun({ text: MANUAL_CONTENT.company, size: 20, color: COLORS.mute })],
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 2400, after: 400 },
+    }),
+    // 표지 - 제목
+    new Paragraph({
+      children: [new TextRun({ text: MANUAL_CONTENT.title, size: 48, bold: true, color: COLORS.brand })],
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 400, after: 200 },
+    }),
+    // 표지 - 부제
+    new Paragraph({
+      children: [new TextRun({ text: MANUAL_CONTENT.subtitle, size: 22, italics: true, color: COLORS.mute })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 600 },
+    }),
+    // 표지 - 버전
+    new Paragraph({
+      children: [new TextRun({ text: `버전 ${MANUAL_CONTENT.version}  ·  발행일 ${new Date().toISOString().slice(0, 10)}`, size: 20, color: COLORS.text })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 2400 },
+    }),
+    // 페이지 나누기
+    new Paragraph({ children: [new TextRun({ text: '', break: 1 })], pageBreakBefore: true }),
+  ];
+  
+  // 각 섹션을 변환
+  MANUAL_CONTENT.sections.forEach(section => {
+    // 섹션 제목 (Heading 1)
+    children.push(new Paragraph({
+      children: [new TextRun({ text: section.title, size: 32, bold: true, color: COLORS.brand })],
+      heading: HeadingLevel.HEADING_1,
+      spacing: { before: 400, after: 240 },
+      border: { bottom: { color: COLORS.brand, space: 4, style: BorderStyle.SINGLE, size: 12 } },
+    }));
+    
+    // 블록들
+    section.blocks.forEach(block => {
+      if (block.type === 'subtitle') {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: block.text, size: 24, bold: true, color: COLORS.brand })],
+          heading: HeadingLevel.HEADING_2,
+          spacing: { before: 280, after: 140 },
+        }));
+      } else if (block.type === 'paragraph') {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: block.text, size: 22, color: COLORS.text })],
+          spacing: { after: 120, line: 360 },
+        }));
+      } else if (block.type === 'list') {
+        block.items.forEach(item => {
+          children.push(new Paragraph({
+            children: [new TextRun({ text: item, size: 22, color: COLORS.text })],
+            bullet: { level: 0 },
+            spacing: { after: 80, line: 320 },
+          }));
+        });
+      } else if (block.type === 'table') {
+        const headerRow = new TableRow({
+          children: block.headers.map(h => new TableCell({
+            children: [new Paragraph({ 
+              children: [new TextRun({ text: h, size: 20, bold: true, color: 'FFFFFF' })],
+              alignment: AlignmentType.LEFT
+            })],
+            shading: { type: ShadingType.CLEAR, fill: COLORS.brand },
+            width: { size: 100 / block.headers.length, type: WidthType.PERCENTAGE },
+          })),
+        });
+        const dataRows = block.rows.map((row, idx) => new TableRow({
+          children: row.map(cell => new TableCell({
+            children: [new Paragraph({ 
+              children: [new TextRun({ text: String(cell), size: 20, color: COLORS.text })] 
+            })],
+            shading: idx % 2 === 1 ? { type: ShadingType.CLEAR, fill: 'F8F9FB' } : undefined,
+          })),
+        }));
+        children.push(new Table({
+          rows: [headerRow, ...dataRows],
+          width: { size: 100, type: WidthType.PERCENTAGE },
+        }));
+        children.push(new Paragraph({ children: [new TextRun({ text: '' })], spacing: { after: 200 } }));
+      } else if (block.type === 'callout') {
+        const colorMap = { info: COLORS.brand, warning: COLORS.warning, success: COLORS.success, danger: COLORS.danger };
+        const fillMap = { info: 'F0F4FB', warning: 'FFF8E6', success: 'F0F7F1', danger: 'FBEAEA' };
+        const c = colorMap[block.variant] || COLORS.brand;
+        const fill = fillMap[block.variant] || 'F0F4FB';
+        if (block.title) {
+          children.push(new Paragraph({
+            children: [new TextRun({ text: block.title, size: 22, bold: true, color: c })],
+            shading: { type: ShadingType.CLEAR, fill },
+            spacing: { before: 80, after: 60, line: 320 },
+            indent: { left: 200 },
+            border: { left: { color: c, space: 4, style: BorderStyle.SINGLE, size: 18 } },
+          }));
+        }
+        children.push(new Paragraph({
+          children: [new TextRun({ text: block.text, size: 22, color: COLORS.text })],
+          shading: { type: ShadingType.CLEAR, fill },
+          spacing: { before: 0, after: 240, line: 340 },
+          indent: { left: 200 },
+          border: { left: { color: c, space: 4, style: BorderStyle.SINGLE, size: 18 } },
+        }));
+      } else if (block.type === 'qa') {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: block.q, size: 22, bold: true, color: COLORS.brand })],
+          spacing: { before: 200, after: 80 },
+        }));
+        children.push(new Paragraph({
+          children: [new TextRun({ text: block.a, size: 22, color: COLORS.text })],
+          spacing: { after: 160, line: 340 },
+          indent: { left: 200 },
+        }));
+      }
+    });
+    
+    // 섹션 끝 페이지 나누기
+    children.push(new Paragraph({ children: [new TextRun({ text: '' })], pageBreakBefore: true }));
+  });
+  
+  const doc = new Document({
+    creator: 'KOITION HR System',
+    title: MANUAL_CONTENT.title,
+    description: MANUAL_CONTENT.subtitle,
+    styles: {
+      default: {
+        document: { run: { font: 'Malgun Gothic', size: 22 } },
+      },
+    },
+    sections: [{
+      properties: {
+        page: { margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } }
+      },
+      children,
+    }],
+  });
+  
+  const blob = await Packer.toBlob(doc);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `KOITION_HR_매뉴얼_${MANUAL_CONTENT.version}_${new Date().toISOString().slice(0, 10)}.docx`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 100);
+}
+
+// ============================================================
+// 매뉴얼을 PDF로 인쇄 (새 창 열고 인쇄 다이얼로그)
+// ============================================================
+function openManualForPrint() {
+  const win = window.open('', '_blank');
+  if (!win) { alert('팝업 차단을 해제해주세요.'); return; }
+  
+  const today = new Date().toISOString().slice(0, 10);
+  
+  // 블록 → HTML 변환
+  const renderBlock = (block) => {
+    if (block.type === 'subtitle') return `<h2>${block.text}</h2>`;
+    if (block.type === 'paragraph') return `<p>${block.text}</p>`;
+    if (block.type === 'list') return `<ul>${block.items.map(i => `<li>${i}</li>`).join('')}</ul>`;
+    if (block.type === 'table') {
+      return `<table><thead><tr>${block.headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${
+        block.rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')
+      }</tbody></table>`;
+    }
+    if (block.type === 'callout') {
+      return `<div class="callout callout-${block.variant}">${
+        block.title ? `<div class="callout-title">${block.title}</div>` : ''
+      }<div class="callout-text">${block.text}</div></div>`;
+    }
+    if (block.type === 'qa') {
+      return `<div class="qa"><div class="qa-q">${block.q}</div><div class="qa-a">${block.a}</div></div>`;
+    }
+    return '';
+  };
+  
+  const sectionsHtml = MANUAL_CONTENT.sections.map(s => 
+    `<section class="manual-section"><h1>${s.title}</h1>${s.blocks.map(renderBlock).join('')}</section>`
+  ).join('');
+  
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>${MANUAL_CONTENT.title}</title>
+<style>
+@page { size: A4; margin: 25mm 20mm 20mm; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; color: #2C3540; line-height: 1.7; font-size: 11pt; }
+.cover { text-align: center; padding: 100px 0 50px; page-break-after: always; }
+.cover .company { font-size: 11pt; color: #6B7280; letter-spacing: 0.2em; margin-bottom: 20px; }
+.cover .title { font-size: 32pt; font-weight: 700; color: #1B3A6F; margin-bottom: 12px; }
+.cover .subtitle { font-size: 13pt; color: #6B7280; font-style: italic; margin-bottom: 60px; }
+.cover .meta { font-size: 11pt; color: #2C3540; margin-top: 200px; padding-top: 20px; border-top: 1px solid #E5E7EB; }
+.manual-section { page-break-after: always; }
+.manual-section:last-child { page-break-after: auto; }
+h1 { font-size: 22pt; font-weight: 700; color: #1B3A6F; padding-bottom: 8pt; margin-bottom: 16pt; border-bottom: 3pt solid #1B3A6F; }
+h2 { font-size: 14pt; font-weight: 700; color: #1B3A6F; margin: 18pt 0 8pt; padding-left: 8pt; border-left: 3pt solid #1B3A6F; }
+p { font-size: 11pt; margin-bottom: 8pt; }
+ul { margin: 0 0 10pt 18pt; }
+ul li { margin-bottom: 4pt; font-size: 11pt; }
+table { width: 100%; border-collapse: collapse; margin: 10pt 0; font-size: 10pt; }
+th { background: #1B3A6F; color: #fff; padding: 6pt 8pt; text-align: left; font-weight: 700; font-size: 9pt; }
+td { padding: 5pt 8pt; border-bottom: 0.5pt solid #E5E7EB; }
+tr:nth-child(even) td { background: #F8F9FB; }
+.callout { padding: 8pt 12pt; margin: 10pt 0; border-radius: 3pt; }
+.callout-title { font-weight: 700; font-size: 10.5pt; margin-bottom: 4pt; }
+.callout-text { font-size: 10.5pt; line-height: 1.6; }
+.callout-info { background: #F0F4FB; border-left: 3pt solid #1B3A6F; }
+.callout-info .callout-title { color: #1B3A6F; }
+.callout-warning { background: #FFF8E6; border-left: 3pt solid #D97706; }
+.callout-warning .callout-title { color: #D97706; }
+.callout-success { background: #F0F7F1; border-left: 3pt solid #1B7F4F; }
+.callout-success .callout-title { color: #1B7F4F; }
+.callout-danger { background: #FBEAEA; border-left: 3pt solid #B91C1C; }
+.callout-danger .callout-title { color: #B91C1C; }
+.qa { background: #F8F9FB; padding: 8pt 12pt; margin-bottom: 8pt; border-radius: 4pt; }
+.qa-q { font-weight: 700; color: #1B3A6F; margin-bottom: 4pt; font-size: 11pt; }
+.qa-a { color: #2C3540; padding-left: 8pt; font-size: 10.5pt; }
+@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style></head><body>
+<div class="cover">
+  <div class="company">${MANUAL_CONTENT.company}</div>
+  <div class="title">${MANUAL_CONTENT.title}</div>
+  <div class="subtitle">${MANUAL_CONTENT.subtitle}</div>
+  <div class="meta">버전 ${MANUAL_CONTENT.version}  ·  발행일 ${today}</div>
+</div>
+${sectionsHtml}
+<script>setTimeout(() => { window.print(); }, 800);</script>
 </body></html>`;
   win.document.write(html); win.document.close();
 }
