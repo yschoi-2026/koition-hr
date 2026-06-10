@@ -2028,7 +2028,49 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);  // 본인 비밀번호 변경
   const [adminResetTarget, setAdminResetTarget] = useState(null);     // admin이 타인 비밀번호 초기화할 대상
+  const [manualContent, setManualContent] = useState(MANUAL_CONTENT);  // 매뉴얼 콘텐츠 (admin 편집 가능)
   const currentYear = 2026;
+  
+  // 매뉴얼 콘텐츠 localStorage 동기화
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('koition_hr_manual');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // 버전이 다르면 기본값 사용 (대규모 구조 변경 시 안전)
+        if (parsed.version === MANUAL_CONTENT.version) {
+          setManualContent(parsed);
+        }
+      }
+    } catch (e) {
+      console.error('매뉴얼 로드 실패:', e);
+    }
+  }, []);
+  
+  // 매뉴얼 저장 핸들러
+  const handleSaveManual = (newContent) => {
+    try {
+      localStorage.setItem('koition_hr_manual', JSON.stringify(newContent));
+      setManualContent(newContent);
+      showToast('매뉴얼이 저장되었습니다');
+      return { success: true };
+    } catch (e) {
+      console.error('매뉴얼 저장 실패:', e);
+      return { success: false, error: e.message };
+    }
+  };
+  
+  // 매뉴얼 기본값 복원
+  const handleResetManual = () => {
+    if (!window.confirm('매뉴얼을 초기 기본값으로 되돌리시겠습니까? 모든 수정사항이 사라집니다.')) return;
+    try {
+      localStorage.removeItem('koition_hr_manual');
+      setManualContent(MANUAL_CONTENT);
+      showToast('매뉴얼이 기본값으로 복원되었습니다');
+    } catch (e) {
+      console.error('매뉴얼 복원 실패:', e);
+    }
+  };
   
   // 사용자 데이터 초기 로드 (최초 1회 비밀번호 해시화)
   useEffect(() => {
@@ -2311,7 +2353,7 @@ export default function App() {
             {tab === 'history' && <HistoryView history={history} employees={employees} results={results} currentYear={currentYear} highlight={historyHighlight} />}
             {tab === 'notify' && <NotifyView employees={employees} results={results} currentYear={currentYear} />}
             {tab === 'policy' && <PolicyView policy={policy} setPolicy={setPolicy} />}
-            {tab === 'guide' && <GuideView user={user} />}
+            {tab === 'guide' && <GuideView user={user} manualContent={manualContent} onSaveManual={handleSaveManual} onResetManual={handleResetManual} />}
           </main>
         </div>
         
@@ -8875,7 +8917,7 @@ const MANUAL_CONTENT = {
       blocks: [
         {
           type: 'paragraph',
-          text: '코이션 인사평가·보상 관리 시스템은 강원랜드 석탄광업 산업유산 아카이브 사업을 수행하는 전문 인력의 인사평가, 급여 산정, 승진 심사를 통합 관리하는 디지털 플랫폼입니다.',
+          text: '코이션 인사평가 관리시스템은 기록물 및 아카이브 사업을 수행하는 전문인력의 인사평가, 급여산정, 승진심사를 통합관리하는 디지털플랫폼입니다.',
         },
         {
           type: 'subtitle',
@@ -9476,14 +9518,33 @@ const MANUAL_CONTENT = {
 // ============================================================
 // GuideView - 시스템 내 사용 가이드 화면
 // 좌측 사이드바 목차 + 우측 본문 + 검색 + 매뉴얼 다운로드 버튼
+// admin은 편집 모드로 매뉴얼 수정·저장 가능
 // ============================================================
-function GuideView({ user }) {
+function GuideView({ user, manualContent, onSaveManual, onResetManual }) {
   const [activeSection, setActiveSection] = useState('overview');
   const [searchQuery, setSearchQuery] = useState('');
-  const [downloading, setDownloading] = useState(null);  // 'docx' | 'pdf' | null
+  const [downloading, setDownloading] = useState(null);
   
-  // 권한별 표시 섹션 필터링
-  const visibleSections = MANUAL_CONTENT.sections.filter(s => {
+  // 편집 모드 (admin 전용)
+  const isAdmin = user.role === 'admin';
+  const [editMode, setEditMode] = useState(false);
+  const [draftContent, setDraftContent] = useState(manualContent);  // 편집 중 임시 데이터
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  
+  // manualContent prop이 바뀌면 draft도 동기화 (편집 모드가 아닐 때만)
+  useEffect(() => {
+    if (!editMode) {
+      setDraftContent(manualContent);
+      setHasUnsavedChanges(false);
+    }
+  }, [manualContent, editMode]);
+  
+  // 사용 중인 콘텐츠 (편집 모드면 draft, 아니면 저장된 manualContent)
+  const activeContent = editMode ? draftContent : manualContent;
+  
+  // 권한별 표시 섹션 필터링 (편집 모드일 땐 admin이니 전체 표시)
+  const visibleSections = activeContent.sections.filter(s => {
+    if (editMode) return true;  // 편집 모드는 모든 섹션 표시
     if (s.audience === 'all') return true;
     if (s.audience === 'admin' && user.role === 'admin') return true;
     if (s.audience === 'evaluator' && ['admin', 'manager', 'evaluator'].includes(user.role)) return true;
@@ -9509,11 +9570,146 @@ function GuideView({ user }) {
     : visibleSections;
   
   const current = visibleSections.find(s => s.id === activeSection) || visibleSections[0];
+  const currentIndex = activeContent.sections.findIndex(s => s.id === current?.id);
+  
+  // 편집 모드 진입
+  const handleEnterEditMode = () => {
+    setDraftContent(manualContent);
+    setEditMode(true);
+    setHasUnsavedChanges(false);
+  };
+  
+  // 편집 모드 종료 (저장 여부 확인)
+  const handleExitEditMode = () => {
+    if (hasUnsavedChanges) {
+      if (!window.confirm('저장하지 않은 수정사항이 있습니다. 정말 나가시겠습니까?')) return;
+    }
+    setEditMode(false);
+    setHasUnsavedChanges(false);
+    setDraftContent(manualContent);
+  };
+  
+  // 저장
+  const handleSave = () => {
+    const result = onSaveManual(draftContent);
+    if (result.success) {
+      setHasUnsavedChanges(false);
+    }
+  };
+  
+  // 섹션 업데이트 핸들러
+  const updateSection = (sectionId, updates) => {
+    setDraftContent(prev => ({
+      ...prev,
+      sections: prev.sections.map(s => s.id === sectionId ? { ...s, ...updates } : s)
+    }));
+    setHasUnsavedChanges(true);
+  };
+  
+  // 블록 업데이트
+  const updateBlock = (sectionId, blockIndex, updates) => {
+    setDraftContent(prev => ({
+      ...prev,
+      sections: prev.sections.map(s => {
+        if (s.id !== sectionId) return s;
+        const newBlocks = [...s.blocks];
+        newBlocks[blockIndex] = { ...newBlocks[blockIndex], ...updates };
+        return { ...s, blocks: newBlocks };
+      })
+    }));
+    setHasUnsavedChanges(true);
+  };
+  
+  // 블록 추가
+  const addBlock = (sectionId, blockType) => {
+    const newBlock = createDefaultBlock(blockType);
+    setDraftContent(prev => ({
+      ...prev,
+      sections: prev.sections.map(s => 
+        s.id === sectionId ? { ...s, blocks: [...s.blocks, newBlock] } : s
+      )
+    }));
+    setHasUnsavedChanges(true);
+  };
+  
+  // 블록 삭제
+  const deleteBlock = (sectionId, blockIndex) => {
+    if (!window.confirm('이 블록을 삭제하시겠습니까?')) return;
+    setDraftContent(prev => ({
+      ...prev,
+      sections: prev.sections.map(s => 
+        s.id === sectionId 
+          ? { ...s, blocks: s.blocks.filter((_, i) => i !== blockIndex) }
+          : s
+      )
+    }));
+    setHasUnsavedChanges(true);
+  };
+  
+  // 블록 이동 (상/하)
+  const moveBlock = (sectionId, blockIndex, direction) => {
+    setDraftContent(prev => ({
+      ...prev,
+      sections: prev.sections.map(s => {
+        if (s.id !== sectionId) return s;
+        const newBlocks = [...s.blocks];
+        const newIndex = blockIndex + direction;
+        if (newIndex < 0 || newIndex >= newBlocks.length) return s;
+        [newBlocks[blockIndex], newBlocks[newIndex]] = [newBlocks[newIndex], newBlocks[blockIndex]];
+        return { ...s, blocks: newBlocks };
+      })
+    }));
+    setHasUnsavedChanges(true);
+  };
+  
+  // 새 섹션 추가
+  const addNewSection = () => {
+    const newId = 'new-section-' + Date.now();
+    const newSection = {
+      id: newId,
+      title: '새 섹션',
+      audience: 'all',
+      blocks: [{ type: 'paragraph', text: '여기에 내용을 입력하세요' }]
+    };
+    setDraftContent(prev => ({
+      ...prev,
+      sections: [...prev.sections, newSection]
+    }));
+    setActiveSection(newId);
+    setHasUnsavedChanges(true);
+  };
+  
+  // 섹션 삭제
+  const deleteSection = (sectionId) => {
+    if (!window.confirm('이 섹션 전체를 삭제하시겠습니까?')) return;
+    setDraftContent(prev => ({
+      ...prev,
+      sections: prev.sections.filter(s => s.id !== sectionId)
+    }));
+    // 다른 섹션으로 이동
+    const remaining = draftContent.sections.filter(s => s.id !== sectionId);
+    if (remaining.length > 0) setActiveSection(remaining[0].id);
+    setHasUnsavedChanges(true);
+  };
+  
+  // 섹션 이동
+  const moveSection = (sectionId, direction) => {
+    setDraftContent(prev => {
+      const idx = prev.sections.findIndex(s => s.id === sectionId);
+      if (idx === -1) return prev;
+      const newIdx = idx + direction;
+      if (newIdx < 0 || newIdx >= prev.sections.length) return prev;
+      const newSections = [...prev.sections];
+      [newSections[idx], newSections[newIdx]] = [newSections[newIdx], newSections[idx]];
+      return { ...prev, sections: newSections };
+    });
+    setHasUnsavedChanges(true);
+  };
   
   const handleDownloadDocx = async () => {
     try {
       setDownloading('docx');
-      await downloadManualAsDocx();
+      await downloadManualAsDocx(manualContent);  // 저장된 콘텐츠로
     } catch (e) {
       alert('Word 매뉴얼 다운로드 실패: ' + e.message);
     } finally {
@@ -9524,7 +9720,7 @@ function GuideView({ user }) {
   const handleDownloadPdf = () => {
     try {
       setDownloading('pdf');
-      openManualForPrint();
+      openManualForPrint(manualContent);  // 저장된 콘텐츠로
     } finally {
       setTimeout(() => setDownloading(null), 1000);
     }
@@ -9533,50 +9729,85 @@ function GuideView({ user }) {
   return (
     <div>
       <PageHeader 
-        eyebrow="USER GUIDE · 사용 가이드"
-        title="시스템 사용 매뉴얼"
-        subtitle={`코이션 인사평가·보상 관리 시스템 ${MANUAL_CONTENT.version} · ${user.name}님 권한 기준`}
+        eyebrow={editMode ? "EDIT MODE · 매뉴얼 편집 중" : "USER GUIDE · 사용 가이드"}
+        title={editMode ? "매뉴얼 편집" : "시스템 사용 매뉴얼"}
+        subtitle={editMode 
+          ? `${hasUnsavedChanges ? '⚠ 저장하지 않은 수정사항이 있습니다' : '저장된 상태입니다'} · 모든 변경사항은 저장 버튼을 눌러야 반영됩니다`
+          : `코이션 인사평가 관리시스템 ${activeContent.version} · ${user.name}님 권한 기준`}
         action={
-          <div style={{ display: 'flex', gap: S[2] }}>
-            <Button variant="outline" size="md" icon={Download} onClick={handleDownloadPdf} disabled={downloading}>
-              {downloading === 'pdf' ? 'PDF 준비 중...' : 'PDF 인쇄'}
-            </Button>
-            <Button variant="primary" size="md" icon={Download} onClick={handleDownloadDocx} disabled={downloading}>
-              {downloading === 'docx' ? 'Word 생성 중...' : 'Word 다운로드'}
-            </Button>
-          </div>
+          editMode ? (
+            <div style={{ display: 'flex', gap: S[2] }}>
+              <Button variant="outline" size="md" onClick={handleExitEditMode}>편집 종료</Button>
+              <Button variant="primary" size="md" icon={Save} onClick={handleSave} disabled={!hasUnsavedChanges}>
+                {hasUnsavedChanges ? '저장' : '저장됨'}
+              </Button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: S[2] }}>
+              {isAdmin && (
+                <Button variant="outline" size="md" icon={Pencil} onClick={handleEnterEditMode}>
+                  매뉴얼 편집
+                </Button>
+              )}
+              <Button variant="outline" size="md" icon={Download} onClick={handleDownloadPdf} disabled={downloading}>
+                {downloading === 'pdf' ? 'PDF 준비 중...' : 'PDF 인쇄'}
+              </Button>
+              <Button variant="primary" size="md" icon={Download} onClick={handleDownloadDocx} disabled={downloading}>
+                {downloading === 'docx' ? 'Word 생성 중...' : 'Word 다운로드'}
+              </Button>
+            </div>
+          )
         }
       />
+      
+      {/* 편집 모드 안내 */}
+      {editMode && (
+        <div style={{ 
+          padding: `${S[3]}px ${S[4]}px`, marginBottom: S[4],
+          background: '#FFF8E6', borderLeft: `3px solid ${T.warning}`, borderRadius: 4,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: S[3]
+        }}>
+          <div style={{ fontSize: 12, color: T.text, lineHeight: 1.6 }}>
+            <strong style={{ color: T.warning }}>📝 편집 모드:</strong> 텍스트를 직접 수정하거나 블록을 추가·삭제·이동할 수 있습니다. 
+            수정 후 반드시 <strong>저장</strong> 버튼을 눌러야 변경사항이 영구 저장됩니다.
+          </div>
+          <Button variant="ghost" size="sm" onClick={onResetManual}>
+            기본값 복원
+          </Button>
+        </div>
+      )}
       
       <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: S[5] }}>
         {/* 좌측 목차 */}
         <div style={{ position: 'sticky', top: 90, alignSelf: 'flex-start' }}>
-          {/* 검색 */}
-          <div style={{ marginBottom: S[4] }}>
-            <div style={{ position: 'relative' }}>
-              <input 
-                type="text" 
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="가이드 검색"
-                style={{ 
-                  width: '100%', padding: '8px 32px 8px 12px', 
-                  border: `1px solid ${T.border}`, borderRadius: 6,
-                  fontSize: 12, fontFamily: FONT, outline: 'none',
-                  background: T.surface, boxSizing: 'border-box'
-                }}
-              />
-              <Search size={13} style={{ 
-                position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
-                color: T.textMute
-              }} />
-            </div>
-            {searchQuery && (
-              <div style={{ fontSize: 10, color: T.textMute, marginTop: 4 }}>
-                {searchMatches.length}개 섹션 일치
+          {/* 검색 (편집 모드에서는 숨김) */}
+          {!editMode && (
+            <div style={{ marginBottom: S[4] }}>
+              <div style={{ position: 'relative' }}>
+                <input 
+                  type="text" 
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="가이드 검색"
+                  style={{ 
+                    width: '100%', padding: '8px 32px 8px 12px', 
+                    border: `1px solid ${T.border}`, borderRadius: 6,
+                    fontSize: 12, fontFamily: FONT, outline: 'none',
+                    background: T.surface, boxSizing: 'border-box'
+                  }}
+                />
+                <Search size={13} style={{ 
+                  position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                  color: T.textMute
+                }} />
               </div>
-            )}
-          </div>
+              {searchQuery && (
+                <div style={{ fontSize: 10, color: T.textMute, marginTop: 4 }}>
+                  {searchMatches.length}개 섹션 일치
+                </div>
+              )}
+            </div>
+          )}
           
           {/* 목차 */}
           <div style={{ 
@@ -9584,51 +9815,512 @@ function GuideView({ user }) {
             padding: `${S[3]}px 0`, fontSize: 12
           }}>
             <div style={{ 
-              fontSize: 10, fontWeight: 700, color: T.textMute, 
-              letterSpacing: '0.1em', padding: `0 ${S[4]}px`, marginBottom: S[2]
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: `0 ${S[4]}px`, marginBottom: S[2]
             }}>
-              목차
+              <span style={{ fontSize: 10, fontWeight: 700, color: T.textMute, letterSpacing: '0.1em' }}>
+                목차
+              </span>
+              {editMode && (
+                <button onClick={addNewSection} title="섹션 추가" style={{ 
+                  background: 'transparent', border: 'none', cursor: 'pointer', 
+                  color: T.brand, padding: 0, display: 'flex'
+                }}>
+                  <Plus size={12} />
+                </button>
+              )}
             </div>
-            {searchMatches.map(s => (
-              <button
-                key={s.id}
-                onClick={() => setActiveSection(s.id)}
-                style={{ 
-                  display: 'block', width: '100%', textAlign: 'left',
-                  padding: `${S[2]}px ${S[4]}px`, 
-                  background: activeSection === s.id ? T.surfaceAlt : 'transparent',
-                  borderLeft: activeSection === s.id ? `3px solid ${T.brand}` : '3px solid transparent',
-                  border: 'none', cursor: 'pointer',
-                  fontSize: 12, fontFamily: FONT,
-                  color: activeSection === s.id ? T.brand : T.text,
-                  fontWeight: activeSection === s.id ? 700 : 500,
-                  transition: 'all 0.15s'
-                }}
-                onMouseEnter={e => activeSection !== s.id && (e.currentTarget.style.background = T.surfaceAlt)}
-                onMouseLeave={e => activeSection !== s.id && (e.currentTarget.style.background = 'transparent')}
-              >
-                {s.title}
-              </button>
-            ))}
+            {searchMatches.map((s, idx) => {
+              const sIdx = activeContent.sections.findIndex(x => x.id === s.id);
+              return (
+                <div key={s.id} style={{ position: 'relative' }}>
+                  <button
+                    onClick={() => setActiveSection(s.id)}
+                    style={{ 
+                      display: 'block', width: '100%', textAlign: 'left',
+                      padding: `${S[2]}px ${S[4]}px`,
+                      paddingRight: editMode ? 60 : S[4],
+                      background: activeSection === s.id ? T.surfaceAlt : 'transparent',
+                      borderLeft: activeSection === s.id ? `3px solid ${T.brand}` : '3px solid transparent',
+                      border: 'none', cursor: 'pointer',
+                      fontSize: 12, fontFamily: FONT,
+                      color: activeSection === s.id ? T.brand : T.text,
+                      fontWeight: activeSection === s.id ? 700 : 500,
+                      transition: 'all 0.15s'
+                    }}
+                    onMouseEnter={e => activeSection !== s.id && (e.currentTarget.style.background = T.surfaceAlt)}
+                    onMouseLeave={e => activeSection !== s.id && (e.currentTarget.style.background = 'transparent')}
+                  >
+                    {s.title}
+                    {editMode && s.audience !== 'all' && (
+                      <span style={{ 
+                        marginLeft: 6, padding: '1px 4px', background: T.warning, color: '#fff',
+                        fontSize: 8, borderRadius: 2, fontWeight: 700
+                      }}>
+                        {s.audience}
+                      </span>
+                    )}
+                  </button>
+                  {editMode && activeSection === s.id && (
+                    <div style={{ 
+                      position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                      display: 'flex', gap: 2
+                    }}>
+                      <button onClick={() => moveSection(s.id, -1)} disabled={sIdx === 0} title="위로" style={iconBtnStyle(sIdx === 0)}>
+                        <ChevronDown size={11} style={{ transform: 'rotate(180deg)' }} />
+                      </button>
+                      <button onClick={() => moveSection(s.id, 1)} disabled={sIdx === activeContent.sections.length - 1} title="아래로" style={iconBtnStyle(sIdx === activeContent.sections.length - 1)}>
+                        <ChevronDown size={11} />
+                      </button>
+                      <button onClick={() => deleteSection(s.id)} title="섹션 삭제" style={{ ...iconBtnStyle(false), color: T.danger }}>
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
           
-          {/* 인쇄 안내 */}
+          {/* 도움말 */}
           <div style={{ 
             marginTop: S[3], padding: S[3], background: T.surfaceAlt, borderRadius: 6,
             fontSize: 10, color: T.textMute, lineHeight: 1.6
           }}>
-            <strong style={{ color: T.brand, display: 'block', marginBottom: 4 }}>💡 매뉴얼 활용</strong>
-            <div>• <strong>Word 다운로드</strong>: 편집·수정 가능</div>
-            <div>• <strong>PDF 인쇄</strong>: 새 창 인쇄 다이얼로그</div>
-            <div>• <strong>이 화면</strong>: 검색·실시간 확인</div>
+            <strong style={{ color: T.brand, display: 'block', marginBottom: 4 }}>
+              {editMode ? '✏️ 편집 모드' : '💡 매뉴얼 활용'}
+            </strong>
+            {editMode ? (
+              <>
+                <div>• 텍스트 클릭하여 직접 수정</div>
+                <div>• 블록 우측 +/-로 추가·삭제</div>
+                <div>• ↑↓ 버튼으로 순서 이동</div>
+                <div>• 저장 버튼으로 영구 보관</div>
+              </>
+            ) : (
+              <>
+                <div>• <strong>Word 다운로드</strong>: 편집·수정 가능</div>
+                <div>• <strong>PDF 인쇄</strong>: 새 창 인쇄 다이얼로그</div>
+                <div>• <strong>이 화면</strong>: 검색·실시간 확인</div>
+              </>
+            )}
           </div>
         </div>
         
         {/* 우측 본문 */}
         <div style={{ ...card(), padding: S[7] }}>
-          {current && <ManualSection section={current} />}
+          {current && (editMode ? (
+            <EditableManualSection 
+              section={current}
+              onUpdateSection={(updates) => updateSection(current.id, updates)}
+              onUpdateBlock={(blockIndex, updates) => updateBlock(current.id, blockIndex, updates)}
+              onAddBlock={(blockType) => addBlock(current.id, blockType)}
+              onDeleteBlock={(blockIndex) => deleteBlock(current.id, blockIndex)}
+              onMoveBlock={(blockIndex, direction) => moveBlock(current.id, blockIndex, direction)}
+            />
+          ) : (
+            <ManualSection section={current} />
+          ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+// 작은 아이콘 버튼 스타일
+function iconBtnStyle(disabled) {
+  return {
+    width: 18, height: 18, padding: 0, 
+    background: 'transparent', border: 'none', borderRadius: 3,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    color: disabled ? T.textMute : T.text,
+    opacity: disabled ? 0.4 : 1,
+    display: 'flex', alignItems: 'center', justifyContent: 'center'
+  };
+}
+
+// 새 블록 기본값 생성
+function createDefaultBlock(type) {
+  switch (type) {
+    case 'paragraph': return { type: 'paragraph', text: '내용을 입력하세요' };
+    case 'subtitle': return { type: 'subtitle', text: '소제목' };
+    case 'list': return { type: 'list', items: ['항목 1', '항목 2'] };
+    case 'table': return { type: 'table', headers: ['헤더1', '헤더2'], rows: [['내용1', '내용2']] };
+    case 'callout': return { type: 'callout', variant: 'info', title: '안내', text: '안내 내용' };
+    case 'qa': return { type: 'qa', q: 'Q. 질문', a: '답변' };
+    default: return { type: 'paragraph', text: '' };
+  }
+}
+
+// ============================================================
+// EditableManualSection - 편집 가능한 매뉴얼 섹션
+// admin 전용. 섹션 제목·블록 직접 수정·추가·삭제·이동
+// ============================================================
+function EditableManualSection({ section, onUpdateSection, onUpdateBlock, onAddBlock, onDeleteBlock, onMoveBlock }) {
+  return (
+    <div>
+      {/* 섹션 메타 (제목 + 권한) */}
+      <div style={{ 
+        padding: S[3], background: T.surfaceAlt, borderRadius: 6, marginBottom: S[5],
+        display: 'grid', gridTemplateColumns: '1fr auto', gap: S[3], alignItems: 'center'
+      }}>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMute, letterSpacing: '0.1em', marginBottom: 4 }}>
+            섹션 제목
+          </div>
+          <input 
+            type="text"
+            value={section.title}
+            onChange={e => onUpdateSection({ title: e.target.value })}
+            style={{ 
+              width: '100%', fontSize: 18, fontWeight: 700, color: T.ink,
+              padding: '6px 10px', border: `1px solid ${T.border}`, borderRadius: 4,
+              outline: 'none', fontFamily: FONT, background: T.surface
+            }}
+          />
+        </div>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMute, letterSpacing: '0.1em', marginBottom: 4 }}>
+            대상 권한
+          </div>
+          <select 
+            value={section.audience}
+            onChange={e => onUpdateSection({ audience: e.target.value })}
+            style={{ 
+              padding: '6px 10px', fontSize: 12, fontFamily: FONT,
+              border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface,
+              outline: 'none'
+            }}
+          >
+            <option value="all">전체 (all)</option>
+            <option value="evaluator">평가자+ (evaluator)</option>
+            <option value="admin">관리자만 (admin)</option>
+          </select>
+        </div>
+      </div>
+      
+      {/* 블록 편집 영역 */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: S[3] }}>
+        {section.blocks.map((block, i) => (
+          <EditableBlock 
+            key={i}
+            block={block}
+            blockIndex={i}
+            isFirst={i === 0}
+            isLast={i === section.blocks.length - 1}
+            onUpdate={(updates) => onUpdateBlock(i, updates)}
+            onDelete={() => onDeleteBlock(i)}
+            onMove={(dir) => onMoveBlock(i, dir)}
+          />
+        ))}
+      </div>
+      
+      {/* 블록 추가 버튼 */}
+      <div style={{ 
+        marginTop: S[5], padding: S[4], 
+        background: T.surfaceAlt, borderRadius: 6,
+        border: `1px dashed ${T.border}`
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMute, letterSpacing: '0.1em', marginBottom: S[2] }}>
+          + 블록 추가
+        </div>
+        <div style={{ display: 'flex', gap: S[2], flexWrap: 'wrap' }}>
+          <Button variant="outline" size="sm" onClick={() => onAddBlock('subtitle')}>소제목</Button>
+          <Button variant="outline" size="sm" onClick={() => onAddBlock('paragraph')}>단락</Button>
+          <Button variant="outline" size="sm" onClick={() => onAddBlock('list')}>리스트</Button>
+          <Button variant="outline" size="sm" onClick={() => onAddBlock('table')}>표</Button>
+          <Button variant="outline" size="sm" onClick={() => onAddBlock('callout')}>알림 박스</Button>
+          <Button variant="outline" size="sm" onClick={() => onAddBlock('qa')}>Q&A</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// EditableBlock - 개별 블록 편집 컴포넌트
+// 블록 타입별로 다른 편집 UI
+// ============================================================
+function EditableBlock({ block, blockIndex, isFirst, isLast, onUpdate, onDelete, onMove }) {
+  const wrapStyle = {
+    position: 'relative',
+    padding: S[3],
+    background: T.surface,
+    border: `1px solid ${T.border}`,
+    borderRadius: 6,
+    paddingRight: 56,  // 우측 컨트롤 공간
+  };
+  
+  const inputStyle = {
+    width: '100%', padding: '6px 10px',
+    border: `1px solid ${T.border}`, borderRadius: 4,
+    fontSize: 13, fontFamily: FONT, outline: 'none',
+    background: T.surface, color: T.text, lineHeight: 1.6,
+    boxSizing: 'border-box', resize: 'vertical'
+  };
+  
+  const renderEditor = () => {
+    if (block.type === 'subtitle') {
+      return (
+        <>
+          <BlockTypeLabel type="subtitle" />
+          <input 
+            type="text" 
+            value={block.text || ''} 
+            onChange={e => onUpdate({ text: e.target.value })}
+            placeholder="소제목"
+            style={{ ...inputStyle, fontSize: 15, fontWeight: 700, color: T.brand }}
+          />
+        </>
+      );
+    }
+    if (block.type === 'paragraph') {
+      return (
+        <>
+          <BlockTypeLabel type="paragraph" />
+          <textarea 
+            value={block.text || ''} 
+            onChange={e => onUpdate({ text: e.target.value })}
+            placeholder="단락 내용"
+            rows={3}
+            style={inputStyle}
+          />
+        </>
+      );
+    }
+    if (block.type === 'list') {
+      const items = block.items || [];
+      return (
+        <>
+          <BlockTypeLabel type="list" />
+          {items.map((item, i) => (
+            <div key={i} style={{ display: 'flex', gap: S[2], marginBottom: S[2], alignItems: 'flex-start' }}>
+              <span style={{ paddingTop: 8, color: T.textMute }}>•</span>
+              <input 
+                type="text" 
+                value={item} 
+                onChange={e => {
+                  const newItems = [...items];
+                  newItems[i] = e.target.value;
+                  onUpdate({ items: newItems });
+                }}
+                style={{ ...inputStyle, flex: 1 }}
+              />
+              <button 
+                onClick={() => onUpdate({ items: items.filter((_, idx) => idx !== i) })}
+                style={{ ...iconBtnStyle(false), width: 24, height: 24, color: T.danger }}
+                title="항목 삭제"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+          <Button variant="outline" size="sm" icon={Plus} onClick={() => onUpdate({ items: [...items, ''] })}>
+            항목 추가
+          </Button>
+        </>
+      );
+    }
+    if (block.type === 'table') {
+      const headers = block.headers || [];
+      const rows = block.rows || [];
+      return (
+        <>
+          <BlockTypeLabel type="table" />
+          {/* 헤더 편집 */}
+          <div style={{ marginBottom: S[2] }}>
+            <div style={{ fontSize: 10, color: T.textMute, marginBottom: 4 }}>헤더</div>
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {headers.map((h, i) => (
+                <div key={i} style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                  <input 
+                    type="text" 
+                    value={h} 
+                    onChange={e => {
+                      const newHeaders = [...headers];
+                      newHeaders[i] = e.target.value;
+                      onUpdate({ headers: newHeaders });
+                    }}
+                    style={{ ...inputStyle, width: 100, fontWeight: 700, fontSize: 11 }}
+                  />
+                  <button 
+                    onClick={() => {
+                      const newHeaders = headers.filter((_, idx) => idx !== i);
+                      const newRows = rows.map(r => r.filter((_, idx) => idx !== i));
+                      onUpdate({ headers: newHeaders, rows: newRows });
+                    }}
+                    style={{ ...iconBtnStyle(false), width: 20, height: 20, color: T.danger }}
+                    title="열 삭제"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              ))}
+              <button 
+                onClick={() => {
+                  onUpdate({ 
+                    headers: [...headers, '새 열'], 
+                    rows: rows.map(r => [...r, ''])
+                  });
+                }}
+                style={{ padding: '4px 8px', fontSize: 11, color: T.brand, background: 'transparent', border: `1px dashed ${T.brand}`, borderRadius: 4, cursor: 'pointer' }}
+              >
+                + 열
+              </button>
+            </div>
+          </div>
+          {/* 행 편집 */}
+          <div>
+            <div style={{ fontSize: 10, color: T.textMute, marginBottom: 4 }}>행 ({rows.length}개)</div>
+            {rows.map((row, i) => (
+              <div key={i} style={{ display: 'flex', gap: 2, marginBottom: 4, alignItems: 'center' }}>
+                {row.map((cell, j) => (
+                  <input 
+                    key={j}
+                    type="text" 
+                    value={cell} 
+                    onChange={e => {
+                      const newRows = [...rows];
+                      newRows[i] = [...row];
+                      newRows[i][j] = e.target.value;
+                      onUpdate({ rows: newRows });
+                    }}
+                    style={{ ...inputStyle, width: 100, fontSize: 11 }}
+                  />
+                ))}
+                <button 
+                  onClick={() => onUpdate({ rows: rows.filter((_, idx) => idx !== i) })}
+                  style={{ ...iconBtnStyle(false), width: 20, height: 20, color: T.danger }}
+                  title="행 삭제"
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            ))}
+            <button 
+              onClick={() => onUpdate({ rows: [...rows, headers.map(() => '')] })}
+              style={{ padding: '4px 8px', fontSize: 11, color: T.brand, background: 'transparent', border: `1px dashed ${T.brand}`, borderRadius: 4, cursor: 'pointer', marginTop: 4 }}
+            >
+              + 행 추가
+            </button>
+          </div>
+        </>
+      );
+    }
+    if (block.type === 'callout') {
+      return (
+        <>
+          <BlockTypeLabel type="callout" />
+          <div style={{ display: 'flex', gap: S[2], marginBottom: S[2] }}>
+            <select 
+              value={block.variant || 'info'} 
+              onChange={e => onUpdate({ variant: e.target.value })}
+              style={{ 
+                padding: '6px 10px', fontSize: 12, fontFamily: FONT,
+                border: `1px solid ${T.border}`, borderRadius: 4, background: T.surface,
+                outline: 'none'
+              }}
+            >
+              <option value="info">정보 (파랑)</option>
+              <option value="warning">경고 (주황)</option>
+              <option value="success">성공 (초록)</option>
+              <option value="danger">위험 (빨강)</option>
+            </select>
+            <input 
+              type="text" 
+              value={block.title || ''} 
+              onChange={e => onUpdate({ title: e.target.value })}
+              placeholder="제목 (예: 💡 알아두세요)"
+              style={{ ...inputStyle, flex: 1, fontWeight: 700 }}
+            />
+          </div>
+          <textarea 
+            value={block.text || ''} 
+            onChange={e => onUpdate({ text: e.target.value })}
+            placeholder="알림 내용"
+            rows={3}
+            style={inputStyle}
+          />
+        </>
+      );
+    }
+    if (block.type === 'qa') {
+      return (
+        <>
+          <BlockTypeLabel type="qa" />
+          <input 
+            type="text" 
+            value={block.q || ''} 
+            onChange={e => onUpdate({ q: e.target.value })}
+            placeholder="질문 (예: Q1. 비밀번호를 잊었습니다.)"
+            style={{ ...inputStyle, fontWeight: 700, color: T.brand, marginBottom: S[2] }}
+          />
+          <textarea 
+            value={block.a || ''} 
+            onChange={e => onUpdate({ a: e.target.value })}
+            placeholder="답변"
+            rows={3}
+            style={inputStyle}
+          />
+        </>
+      );
+    }
+    return null;
+  };
+  
+  return (
+    <div style={wrapStyle}>
+      {renderEditor()}
+      
+      {/* 우측 컨트롤 (이동·삭제) */}
+      <div style={{ 
+        position: 'absolute', top: S[2], right: S[2],
+        display: 'flex', flexDirection: 'column', gap: 2
+      }}>
+        <button 
+          onClick={() => onMove(-1)} 
+          disabled={isFirst}
+          style={iconBtnStyle(isFirst)}
+          title="위로"
+        >
+          <ChevronDown size={12} style={{ transform: 'rotate(180deg)' }} />
+        </button>
+        <button 
+          onClick={() => onMove(1)} 
+          disabled={isLast}
+          style={iconBtnStyle(isLast)}
+          title="아래로"
+        >
+          <ChevronDown size={12} />
+        </button>
+        <button 
+          onClick={onDelete}
+          style={{ ...iconBtnStyle(false), color: T.danger }}
+          title="블록 삭제"
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// 블록 타입 라벨
+function BlockTypeLabel({ type }) {
+  const labels = {
+    paragraph: '단락',
+    subtitle: '소제목',
+    list: '리스트',
+    table: '표',
+    callout: '알림 박스',
+    qa: 'Q&A',
+  };
+  return (
+    <div style={{ 
+      fontSize: 9, fontWeight: 700, color: T.brand, letterSpacing: '0.1em',
+      marginBottom: 6, textTransform: 'uppercase'
+    }}>
+      {labels[type] || type}
     </div>
   );
 }
@@ -9782,7 +10474,8 @@ function loadDocxLib() {
   return _docxLibPromise;
 }
 
-async function downloadManualAsDocx() {
+async function downloadManualAsDocx(manualContent) {
+  const content = manualContent || MANUAL_CONTENT;
   const docx = await loadDocxLib();
   const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType } = docx;
   
@@ -9796,25 +10489,25 @@ async function downloadManualAsDocx() {
   const children = [
     // 표지 - 회사명
     new Paragraph({
-      children: [new TextRun({ text: MANUAL_CONTENT.company, size: 20, color: COLORS.mute })],
+      children: [new TextRun({ text: content.company, size: 20, color: COLORS.mute })],
       alignment: AlignmentType.CENTER,
       spacing: { before: 2400, after: 400 },
     }),
     // 표지 - 제목
     new Paragraph({
-      children: [new TextRun({ text: MANUAL_CONTENT.title, size: 48, bold: true, color: COLORS.brand })],
+      children: [new TextRun({ text: content.title, size: 48, bold: true, color: COLORS.brand })],
       alignment: AlignmentType.CENTER,
       spacing: { before: 400, after: 200 },
     }),
     // 표지 - 부제
     new Paragraph({
-      children: [new TextRun({ text: MANUAL_CONTENT.subtitle, size: 22, italics: true, color: COLORS.mute })],
+      children: [new TextRun({ text: content.subtitle, size: 22, italics: true, color: COLORS.mute })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 600 },
     }),
     // 표지 - 버전
     new Paragraph({
-      children: [new TextRun({ text: `버전 ${MANUAL_CONTENT.version}  ·  발행일 ${new Date().toISOString().slice(0, 10)}`, size: 20, color: COLORS.text })],
+      children: [new TextRun({ text: `버전 ${content.version}  ·  발행일 ${new Date().toISOString().slice(0, 10)}`, size: 20, color: COLORS.text })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 2400 },
     }),
@@ -9823,7 +10516,7 @@ async function downloadManualAsDocx() {
   ];
   
   // 각 섹션을 변환
-  MANUAL_CONTENT.sections.forEach(section => {
+  content.sections.forEach(section => {
     // 섹션 제목 (Heading 1)
     children.push(new Paragraph({
       children: [new TextRun({ text: section.title, size: 32, bold: true, color: COLORS.brand })],
@@ -9917,8 +10610,8 @@ async function downloadManualAsDocx() {
   
   const doc = new Document({
     creator: 'KOITION HR System',
-    title: MANUAL_CONTENT.title,
-    description: MANUAL_CONTENT.subtitle,
+    title: content.title,
+    description: content.subtitle,
     styles: {
       default: {
         document: { run: { font: 'Malgun Gothic', size: 22 } },
@@ -9936,7 +10629,7 @@ async function downloadManualAsDocx() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `KOITION_HR_매뉴얼_${MANUAL_CONTENT.version}_${new Date().toISOString().slice(0, 10)}.docx`;
+  link.download = `KOITION_HR_매뉴얼_${content.version}_${new Date().toISOString().slice(0, 10)}.docx`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -9946,7 +10639,8 @@ async function downloadManualAsDocx() {
 // ============================================================
 // 매뉴얼을 PDF로 인쇄 (새 창 열고 인쇄 다이얼로그)
 // ============================================================
-function openManualForPrint() {
+function openManualForPrint(manualContent) {
+  const content = manualContent || MANUAL_CONTENT;
   const win = window.open('', '_blank');
   if (!win) { alert('팝업 차단을 해제해주세요.'); return; }
   
@@ -9973,12 +10667,12 @@ function openManualForPrint() {
     return '';
   };
   
-  const sectionsHtml = MANUAL_CONTENT.sections.map(s => 
+  const sectionsHtml = content.sections.map(s => 
     `<section class="manual-section"><h1>${s.title}</h1>${s.blocks.map(renderBlock).join('')}</section>`
   ).join('');
   
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>${MANUAL_CONTENT.title}</title>
+<title>${content.title}</title>
 <style>
 @page { size: A4; margin: 25mm 20mm 20mm; }
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -10016,13 +10710,14 @@ tr:nth-child(even) td { background: #F8F9FB; }
 @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 </style></head><body>
 <div class="cover">
-  <div class="company">${MANUAL_CONTENT.company}</div>
-  <div class="title">${MANUAL_CONTENT.title}</div>
-  <div class="subtitle">${MANUAL_CONTENT.subtitle}</div>
-  <div class="meta">버전 ${MANUAL_CONTENT.version}  ·  발행일 ${today}</div>
+  <div class="company">${content.company}</div>
+  <div class="title">${content.title}</div>
+  <div class="subtitle">${content.subtitle}</div>
+  <div class="meta">버전 ${content.version}  ·  발행일 ${today}</div>
 </div>
 ${sectionsHtml}
 <script>setTimeout(() => { window.print(); }, 800);</script>
 </body></html>`;
   win.document.write(html); win.document.close();
 }
+
