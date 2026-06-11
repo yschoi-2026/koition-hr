@@ -66,153 +66,177 @@ const FONT_DISPLAY = '"Cormorant Garamond", "Georgia", serif';
 // ============================================================
 // 코이션 로고 (SVG 인라인 - 외부 파일 불필요)
 // ============================================================
-function KoitionLogo({ size = 32, showText = true, variant = 'dark' }) {
-  // size는 K심볼의 높이 기준 (예: 32 → K심볼 32px, 텍스트는 비율로 자동 계산)
+function KoitionLogo({ size = 28, showText = true, variant = 'dark' }) {
+  // 4분할 K 심볼 + KOITION 텍스트
+  // dark variant: 밝은 배경용 (헤더, 시스템 내부)
+  // light variant: 어두운 배경용 (로그인 화면) - K 심볼은 컬러풀 유지, 텍스트만 흰색
   const textColor = variant === 'dark' ? T.brand : '#FFFFFF';
-  const subTextColor = variant === 'dark' ? T.brand : 'rgba(255,255,255,0.9)';
-  const redColor = '#E60012';  // 강렬한 코이션 레드
+  const subTextColor = variant === 'dark' ? T.textMute : 'rgba(255,255,255,0.7)';
   const uid = `${variant}-${Math.random().toString(36).slice(2, 8)}`;
   
-  // K 심볼 SVG 컴포넌트 (재사용)
-  const KSymbol = () => (
-    <svg width={size} height={size} viewBox="0 0 70 90" xmlns="http://www.w3.org/2000/svg" 
-      style={{ flexShrink: 0, display: 'block' }}>
-      <defs>
-        {/* 메인 그라데이션 - 좌측 큰 기둥 (어두운 남색 → 밝은 코발트) */}
-        <linearGradient id={`kMain-${uid}`} x1="50%" y1="0%" x2="50%" y2="100%">
-          <stop offset="0%" stopColor={variant === 'dark' ? '#1B3A8F' : '#FFFFFF'} />
-          <stop offset="35%" stopColor={variant === 'dark' ? '#1556C9' : '#FFFFFF'} />
-          <stop offset="70%" stopColor={variant === 'dark' ? '#0B2C7A' : '#E6EEF8'} />
-          <stop offset="100%" stopColor={variant === 'dark' ? '#0A1F5C' : '#D6E0F0'} />
-        </linearGradient>
-        
-        {/* 우측 중간 작은 사각형 - 밝은 코발트 */}
-        <linearGradient id={`kMid-${uid}`} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor={variant === 'dark' ? '#1E70E0' : '#FFFFFF'} />
-          <stop offset="100%" stopColor={variant === 'dark' ? '#0B4FBF' : '#E6EEF8'} />
-        </linearGradient>
-        
-        {/* 우측 하단 큰 사각형 - 진한 남색 */}
-        <linearGradient id={`kBot-${uid}`} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor={variant === 'dark' ? '#0E2D7A' : '#E6EEF8'} />
-          <stop offset="100%" stopColor={variant === 'dark' ? '#091F5A' : '#C9D6E8'} />
-        </linearGradient>
-      </defs>
-      
-      {/* 좌측 큰 K 기둥 - 둥근 모서리 (위·아래는 둥글게, 우측은 직각) */}
-      <path 
-        d="M 4,12 
-           Q 4,4 12,4 
-           L 20,4 
-           Q 28,4 28,12 
-           L 28,82 
-           Q 28,90 20,90 
-           L 12,90 
-           Q 4,90 4,82 
-           Z" 
-        fill={`url(#kMain-${uid})`} 
-      />
-      
-      {/* 우측 상단 빨간 사각형 (액센트) - 살짝 둥근 모서리, 우측만 더 둥글게 */}
-      <path 
-        d="M 42,4 
-           L 58,4 
-           Q 66,4 66,12 
-           L 66,22 
-           L 42,22 
-           Z" 
-        fill={redColor} 
-      />
-      
-      {/* 우측 중간 작은 사각형 - 밝은 코발트 */}
-      <rect x="36" y="32" width="22" height="20" rx="2" fill={`url(#kMid-${uid})`} />
-      
-      {/* 우측 하단 큰 사각형 (K의 오른쪽 다리) - 우하단 둥글게 */}
-      <path 
-        d="M 36,60 
-           L 58,60 
-           Q 66,60 66,68 
-           L 66,82 
-           Q 66,90 58,90 
-           L 44,90 
-           Q 36,90 36,82 
-           Z" 
-        fill={`url(#kBot-${uid})`} 
-      />
-    </svg>
-  );
-  
-  // showText=false 또는 컴팩트 모드: K심볼만 표시
-  if (!showText) {
-    return <KSymbol />;
-  }
-  
-  // 가로형 풀 로고: K심볼 + KOREA / KOITION / INNOVATION
-  const koreaSize = size * 0.22;       // "KOREA" 작은 글씨
-  const koitionSize = size * 0.62;     // "KOITION" 메인
-  const innovSize = size * 0.22;       // "INNOVATION" 작은 글씨
-  
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: size * 0.4 }}>
-      <KSymbol />
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+      {/* 4분할 K 심볼 - 두 variant 모두 컬러풀 유지 */}
+      <svg width={size} height={size * (90/70)} viewBox="0 0 70 90" xmlns="http://www.w3.org/2000/svg" 
+        style={{ flexShrink: 0, display: 'block' }}>
+        <defs>
+          {/* 좌측 큰 K 기둥 그라데이션 - 4단계 */}
+          <linearGradient id={`kMain-${uid}`} x1="50%" y1="0%" x2="50%" y2="100%">
+            {variant === 'dark' ? (
+              <>
+                <stop offset="0%" stopColor="#1B3A8F" />
+                <stop offset="35%" stopColor="#1556C9" />
+                <stop offset="70%" stopColor="#0B2C7A" />
+                <stop offset="100%" stopColor="#0A1F5C" />
+              </>
+            ) : (
+              // light variant - 어두운 배경에서 잘 보이도록 살짝 밝게 조정
+              <>
+                <stop offset="0%" stopColor="#3D6BD6" />
+                <stop offset="35%" stopColor="#2E6FD8" />
+                <stop offset="70%" stopColor="#1B4FA8" />
+                <stop offset="100%" stopColor="#143D85" />
+              </>
+            )}
+          </linearGradient>
+          {/* 우측 중단 파란 사각형 그라데이션 */}
+          <linearGradient id={`kMid-${uid}`} x1="0%" y1="0%" x2="100%" y2="100%">
+            {variant === 'dark' ? (
+              <>
+                <stop offset="0%" stopColor="#1E70E0" />
+                <stop offset="100%" stopColor="#0B4FBF" />
+              </>
+            ) : (
+              <>
+                <stop offset="0%" stopColor="#3F8FF5" />
+                <stop offset="100%" stopColor="#1E70E0" />
+              </>
+            )}
+          </linearGradient>
+          {/* 우측 하단 진남 사각형 그라데이션 */}
+          <linearGradient id={`kBot-${uid}`} x1="0%" y1="0%" x2="100%" y2="100%">
+            {variant === 'dark' ? (
+              <>
+                <stop offset="0%" stopColor="#0E2D7A" />
+                <stop offset="100%" stopColor="#091F5A" />
+              </>
+            ) : (
+              <>
+                <stop offset="0%" stopColor="#1F4DAE" />
+                <stop offset="100%" stopColor="#13348A" />
+              </>
+            )}
+          </linearGradient>
+        </defs>
+        
+        {/* 1. 좌측 큰 K 기둥 (둥근 모서리, 세로로 긴 형태) */}
+        <path 
+          d="M 4,12 Q 4,4 12,4 L 20,4 Q 28,4 28,12 L 28,82 Q 28,90 20,90 L 12,90 Q 4,90 4,82 Z" 
+          fill={`url(#kMain-${uid})`}
+        />
+        
+        {/* 2. 우측 상단 빨간 사각형 (우상단 모서리만 둥글게) - 코이션 레드 (두 variant 모두 유지) */}
+        <path 
+          d="M 42,4 L 58,4 Q 66,4 66,12 L 66,22 L 42,22 Z" 
+          fill={variant === 'dark' ? '#E60012' : '#FF2538'}
+        />
+        
+        {/* 3. 우측 중단 파란 사각형 (직사각형) */}
+        <rect 
+          x="36" y="32" width="22" height="20" rx="2" 
+          fill={`url(#kMid-${uid})`}
+        />
+        
+        {/* 4. 우측 하단 진남 사각형 (좌하·우하 둥글게) */}
+        <path 
+          d="M 36,60 L 58,60 Q 66,60 66,68 L 66,82 Q 66,90 58,90 L 44,90 Q 36,90 36,82 Z" 
+          fill={`url(#kBot-${uid})`}
+        />
+      </svg>
       
-      {/* 우측 텍스트 블록: KOREA / KOITION / INNOVATION */}
-      <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
-        {/* KOREA */}
-        <div style={{ 
-          fontSize: koreaSize, 
-          fontWeight: 500, 
-          color: subTextColor,
-          letterSpacing: '0.35em',
-          fontFamily: FONT,
-          marginBottom: koreaSize * 0.4,
-          paddingLeft: koreaSize * 0.3
-        }}>
-          KOREA
+      {/* KOITION 텍스트 */}
+      {showText && (
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', lineHeight: 1 }}>
+          <div style={{ 
+            fontSize: 15, fontWeight: 800, color: textColor, 
+            letterSpacing: '0.08em', fontFamily: FONT
+          }}>
+            KOITION
+          </div>
+          <div style={{ 
+            fontSize: 8, fontWeight: 600, color: subTextColor, 
+            letterSpacing: '0.22em', marginTop: 2, fontFamily: FONT
+          }}>
+            HR · ARCHIVE
+          </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// K Watermark · 메인 콘텐츠 영역 배경 워터마크
+// 헤더 K 로고와 통일된 4분할 디자인
+// pointer-events: none으로 상호작용 방해 없음
+// ============================================================
+function KWatermark() {
+  return (
+    <div 
+      aria-hidden="true"
+      style={{ 
+        position: 'absolute',
+        right: -100,
+        bottom: -120,
+        width: 560,
+        height: 720,
+        pointerEvents: 'none',
+        zIndex: 0,
+        opacity: 0.06,
+        transform: 'rotate(-8deg)',
+        userSelect: 'none',
+        overflow: 'hidden'
+      }}
+    >
+      <svg viewBox="0 0 70 90" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <linearGradient id="kWmMain" x1="50%" y1="0%" x2="50%" y2="100%">
+            <stop offset="0%" stopColor="#1B3A8F" />
+            <stop offset="35%" stopColor="#1556C9" />
+            <stop offset="70%" stopColor="#0B2C7A" />
+            <stop offset="100%" stopColor="#0A1F5C" />
+          </linearGradient>
+          <linearGradient id="kWmMid" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#1E70E0" />
+            <stop offset="100%" stopColor="#0B4FBF" />
+          </linearGradient>
+          <linearGradient id="kWmBot" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#0E2D7A" />
+            <stop offset="100%" stopColor="#091F5A" />
+          </linearGradient>
+        </defs>
         
-        {/* 상단 빨간 가로선 */}
-        <div style={{ 
-          height: 1.5, 
-          background: redColor, 
-          marginBottom: koitionSize * 0.15,
-          width: '100%'
-        }} />
+        {/* 1. 좌측 큰 K 기둥 */}
+        <path 
+          d="M 4,12 Q 4,4 12,4 L 20,4 Q 28,4 28,12 L 28,82 Q 28,90 20,90 L 12,90 Q 4,90 4,82 Z" 
+          fill="url(#kWmMain)"
+        />
         
-        {/* KOITION (메인) */}
-        <div style={{ 
-          fontSize: koitionSize, 
-          fontWeight: 800, 
-          color: textColor,
-          letterSpacing: '0.02em',
-          fontFamily: FONT,
-          lineHeight: 0.95
-        }}>
-          KOITION
-        </div>
+        {/* 2. 우측 상단 빨간 사각형 */}
+        <path 
+          d="M 42,4 L 58,4 Q 66,4 66,12 L 66,22 L 42,22 Z" 
+          fill="#E60012"
+        />
         
-        {/* 하단 빨간 가로선 */}
-        <div style={{ 
-          height: 1.5, 
-          background: redColor, 
-          marginTop: koitionSize * 0.15,
-          marginBottom: innovSize * 0.4,
-          width: '100%'
-        }} />
+        {/* 3. 우측 중단 파란 사각형 */}
+        <rect x="36" y="32" width="22" height="20" rx="2" fill="url(#kWmMid)" />
         
-        {/* INNOVATION */}
-        <div style={{ 
-          fontSize: innovSize, 
-          fontWeight: 500, 
-          color: subTextColor,
-          letterSpacing: '0.35em',
-          fontFamily: FONT,
-          paddingRight: innovSize * 0.3,
-          textAlign: 'right'
-        }}>
-          INNOVATION
-        </div>
-      </div>
+        {/* 4. 우측 하단 진남 사각형 */}
+        <path 
+          d="M 36,60 L 58,60 Q 66,60 66,68 L 66,82 Q 66,90 58,90 L 44,90 Q 36,90 36,82 Z" 
+          fill="url(#kWmBot)"
+        />
+      </svg>
     </div>
   );
 }
@@ -2160,6 +2184,41 @@ export default function App() {
     ));
     return { success: true };
   };
+  
+  // 본인 아이디(username) 변경 (admin 전용)
+  const handleChangeUsername = async (currentPassword, newUsername) => {
+    if (user.role !== 'admin') return { success: false, error: '아이디 변경은 admin 전용 기능입니다' };
+    
+    // 1. 현재 비밀번호 검증
+    const currentUser = users.find(u => u.username === user.username);
+    if (!currentUser) return { success: false, error: '사용자를 찾을 수 없습니다' };
+    const isCurrentValid = await verifyPassword(currentPassword, currentUser.passwordHash);
+    if (!isCurrentValid) return { success: false, error: '현재 비밀번호가 일치하지 않습니다' };
+    
+    // 2. 새 아이디 유효성 검증
+    const trimmed = (newUsername || '').trim();
+    if (!trimmed) return { success: false, error: '새 아이디를 입력하세요' };
+    if (trimmed.length < 3) return { success: false, error: '아이디는 최소 3자 이상이어야 합니다' };
+    if (trimmed.length > 20) return { success: false, error: '아이디는 최대 20자까지 가능합니다' };
+    if (!/^[a-zA-Z0-9_-]+$/.test(trimmed)) return { success: false, error: '아이디는 영문, 숫자, 언더바(_), 하이픈(-)만 사용 가능합니다' };
+    if (trimmed === user.username) return { success: false, error: '현재 아이디와 동일합니다' };
+    
+    // 3. 중복 확인
+    const exists = users.some(u => u.username.toLowerCase() === trimmed.toLowerCase() && u.username !== user.username);
+    if (exists) return { success: false, error: '이미 사용 중인 아이디입니다' };
+    
+    // 4. 변경 수행
+    setUsers(prev => prev.map(u => 
+      u.username === user.username 
+        ? { ...u, username: trimmed }
+        : u
+    ));
+    
+    // 5. 현재 user 객체도 업데이트
+    setUser(prev => ({ ...prev, username: trimmed }));
+    
+    return { success: true, newUsername: trimmed };
+  };
 
   useEffect(() => {
     try {
@@ -2338,7 +2397,15 @@ export default function App() {
         <div style={{ display: 'flex', minHeight: 'calc(100vh - 72px)' }}>
           <Sidebar visibleMenus={visibleMenus} tab={tab} setTab={setTab} user={user} stats={stats} />
           
-          <main style={{ flex: 1, padding: `${S[7]}px ${S[8]}px`, overflow: 'auto', maxWidth: `calc(100vw - ${SIDEBAR_W}px)` }}>
+          <main style={{ 
+            flex: 1, padding: `${S[7]}px ${S[8]}px`, overflow: 'auto', 
+            maxWidth: `calc(100vw - ${SIDEBAR_W}px)`,
+            position: 'relative'
+          }}>
+            {/* K 워터마크 - 메인 영역 우하단 거대 배경 */}
+            <KWatermark />
+            
+            <div style={{ position: 'relative', zIndex: 1 }}>
             {tab === 'dashboard' && <DashboardView user={user} stats={stats} employees={visibleEmployees} results={results} policy={policy} setTab={setTab} submissions={submissions} />}
             {tab === 'self' && <SelfEvalView user={user} employees={employees} selfScores={selfScores} updateSelfScore={updateSelfScore} comments={comments} updateComment={updateComment} policy={policy} submissions={submissions} submitSelfEval={submitSelfEval} />}
             {tab === 'employees' && <EmployeesView user={user} users={users} employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} deleteEmployee={deleteEmployee} history={history} results={results} currentYear={currentYear} policy={policy} onResetPassword={(emp) => {
@@ -2354,6 +2421,7 @@ export default function App() {
             {tab === 'notify' && <NotifyView employees={employees} results={results} currentYear={currentYear} />}
             {tab === 'policy' && <PolicyView policy={policy} setPolicy={setPolicy} />}
             {tab === 'guide' && <GuideView user={user} manualContent={manualContent} onSaveManual={handleSaveManual} onResetManual={handleResetManual} />}
+            </div>
           </main>
         </div>
         
@@ -2364,9 +2432,14 @@ export default function App() {
           <PasswordChangeModal
             user={user}
             onChangePassword={handleChangeOwnPassword}
+            onChangeUsername={handleChangeUsername}
             onClose={() => setPasswordModalOpen(false)}
             onSuccess={() => {
               showToast('비밀번호가 변경되었습니다');
+              setPasswordModalOpen(false);
+            }}
+            onUsernameSuccess={(newUsername) => {
+              showToast(`아이디가 "${newUsername}"로 변경되었습니다`);
               setPasswordModalOpen(false);
             }}
           />
@@ -2590,7 +2663,12 @@ function GradeBadge({ grade, size = 'md' }) {
 // 본인 비밀번호 변경 모달
 // 현재 비밀번호 검증 + 새 비밀번호 복잡성 검증 + 강도 시각화
 // ============================================================
-function PasswordChangeModal({ user, onChangePassword, onClose, onSuccess }) {
+function PasswordChangeModal({ user, onChangePassword, onChangeUsername, onClose, onSuccess, onUsernameSuccess }) {
+  // 탭 상태 - admin만 'username' 탭 사용 가능
+  const isAdmin = user.role === 'admin';
+  const [activeTab, setActiveTab] = useState('password');  // 'password' | 'username'
+  
+  // 비밀번호 변경 폼 상태
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -2599,9 +2677,24 @@ function PasswordChangeModal({ user, onChangePassword, onClose, onSuccess }) {
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   
+  // 아이디 변경 폼 상태 (admin 전용)
+  const [usernameCurrentPassword, setUsernameCurrentPassword] = useState('');
+  const [newUsername, setNewUsername] = useState('');
+  const [usernameError, setUsernameError] = useState('');
+  const [usernameLoading, setUsernameLoading] = useState(false);
+  const [showUsernamePassword, setShowUsernamePassword] = useState(false);
+  
   const validation = validatePassword(newPassword, user.username, user.name);
   const passwordsMatch = newPassword === confirmPassword && confirmPassword.length > 0;
   const canSubmit = currentPassword && newPassword && confirmPassword && validation.valid && passwordsMatch && !loading;
+  
+  // 아이디 검증
+  const trimmedNewUsername = (newUsername || '').trim();
+  const usernameValid = trimmedNewUsername.length >= 3 
+    && trimmedNewUsername.length <= 20
+    && /^[a-zA-Z0-9_-]+$/.test(trimmedNewUsername)
+    && trimmedNewUsername !== user.username;
+  const canSubmitUsername = usernameCurrentPassword && usernameValid && !usernameLoading;
   
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -2621,6 +2714,24 @@ function PasswordChangeModal({ user, onChangePassword, onClose, onSuccess }) {
     }
   };
   
+  const handleSubmitUsername = async () => {
+    if (!canSubmitUsername) return;
+    setUsernameError('');
+    setUsernameLoading(true);
+    try {
+      const result = await onChangeUsername(usernameCurrentPassword, trimmedNewUsername);
+      if (result.success) {
+        onUsernameSuccess(result.newUsername);
+      } else {
+        setUsernameError(result.error || '아이디 변경에 실패했습니다');
+      }
+    } catch (e) {
+      setUsernameError('처리 중 오류가 발생했습니다');
+    } finally {
+      setUsernameLoading(false);
+    }
+  };
+  
   const strengthColors = [T.danger, T.danger, T.warning, T.brand, T.success];
   const strengthColor = strengthColors[validation.score];
   
@@ -2636,18 +2747,19 @@ function PasswordChangeModal({ user, onChangePassword, onClose, onSuccess }) {
       }}>
         {/* 헤더 */}
         <div style={{ 
-          padding: `${S[5]}px ${S[6]}px`, borderBottom: `1px solid ${T.border}`,
+          padding: `${S[5]}px ${S[6]}px ${isAdmin ? S[3] : S[5]}px`, 
+          borderBottom: `1px solid ${T.border}`,
           display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: S[3]
         }}>
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: T.brand, letterSpacing: '0.15em', marginBottom: 2 }}>
-              SECURITY · 비밀번호 변경
+              SECURITY · 계정 관리
             </div>
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: T.ink }}>
-              내 비밀번호 변경
+              {activeTab === 'password' ? '내 비밀번호 변경' : '내 아이디 변경'}
             </h2>
             <div style={{ fontSize: 11, color: T.textMute, marginTop: 4 }}>
-              {user.name} ({user.username}) · 본인 계정 비밀번호를 변경합니다
+              {user.name} (<code style={{ background: T.surfaceAlt, padding: '1px 5px', borderRadius: 3, fontSize: 10 }}>{user.username}</code>) · 본인 계정 정보를 변경합니다
             </div>
           </div>
           <button onClick={onClose} style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}>
@@ -2655,7 +2767,51 @@ function PasswordChangeModal({ user, onChangePassword, onClose, onSuccess }) {
           </button>
         </div>
         
-        {/* 본문 */}
+        {/* 탭 (admin 전용) */}
+        {isAdmin && (
+          <div style={{ 
+            display: 'flex', padding: `0 ${S[6]}px`, gap: 0,
+            borderBottom: `1px solid ${T.border}`, background: T.surfaceAlt
+          }}>
+            <button 
+              onClick={() => setActiveTab('password')}
+              style={{ 
+                padding: `${S[3]}px ${S[4]}px`, 
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                fontFamily: FONT, fontSize: 12, fontWeight: 600,
+                color: activeTab === 'password' ? T.brand : T.textMute,
+                borderBottom: activeTab === 'password' ? `2px solid ${T.brand}` : '2px solid transparent',
+                marginBottom: -1, transition: 'all 0.15s',
+                display: 'inline-flex', alignItems: 'center', gap: 6
+              }}
+            >
+              🔑 비밀번호 변경
+            </button>
+            <button 
+              onClick={() => setActiveTab('username')}
+              style={{ 
+                padding: `${S[3]}px ${S[4]}px`, 
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                fontFamily: FONT, fontSize: 12, fontWeight: 600,
+                color: activeTab === 'username' ? T.brand : T.textMute,
+                borderBottom: activeTab === 'username' ? `2px solid ${T.brand}` : '2px solid transparent',
+                marginBottom: -1, transition: 'all 0.15s',
+                display: 'inline-flex', alignItems: 'center', gap: 6
+              }}
+            >
+              👤 아이디 변경
+              <span style={{ 
+                fontSize: 8, padding: '1px 4px', background: T.warning, color: '#fff',
+                borderRadius: 2, fontWeight: 700, letterSpacing: '0.05em'
+              }}>
+                ADMIN
+              </span>
+            </button>
+          </div>
+        )}
+        
+        {/* 본문 - 탭에 따라 분기 */}
+        {activeTab === 'password' && (
         <div style={{ padding: `${S[5]}px ${S[6]}px` }}>
           {/* 현재 비밀번호 */}
           <div style={{ marginBottom: S[4] }}>
@@ -2784,16 +2940,152 @@ function PasswordChangeModal({ user, onChangePassword, onClose, onSuccess }) {
             </div>
           )}
         </div>
+        )}
         
-        {/* 푸터 */}
+        {/* 아이디 변경 탭 (admin 전용) */}
+        {activeTab === 'username' && isAdmin && (
+        <div style={{ padding: `${S[5]}px ${S[6]}px` }}>
+          {/* 안내 박스 */}
+          <div style={{ 
+            padding: `${S[3]}px ${S[4]}px`, background: '#FFF8E6', 
+            borderLeft: `3px solid ${T.warning}`, borderRadius: 4,
+            marginBottom: S[4], fontSize: 11, color: T.text, lineHeight: 1.7
+          }}>
+            <strong style={{ color: T.warning }}>⚠ 아이디 변경 시 주의사항</strong>
+            <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+              <li>아이디 변경 후 다음 로그인부터 새 아이디로 로그인해야 합니다</li>
+              <li>변경 즉시 적용되며 시스템 데이터는 그대로 유지됩니다</li>
+              <li>새 아이디는 시스템 내 다른 사용자와 중복될 수 없습니다</li>
+            </ul>
+          </div>
+          
+          {/* 현재 아이디 표시 */}
+          <div style={{ 
+            padding: `${S[3]}px ${S[4]}px`, background: T.surfaceAlt, borderRadius: 6,
+            marginBottom: S[4], display: 'flex', alignItems: 'center', gap: S[3]
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.textMute, letterSpacing: '0.1em' }}>
+              현재 아이디
+            </div>
+            <code style={{ 
+              fontSize: 14, fontWeight: 700, color: T.brand, 
+              background: T.surface, padding: '4px 10px', borderRadius: 4,
+              fontFamily: '"SF Mono", Monaco, monospace'
+            }}>
+              {user.username}
+            </code>
+          </div>
+          
+          {/* 현재 비밀번호 확인 */}
+          <div style={{ marginBottom: S[4] }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: T.text, display: 'block', marginBottom: 6 }}>
+              현재 비밀번호 (본인 확인)
+            </label>
+            <div style={{ position: 'relative' }}>
+              <input 
+                type={showUsernamePassword ? 'text' : 'password'} 
+                value={usernameCurrentPassword} 
+                onChange={e => setUsernameCurrentPassword(e.target.value)}
+                placeholder="본인 확인을 위해 현재 비밀번호를 입력하세요"
+                autoFocus
+                style={{ 
+                  width: '100%', padding: '10px 38px 10px 14px', 
+                  border: `1px solid ${T.border}`, borderRadius: 6,
+                  fontSize: 14, fontFamily: FONT, boxSizing: 'border-box', outline: 'none'
+                }}
+              />
+              <button onClick={() => setShowUsernamePassword(!showUsernamePassword)} type="button"
+                style={{ 
+                  position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  fontSize: 10, color: T.textMute, fontFamily: FONT
+                }}>
+                {showUsernamePassword ? '숨김' : '보기'}
+              </button>
+            </div>
+          </div>
+          
+          {/* 새 아이디 */}
+          <div style={{ marginBottom: S[4] }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: T.text, display: 'block', marginBottom: 6 }}>
+              새 아이디
+            </label>
+            <input 
+              type="text" 
+              value={newUsername} 
+              onChange={e => setNewUsername(e.target.value)}
+              placeholder="3~20자, 영문/숫자/_/- 만 사용 가능"
+              style={{ 
+                width: '100%', padding: '10px 14px', 
+                border: `1px solid ${newUsername && !usernameValid ? T.danger : T.border}`, 
+                borderRadius: 6, fontSize: 14, fontFamily: '"SF Mono", Monaco, monospace', 
+                boxSizing: 'border-box', outline: 'none', letterSpacing: '0.03em'
+              }}
+            />
+            {newUsername && !usernameValid && (
+              <div style={{ fontSize: 10, color: T.danger, marginTop: 4 }}>
+                {trimmedNewUsername.length < 3 && '최소 3자 이상 입력하세요'}
+                {trimmedNewUsername.length >= 3 && trimmedNewUsername.length > 20 && '최대 20자까지 입력 가능합니다'}
+                {trimmedNewUsername.length >= 3 && trimmedNewUsername.length <= 20 && !/^[a-zA-Z0-9_-]+$/.test(trimmedNewUsername) && '영문, 숫자, _, - 만 사용 가능합니다'}
+                {trimmedNewUsername === user.username && '현재 아이디와 동일합니다'}
+              </div>
+            )}
+            {newUsername && usernameValid && (
+              <div style={{ fontSize: 10, color: T.success, marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <CheckCircle2 size={11} /> 유효한 아이디 형식입니다 ({trimmedNewUsername.length}자)
+              </div>
+            )}
+          </div>
+          
+          {/* 변경 미리보기 */}
+          {usernameValid && (
+            <div style={{ 
+              padding: `${S[3]}px ${S[4]}px`, background: '#F0F7F1',
+              borderLeft: `3px solid ${T.success}`, borderRadius: 4,
+              marginBottom: S[4], fontSize: 12, color: T.text
+            }}>
+              <strong style={{ color: T.success }}>✓ 변경 미리보기</strong>
+              <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: S[2], fontFamily: '"SF Mono", Monaco, monospace', fontSize: 13 }}>
+                <code style={{ background: T.surface, padding: '3px 8px', borderRadius: 3, color: T.textMute, textDecoration: 'line-through' }}>
+                  {user.username}
+                </code>
+                <span style={{ color: T.textMute }}>→</span>
+                <code style={{ background: T.success, padding: '3px 8px', borderRadius: 3, color: '#fff', fontWeight: 700 }}>
+                  {trimmedNewUsername}
+                </code>
+              </div>
+            </div>
+          )}
+          
+          {/* 오류 메시지 */}
+          {usernameError && (
+            <div style={{ 
+              padding: '10px 12px', background: '#FBEAEA', border: `1px solid ${T.danger}`,
+              borderRadius: 4, fontSize: 11, color: T.danger,
+              display: 'flex', alignItems: 'center', gap: 6
+            }}>
+              <AlertCircle size={13} /> {usernameError}
+            </div>
+          )}
+        </div>
+        )}
+        
+        {/* 푸터 - 활성 탭에 따라 다른 액션 */}
         <div style={{ 
           padding: `${S[3]}px ${S[6]}px`, borderTop: `1px solid ${T.border}`,
           background: T.surfaceAlt, display: 'flex', justifyContent: 'flex-end', gap: S[2]
         }}>
           <Button variant="outline" size="md" onClick={onClose}>취소</Button>
-          <Button variant="primary" size="md" onClick={handleSubmit} disabled={!canSubmit}>
-            {loading ? '변경 중...' : '비밀번호 변경'}
-          </Button>
+          {activeTab === 'password' && (
+            <Button variant="primary" size="md" onClick={handleSubmit} disabled={!canSubmit}>
+              {loading ? '변경 중...' : '비밀번호 변경'}
+            </Button>
+          )}
+          {activeTab === 'username' && (
+            <Button variant="primary" size="md" onClick={handleSubmitUsername} disabled={!canSubmitUsername}>
+              {usernameLoading ? '변경 중...' : '아이디 변경'}
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -3002,15 +3294,28 @@ function Header({ user, onLogout, handleSave, handleExport, handleImport, onChan
       boxShadow: T.shadowHeader,
       position: 'sticky', top: 0, zIndex: 50
     }}>
-      {/* 로고 영역 - 사이드바와 동일 너비 */}
-      <div style={{ 
-        width: SIDEBAR_W, flexShrink: 0,
-        padding: `0 ${S[4]}px`, display: 'flex', alignItems: 'center',
-        borderRight: `1px solid ${T.border}`,
-        cursor: 'pointer'
-      }}>
-        <KoitionLogo size={28} />
-      </div>
+      {/* 로고 영역 - 사이드바와 동일 너비. 클릭하면 로그아웃 */}
+      <button
+        onClick={() => {
+          if (window.confirm('로그아웃하시겠습니까?\n로그인 화면으로 돌아갑니다.')) {
+            onLogout();
+          }
+        }}
+        title="클릭하여 로그아웃 (로그인 화면으로 이동)"
+        style={{ 
+          width: SIDEBAR_W, flexShrink: 0,
+          padding: `0 ${S[4]}px`, display: 'flex', alignItems: 'center',
+          cursor: 'pointer',
+          background: 'transparent', border: 'none',
+          borderRight: `1px solid ${T.border}`,
+          fontFamily: FONT, transition: 'background 0.15s',
+          textAlign: 'left'
+        }}
+        onMouseEnter={e => e.currentTarget.style.background = T.surfaceAlt}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+      >
+        <KoitionLogo size={26} />
+      </button>
 
       {/* 우측 액션 영역 */}
       <div style={{ 
@@ -10720,4 +11025,3 @@ ${sectionsHtml}
 </body></html>`;
   win.document.write(html); win.document.close();
 }
-
