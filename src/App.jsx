@@ -846,20 +846,24 @@ function CardStat({ label, value, highlight }) {
 // ⚠️ 모든 계정은 첫 로그인 후 즉시 비밀번호를 변경하셔야 합니다
 // ============================================================
 const INITIAL_USERS = [
-  { username: 'admin', password: 'admin', role: 'admin', name: '인사담당자', empId: null, deptScope: '전체' },
-  { username: 'jiy', password: '1234', role: 'manager', name: '정일영', empId: 'K-140401', deptScope: '경영기획본부' },
-  { username: 'cjk', password: '1234', role: 'manager', name: '최재교', empId: 'K-140402', deptScope: '공공사업본부' },
-  { username: 'sys', password: '1234', role: 'manager', name: '신수호', empId: 'K-140404', deptScope: '사업관리부' },
-  { username: 'ljm', password: '1234', role: 'manager', name: '이종민', empId: 'K-231001', deptScope: '서비스개발부' },
-  { username: 'cys', password: '1234', role: 'manager', name: '최영숙', empId: 'K-140403', deptScope: '경영지원부' },
-  { username: 'lwk', password: '1234', role: 'evaluator', name: '이원규', empId: 'K-180501', deptScope: '아카이브사업팀' },
-  { username: 'sdh', password: '1234', role: 'evaluator', name: '심도현', empId: 'K-170801', deptScope: '데이터큐레이션팀' },
-  { username: 'owk', password: '1234', role: 'employee', name: '오윤경', empId: 'K-220601' },
-  { username: 'whw', password: '1234', role: 'employee', name: '원동현', empId: 'K-200501' },
-  { username: 'jye', password: '1234', role: 'employee', name: '정예람', empId: 'K-241201' },
-  { username: 'chy', password: '1234', role: 'employee', name: '최하연', empId: 'K-240403' },
-  { username: 'jeh', password: '1234', role: 'employee', name: '조은희', empId: 'K-240401' },
-  { username: 'gyh', password: '1234', role: 'employee', name: '고영훈', empId: 'K-240202' },
+  { username: 'admin', password: 'gsH$w77p', role: 'admin', name: '인사담당자', empId: null, deptScope: '전체' },
+  { username: 'jiy', password: 'S#8pg6zy', role: 'manager', name: '정일영', empId: 'K-140401', deptScope: '경영기획본부' },
+  { username: 'cjk', password: '4xb#2krK', role: 'manager', name: '최재교', empId: 'K-140402', deptScope: '공공사업본부' },
+  { username: 'sys', password: 'mU&6z2as', role: 'manager', name: '신수호', empId: 'K-140404', deptScope: '사업관리부' },
+  { username: 'ljm', password: 'p8Vun#g8', role: 'manager', name: '이종민', empId: 'K-231001', deptScope: '서비스개발부' },
+  { username: 'cys', password: 'uj!5n3Rs', role: 'manager', name: '최영숙', empId: 'K-140403', deptScope: '경영지원부' },
+  { username: 'lwk', password: 'z&yvYu56', role: 'evaluator', name: '이원규', empId: 'K-180501', deptScope: '아카이브사업팀' },
+  { username: 'sdh', password: '6ca6zaK%', role: 'evaluator', name: '심도현', empId: 'K-170801', deptScope: '데이터큐레이션팀' },
+  { username: 'owk', password: 'bgmUk9!3', role: 'employee', name: '오윤경', empId: 'K-220601' },
+  { username: 'whw', password: '#rSva2p7', role: 'employee', name: '원동현', empId: 'K-200501' },
+  { username: 'chy', password: 'm$vv5t4F', role: 'employee', name: '최하연', empId: 'K-240403' },
+  { username: 'jeh', password: '@N6t6ats', role: 'employee', name: '조은희', empId: 'K-240401' },
+  { username: 'gyh', password: 'v#Uemf34', role: 'employee', name: '고영훈', empId: 'K-240202' },
+  { username: 'onr', password: 'ju5m%H2v', role: 'employee', name: '오누리', empId: 'K-260301' },
+  { username: 'ljh', password: '9z$2Wkyt', role: 'employee', name: '임지홍', empId: 'K-260701' },
+  { username: 'chj', password: '9fDe%w5c', role: 'employee', name: '최하진', empId: 'K-260702' },
+  { username: 'csy', password: '*2jbfj7S', role: 'evaluator', name: '최순용', empId: 'K-250601', deptScope: '사업관리부' },
+  { username: 'lhj', password: 'L8qnb&8k', role: 'employee', name: '이흥주', empId: 'K-250602' },
 ];
 
 // ============================================================
@@ -1259,6 +1263,8 @@ const INITIAL_EMPLOYEES = [
   { id: 'K-240403', name: '최하연', dept: '기록연구부', position: '대리', level: 'L2', group: 'Archive', hireDate: '2024/04/08', baseSalary: 2512000, allowance: 0, mealCar: 200000, qualif: 200000, evalTarget: true, status: 'active', role: '기록전문', email: 'chy@koition.com', note: '' },
   { id: 'K-240401', name: '조은희', dept: '기록연구부', position: '대리', level: 'L1', group: 'Archive', hireDate: '2024/04/01', baseSalary: 2489800, allowance: 0, mealCar: 200000, qualif: 100000, evalTarget: true, status: 'active', role: '기록전문', email: 'jeh@koition.com', note: '' },
   { id: 'K-260301', name: '오누리', dept: '경영지원부', position: '주임', level: 'L1', group: 'Biz', hireDate: '2026/03/16', baseSalary: 2300000, allowance: 0, mealCar: 200000, qualif: 0, evalTarget: true, status: 'active', role: '', email: 'onr@koition.com', note: '신규입사' },
+  { id: 'K-260701', name: '임지홍', dept: '기록연구부', position: '사원', level: 'L1', group: 'Archive', hireDate: '2026/07/01', baseSalary: 2300000, allowance: 0, mealCar: 200000, qualif: 0, evalTarget: true, status: 'active', role: '', email: 'ljh@koition.com', note: '신규입사' },
+  { id: 'K-260702', name: '최하진', dept: '기록연구부', position: '사원', level: 'L1', group: 'Archive', hireDate: '2026/07/01', baseSalary: 2300000, allowance: 0, mealCar: 200000, qualif: 0, evalTarget: true, status: 'active', role: '', email: 'chj@koition.com', note: '신규입사' },
 ];
 
 const INITIAL_POLICY = {
@@ -1420,7 +1426,7 @@ const LEVEL_GUIDE = {
     },
     performance: {
       'KPI 달성도': '본인 담당 단위 업무의 80% 이상 완료. KPI 의미와 측정 방법 이해.',
-      '프로젝트 수익성·기여도': '프로젝트 일원으로서 본인 역할 명확히 수행. 직접 수주·영업 기여는 기대 안 함.',
+      '프로젝트 기여도': '프로젝트 일원으로서 본인 역할 명확히 수행. 직접 수주·영업 기여는 기대 안 함.',
       '납기 준수·완성도': '본인 담당 업무 납기 95% 이상 준수. 결과물은 검토 후 수정 거쳐 완성.',
       '고객 만족도·재계약': '직접 고객 응대는 제한적. 선배 동행 또는 보조 역할로 고객 접점 경험.',
     },
@@ -1440,7 +1446,7 @@ const LEVEL_GUIDE = {
     },
     performance: {
       'KPI 달성도': '담당 KPI 100% 달성 목표. 분기별 진척 관리 능력. 일부 KPI는 초과 달성 가능.',
-      '프로젝트 수익성·기여도': '소형 프로젝트 PM 또는 핵심 실무자로 기여. 원가·일정 관리 일부 책임.',
+      '프로젝트 기여도': '소형 프로젝트 PM 또는 핵심 실무자로 기여. 원가·일정 관리 일부 책임.',
       '납기 준수·완성도': '본인 담당 업무 납기 100% 준수. 결과물 자체 검토 후 제출. 재작업률 낮음.',
       '고객 만족도·재계약': '주요 고객 1~2개 직접 응대 가능. 고객 요구 파악 및 일반 응답 가능.',
     },
@@ -1460,7 +1466,7 @@ const LEVEL_GUIDE = {
     },
     performance: {
       'KPI 달성도': '담당 KPI 100% 이상 달성. 팀 KPI 일부 책임. 110% 이상 초과 달성 가능.',
-      '프로젝트 수익성·기여도': '중형 프로젝트 PM. 원가·일정·품질 종합 관리. 신규 수주 기여.',
+      '프로젝트 기여도': '중형 프로젝트 PM. 원가·일정·품질 종합 관리. 신규 수주 기여.',
       '납기 준수·완성도': '본인 + 팀원 납기 관리. 위기 대응 능력. 결과물 품질 일관성 유지.',
       '고객 만족도·재계약': '주요 고객 관계 관리. 추가 발주 유도. 클레임 대응 능력.',
     },
@@ -1480,7 +1486,7 @@ const LEVEL_GUIDE = {
     },
     performance: {
       'KPI 달성도': '본부 KPI 100% 이상. 전사 KPI 일부 책임. 신사업 KPI 설계.',
-      '프로젝트 수익성·기여도': '대형 프로젝트 책임. 본부 매출·이익 책임. 신규 사업 발굴·실행.',
+      '프로젝트 기여도': '대형 프로젝트 책임. 본부 매출·이익 책임. 신규 사업 발굴·실행.',
       '납기 준수·완성도': '본부 전체 납기·품질 관리. 위기 시 의사결정.',
       '고객 만족도·재계약': '대형 고객 관계 관리. 신규 시장 개척. 장기 파트너십 구축.',
     },
@@ -1665,14 +1671,14 @@ const RUBRICS = {
       ],
     },
     {
-      key: 'perf_profit', label: '프로젝트 수익성·기여도',
-      desc: '담당 프로젝트 수익률, 신규 수주 기여',
+      key: 'perf_profit', label: '프로젝트 기여도',
+      desc: '참여 프로젝트의 수익률 × 본인 기여도 비중 (경영지원부 수익성 데이터 연계 · 자동 산정)',
       bands: [
-        { range: '90~100', label: 'S급', grade: 'S', criteria: '담당 프로젝트 수익률 목표 대비 120% 이상. 신규 프로젝트 수주 1건 이상 주도. 원가 절감 아이디어 도입.' },
-        { range: '80~89', label: 'A급', grade: 'A', criteria: '수익률 목표 105~119%. 기존 고객 추가 발주 유도. 예산 내 프로젝트 완료.' },
-        { range: '70~79', label: 'B급', grade: 'B', criteria: '수익률 목표 90~104%. 예산 초과 없이 프로젝트 완료.' },
-        { range: '60~69', label: 'C급', grade: 'C', criteria: '수익률 목표 75~89%. 소규모 예산 초과 발생.' },
-        { range: '0~59', label: 'D급', grade: 'D', criteria: '수익률 목표 75% 미만. 예산 초과 또는 손실 발생.' },
+        { range: '90~100', label: 'S급', grade: 'S', criteria: '고수익률(25%↑) 프로젝트에 핵심 역할로 높은 기여. 원가 절감·신규 수주 주도.' },
+        { range: '80~89', label: 'A급', grade: 'A', criteria: '수익률 18~25% 프로젝트에 주도적 기여. 예산 내 완료 및 추가 발주 유도.' },
+        { range: '70~79', label: 'B급', grade: 'B', criteria: '수익률 12~18% 프로젝트에 실무 기여. 예산 초과 없이 완료.' },
+        { range: '60~69', label: 'C급', grade: 'C', criteria: '수익률 5~12% 프로젝트 참여. 기여 비중 제한적 또는 소규모 예산 초과.' },
+        { range: '0~59', label: 'D급', grade: 'D', criteria: '수익률 5% 미만·적자 프로젝트. 예산 초과 또는 손실 발생.' },
       ],
     },
     {
@@ -2033,6 +2039,92 @@ function calcSalary(emp, scores, policy) {
 }
 
 // ============================================================
+// 프로젝트 수익성 데이터 (경영지원부 소관)
+// - 프로젝트 종료·연말에 프로젝트별 매출·인건비·제경비·기타비를 입력/업로드하면
+//   수익률(영업이익률)이 자동 산정되고, 투입 직원의 기여도 점수로 환산된다.
+// - 개인이 프로젝트 수익성을 정량 평가할 수 없으므로, 업적평가의 '프로젝트 기여도'
+//   항목은 이 데이터를 근거로 자동 계산된다.
+// ============================================================
+const PROJECT_ROLES = ['PM', '핵심실무', '참여', '지원'];
+
+// 프로젝트 1건의 파생 지표 계산
+function projectMetrics(p) {
+  const revenue = Number(p.revenue) || 0;      // 매출
+  const labor = Number(p.laborCost) || 0;      // 인건비
+  const overhead = Number(p.overhead) || 0;    // 제경비
+  const other = Number(p.otherCost) || 0;      // 외주·기타 직접비
+  const cost = labor + overhead + other;        // 사업비(총원가)
+  const profit = revenue - cost;                // 영업이익
+  const rate = revenue > 0 ? (profit / revenue * 100) : null; // 수익률(영업이익률)
+  return { revenue, labor, overhead, other, cost, profit, rate, grade: rateGrade(rate), score: rateToScore(rate) };
+}
+
+// 수익률(%) → 점수(0~100) : Biz profit_rate 밴드 기준 통일
+function rateToScore(rate) {
+  if (rate == null || isNaN(rate)) return null;
+  if (rate >= 25) return 100;
+  if (rate >= 18) return 85;
+  if (rate >= 12) return 75;
+  if (rate >= 5) return 65;
+  return 50;
+}
+function rateGrade(rate) {
+  const s = rateToScore(rate);
+  if (s == null) return null;
+  return s >= 90 ? 'S' : s >= 80 ? 'A' : s >= 70 ? 'B' : s >= 60 ? 'C' : 'D';
+}
+
+// 직원의 프로젝트 기여도 점수 산정
+// 참여 프로젝트별 (수익률점수 × 기여도비중)의 가중평균
+function calcContributionScore(empId, projects, year) {
+  const mine = (projects || []).filter(p =>
+    (year == null || Number(p.year) === Number(year)) &&
+    (p.members || []).some(m => m.empId === empId)
+  );
+  if (mine.length === 0) return null;
+  let wsum = 0, ssum = 0;
+  const breakdown = [];
+  mine.forEach(p => {
+    const m = (p.members || []).find(x => x.empId === empId);
+    const mm = projectMetrics(p);
+    if (mm.score == null) return;
+    const w = Math.max(0, Number(m.contribution) || 0);
+    if (w <= 0) return;
+    wsum += w;
+    ssum += mm.score * w;
+    breakdown.push({ project: p, member: m, metrics: mm, weight: w });
+  });
+  if (wsum === 0) return null;
+  const score = Math.round(ssum / wsum);
+  const grade = score >= 90 ? 'S' : score >= 80 ? 'A' : score >= 70 ? 'B' : score >= 60 ? 'C' : 'D';
+  return { score, grade, breakdown };
+}
+
+// 초기 시드 데이터 (예시 - 실제 데이터로 교체/업로드)
+const INITIAL_PROJECTS = [
+  {
+    id: 'PRJ-2026-001', name: '동원탄좌 M650 아카이브 2차년도', client: '강원랜드 사업본부',
+    year: 2026, period: '2026.01~2026.12', status: 'ongoing',
+    revenue: 350000000, laborCost: 210000000, overhead: 45000000, otherCost: 30000000,
+    members: [
+      { empId: 'K-180501', role: 'PM', contribution: 45 },
+      { empId: 'K-170801', role: '핵심실무', contribution: 35 },
+    ],
+    note: '메타데이터 1,500점 · ISAD(G) 분류',
+  },
+  {
+    id: 'PRJ-2026-002', name: '광역시 공공기록물 정리·평가', client: '○○광역시 기록관',
+    year: 2026, period: '2026.03~2026.09', status: 'completed',
+    revenue: 180000000, laborCost: 120000000, overhead: 22000000, otherCost: 10000000,
+    members: [
+      { empId: 'K-170801', role: 'PM', contribution: 50 },
+      { empId: 'K-180501', role: '참여', contribution: 20 },
+    ],
+    note: '완료 · 발주처 CSAT 4.4',
+  },
+];
+
+// ============================================================
 // 메인 App
 // ============================================================
 export default function App() {
@@ -2046,6 +2138,7 @@ export default function App() {
   const [selfScores, setSelfScores] = useState({});
   const [comments, setComments] = useState({});
   const [submissions, setSubmissions] = useState({});
+  const [projects, setProjects] = useState(INITIAL_PROJECTS);  // 프로젝트별 수익성 데이터
   const [history, setHistory] = useState([HISTORY_2025]);
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [historyHighlight, setHistoryHighlight] = useState(null);  // {empId, year}
@@ -2240,6 +2333,7 @@ export default function App() {
         if (data.selfScores) setSelfScores(data.selfScores);
         if (data.comments) setComments(data.comments);
         if (data.submissions) setSubmissions(data.submissions);
+        if (data.projects) setProjects(data.projects);
         if (data.history) setHistory(data.history);
       }
     } catch (e) {}
@@ -2268,12 +2362,12 @@ export default function App() {
 
   const handleSave = () => {
     try {
-      localStorage.setItem('koition_hr_v6', JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, history }));
+      localStorage.setItem('koition_hr_v6', JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, history }));
       showToast('데이터가 저장되었습니다');
     } catch (e) { showToast('저장 실패', 'error'); }
   };
   const handleExport = () => {
-    const data = { year: currentYear, employees, policy, scores, selfScores, comments, submissions, history };
+    const data = { year: currentYear, employees, policy, scores, selfScores, comments, submissions, projects, history };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -2301,6 +2395,7 @@ export default function App() {
         if (data.selfScores) setSelfScores(data.selfScores);
         if (data.comments) setComments(data.comments);
         if (data.submissions) setSubmissions(data.submissions);
+        if (data.projects) setProjects(data.projects);
         if (data.history) setHistory(data.history);
         showToast('데이터를 불러왔습니다');
       } catch (err) { showToast('파일 형식이 올바르지 않습니다', 'error'); }
@@ -2344,6 +2439,29 @@ export default function App() {
     showToast(`${emp?.name || ''}님이 삭제되었습니다`);
   };
 
+  // 프로젝트 수익성 추가/수정/삭제 (admin·경영지원부 전용)
+  const upsertProject = (proj) => {
+    setProjects(prev => {
+      const exists = prev.some(p => p.id === proj.id);
+      return exists ? prev.map(p => p.id === proj.id ? proj : p) : [...prev, proj];
+    });
+    showToast(`프로젝트 "${proj.name}" 저장됨`);
+  };
+  const deleteProject = (id) => {
+    const p = projects.find(x => x.id === id);
+    setProjects(prev => prev.filter(x => x.id !== id));
+    showToast(`프로젝트 "${p?.name || ''}" 삭제됨`);
+  };
+  // CSV 등 일괄 업로드 (병합: 동일 id는 덮어쓰기)
+  const bulkUpsertProjects = (rows) => {
+    setProjects(prev => {
+      const map = new Map(prev.map(p => [p.id, p]));
+      rows.forEach(r => map.set(r.id, r));
+      return Array.from(map.values());
+    });
+    showToast(`${rows.length}개 프로젝트를 반영했습니다`);
+  };
+
   // 결과 상세 패널에서 다년도 이력 메뉴로 이동 + 특정 직원·연도 강조
   const navigateToHistory = (empId, year) => {
     setHistoryHighlight({ empId, year });
@@ -2371,6 +2489,7 @@ export default function App() {
     { id: 'self', label: '내 평가', icon: UserCheck, roles: ['employee', 'evaluator', 'manager'] },
     { id: 'employees', label: '직원 관리', icon: Users, roles: ['admin'] },
     { id: 'evaluation', label: '평가 입력', icon: FileText, roles: ['admin', 'manager', 'evaluator'] },
+    { id: 'projects', label: '프로젝트 수익성', icon: Briefcase, roles: ['admin', 'manager'] },
     { id: 'results', label: '평가 결과', icon: Award, roles: ['admin', 'manager'] },
     { id: 'salary', label: '급여 산정', icon: Wallet, roles: ['admin'] },
     { id: 'analytics', label: '통계 분석', icon: PieIcon, roles: ['admin', 'manager'] },
@@ -2413,7 +2532,8 @@ export default function App() {
               if (target) setAdminResetTarget(target);
               else showToast(`${emp.name}님의 계정을 찾을 수 없습니다`);
             }} />}
-            {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} />}
+            {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} projects={projects} />}
+            {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} currentYear={currentYear} />}
             {tab === 'results' && <ResultsView user={user} employees={visibleEmployees} results={results} comments={comments} scores={scores} selfScores={selfScores} policy={policy} currentYear={currentYear} history={history} navigateToHistory={navigateToHistory} />}
             {tab === 'salary' && <SalaryView employees={employees} results={results} stats={stats} />}
             {tab === 'analytics' && <AnalyticsView employees={visibleEmployees} results={results} policy={policy} stats={stats} />}
@@ -4343,7 +4463,7 @@ function SelfEvalView({ user, employees, selfScores, updateSelfScore, comments, 
           <SectionTitle>업적 자기평가</SectionTitle>
           {[
             { key: 'perf_kpi', label: 'KPI 달성도', weight: policy.perf_kpi, desc: '본인의 KPI 달성률을 평가해주세요' },
-            { key: 'perf_profit', label: '프로젝트 수익성', weight: policy.perf_profit, desc: '담당 프로젝트의 수익성 기여를 평가해주세요' },
+            { key: 'perf_profit', label: '프로젝트 기여도', weight: policy.perf_profit, desc: '참여 프로젝트에서 본인의 역할·기여 정도를 평가해주세요 (수익률은 경영지원부 데이터로 산정)' },
             { key: 'perf_delivery', label: '납기·완성도', weight: policy.perf_delivery, desc: '납기 준수 및 결과물 품질을 평가해주세요' },
             { key: 'perf_customer', label: '고객 만족도', weight: policy.perf_customer, desc: '고객 만족도와 재계약 기여를 평가해주세요' },
           ].map(it => <SelfScoreRowWithGuide key={it.key} itemKey={it.key} label={it.label} weight={it.weight} desc={it.desc} value={sc[it.key]} onChange={v => updateSelfScore(emp.id, it.key, v)} disabled={submitted} empLevel={emp.level} category="perf" />)}
@@ -5375,11 +5495,30 @@ function CompItem({ label, value }) {
 // KPI 자동 계산기 모달
 // 실측값 입력 → 등급·점수 자동 계산 → 가중 평균으로 KPI 달성도 산출
 // ============================================================
-function KPICalculatorModal({ employee, currentScore, onApply, onClose }) {
+function KPICalculatorModal({ employee, currentScore, onApply, onClose, projects, currentYear }) {
   // 직원 직무군에 따라 표시할 KPI 그룹 선택
   const empGroup = employee.group || 'Archive';
   const commonMetrics = KPI_METRICS.common.metrics;
   const groupMetrics = KPI_METRICS[empGroup]?.metrics || [];
+
+  // 경영지원부 프로젝트 수익성 데이터에서 본인 참여 프로젝트의 평균 수익률 산정
+  // → profit_rate(Biz) / pm_margin(PM) 지표를 자동 채워 개인 정량 추정 부담을 줄임
+  const projRate = (() => {
+    const mine = (projects || []).filter(p =>
+      (currentYear == null || Number(p.year) === Number(currentYear)) &&
+      (p.members || []).some(m => m.empId === employee.id));
+    if (mine.length === 0) return null;
+    let wsum = 0, rsum = 0;
+    mine.forEach(p => {
+      const mem = (p.members || []).find(x => x.empId === employee.id);
+      const mm = projectMetrics(p);
+      if (mm.rate == null) return;
+      const w = Math.max(0, Number(mem.contribution) || 0);
+      if (w <= 0) return;
+      wsum += w; rsum += mm.rate * w;
+    });
+    return wsum > 0 ? Math.round((rsum / wsum) * 10) / 10 : null;
+  })();
   
   // 직무군별 액센트 컬러 매핑 (KPI_METRICS[group].color 키 → 실제 컬러)
   const groupColorMap = { 
@@ -5402,7 +5541,12 @@ function KPICalculatorModal({ employee, currentScore, onApply, onClose }) {
   ];
   
   // 각 지표의 실측값 + 사용여부 상태
-  const [values, setValues] = useState({});      // { metricId: number }
+  const [values, setValues] = useState(() => {
+    // 프로젝트 수익성 데이터가 있으면 이익률 지표를 자동 채움
+    const init = {};
+    if (projRate != null) { init.profit_rate = projRate; init.pm_margin = projRate; }
+    return init;
+  });
   // 기본 선택: 전사 공통 + 본 직무군은 ON, PM 겸임은 OFF (선택적 활용)
   const [selected, setSelected] = useState(
     allMetrics.reduce((acc, m) => ({ ...acc, [m.id]: m.groupId !== 'PM' || empGroup === 'PM' }), {})
@@ -5524,6 +5668,19 @@ function KPICalculatorModal({ employee, currentScore, onApply, onClose }) {
               사용할 지표만 체크박스로 선택하면 선택된 지표들의 평균이 최종 KPI 달성도 점수로 산정됩니다.
             </div>
           </div>
+
+          {projRate != null && (
+            <div style={{ 
+              padding: `${S[3]}px ${S[4]}px`, background: '#EEF3FA', borderRadius: 6,
+              marginBottom: S[5], fontSize: 11, color: T.text, lineHeight: 1.7,
+              display: 'flex', alignItems: 'flex-start', gap: S[2]
+            }}>
+              <Briefcase size={14} style={{ color: T.brand, flexShrink: 0, marginTop: 1 }} />
+              <div>
+                <strong style={{ color: T.brand }}>프로젝트 수익성 연계:</strong> 경영지원부 데이터 기준 본인 참여 프로젝트의 기여도 가중 평균 수익률 <strong>{projRate}%</strong>가 이익률 지표에 자동 입력되었습니다.
+              </div>
+            </div>
+          )}
 
           {/* 전사 공통 KPI */}
           <div style={{ marginBottom: S[5] }}>
@@ -6659,6 +6816,443 @@ function Td({ children, align = 'left', mono = false }) {
 }
 
 // ============================================================
+// 프로젝트 수익성 (경영지원부 소관)
+// ============================================================
+const fmtMoney = (n) => {
+  const v = Number(n) || 0;
+  if (Math.abs(v) >= 100000000) return (v / 100000000).toFixed(2).replace(/\.?0+$/, '') + '억';
+  if (Math.abs(v) >= 10000) return Math.round(v / 10000).toLocaleString('ko-KR') + '만';
+  return v.toLocaleString('ko-KR');
+};
+
+// CSV 한 줄 파싱 (따옴표 필드 지원)
+function parseCsvLine(line) {
+  const out = []; let cur = ''; let q = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (q) {
+      if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (c === '"') { q = false; }
+      else cur += c;
+    } else {
+      if (c === '"') q = true;
+      else if (c === ',') { out.push(cur); cur = ''; }
+      else cur += c;
+    }
+  }
+  out.push(cur);
+  return out.map(s => s.trim());
+}
+
+// 참여자 문자열 파싱 : "K-180501:PM:45|K-170801:핵심실무:35"
+function parseMembers(str) {
+  if (!str) return [];
+  return str.split('|').map(seg => seg.trim()).filter(Boolean).map(seg => {
+    const [empId, role, contribution] = seg.split(':').map(s => (s || '').trim());
+    return { empId, role: role || '참여', contribution: Number(contribution) || 0 };
+  }).filter(m => m.empId);
+}
+
+function StatusBadge({ status }) {
+  return status === 'completed'
+    ? <Badge color={T.success} variant="outline" size="sm">종료</Badge>
+    : <Badge color={T.warning} variant="outline" size="sm">진행중</Badge>;
+}
+
+function ProjectProfitView({ user, employees, projects, upsertProject, deleteProject, bulkUpsertProjects, currentYear }) {
+  const canEdit = user.role === 'admin' || user.deptScope === '경영지원부';
+  const [editing, setEditing] = useState(null);   // 프로젝트 객체 또는 'new'
+  const [yearFilter, setYearFilter] = useState('all');
+  const [importOpen, setImportOpen] = useState(false);
+  const fileRef = useRef(null);
+
+  const empName = (id) => employees.find(e => e.id === id)?.name || id;
+
+  const years = Array.from(new Set(projects.map(p => Number(p.year)))).sort((a, b) => b - a);
+  const shown = projects.filter(p => yearFilter === 'all' || Number(p.year) === Number(yearFilter));
+
+  // 전사 합계
+  const totals = shown.reduce((acc, p) => {
+    const m = projectMetrics(p);
+    acc.revenue += m.revenue; acc.cost += m.cost; acc.profit += m.profit;
+    return acc;
+  }, { revenue: 0, cost: 0, profit: 0 });
+  const totalRate = totals.revenue > 0 ? (totals.profit / totals.revenue * 100) : null;
+
+  const handleFile = (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const text = String(ev.target.result).replace(/^\uFEFF/, '');
+        const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+        if (lines.length < 2) { alert('데이터 행이 없습니다.'); return; }
+        const rows = [];
+        for (let i = 1; i < lines.length; i++) {
+          const c = parseCsvLine(lines[i]);
+          if (!c[1]) continue;
+          rows.push({
+            id: c[0] || `PRJ-${Date.now()}-${i}`,
+            name: c[1], client: c[2] || '',
+            year: Number(c[3]) || currentYear,
+            period: c[4] || '', status: (c[5] === '종료' || c[5] === 'completed') ? 'completed' : 'ongoing',
+            revenue: Number((c[6] || '').replace(/[^\d.-]/g, '')) || 0,
+            laborCost: Number((c[7] || '').replace(/[^\d.-]/g, '')) || 0,
+            overhead: Number((c[8] || '').replace(/[^\d.-]/g, '')) || 0,
+            otherCost: Number((c[9] || '').replace(/[^\d.-]/g, '')) || 0,
+            members: parseMembers(c[10]),
+            note: c[11] || '',
+          });
+        }
+        if (rows.length === 0) { alert('반영할 프로젝트가 없습니다.'); return; }
+        bulkUpsertProjects(rows);
+        setImportOpen(false);
+      } catch (err) { alert('CSV 형식이 올바르지 않습니다.'); }
+    };
+    reader.readAsText(file, 'utf-8');
+    e.target.value = '';
+  };
+
+  const downloadTemplate = () => {
+    const header = '프로젝트ID,프로젝트명,발주처,연도,기간,상태,매출,인건비,제경비,기타비,참여자,비고';
+    const sample = 'PRJ-2026-001,동원탄좌 M650 아카이브 2차년도,강원랜드 사업본부,2026,2026.01~2026.12,진행중,350000000,210000000,45000000,30000000,K-180501:PM:45|K-170801:핵심실무:35,메타데이터 1500점';
+    const guide = '# 참여자 형식: 사번:역할:기여도(%) 를 | 로 구분. 상태: 진행중 또는 종료. 금액은 원 단위 숫자.';
+    const blob = new Blob(['\uFEFF' + [header, sample, guide].join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = '프로젝트수익성_양식.csv'; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div>
+      <PageHeader
+        eyebrow="Project Profitability"
+        title="프로젝트 수익성"
+        subtitle="프로젝트 종료·연말에 프로젝트별 매출·인건비·제경비를 입력하면 수익률이 자동 산정되고, 투입 직원의 업적평가 '프로젝트 기여도' 점수로 연계됩니다. (경영지원부 소관)"
+        action={canEdit && (
+          <div style={{ display: 'flex', gap: S[2] }}>
+            <Button variant="outline" size="sm" icon={Upload} onClick={() => setImportOpen(true)}>CSV 업로드</Button>
+            <Button variant="primary" size="sm" icon={Plus} onClick={() => setEditing('new')}>프로젝트 추가</Button>
+          </div>
+        )}
+      />
+
+      {!canEdit && (
+        <div style={{ ...card({ borderLeft: `3px solid ${T.info}` }), padding: `${S[3]}px ${S[4]}px`, marginBottom: S[5], fontSize: 12, color: T.text, display: 'flex', gap: S[2], alignItems: 'center' }}>
+          <AlertCircle size={14} style={{ color: T.info }} />
+          프로젝트 수익성 데이터의 입력·수정은 경영지원부 소관입니다. 현재는 조회만 가능합니다.
+        </div>
+      )}
+
+      {/* 합계 카드 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: S[4], marginBottom: S[6] }}>
+        <MetricCard icon={Briefcase} label="프로젝트 수" value={String(shown.length)} unit="건" />
+        <MetricCard icon={TrendingUp} label="총 매출" value={fmtMoney(totals.revenue)} unit="원" />
+        <MetricCard icon={Wallet} label="총 사업비" value={fmtMoney(totals.cost)} unit="원" sub="인건비+제경비+기타" />
+        <MetricCard icon={PieIcon} label="평균 수익률" value={totalRate != null ? totalRate.toFixed(1) : '-'} unit="%" color={totalRate != null ? T[rateGrade(totalRate)] : T.ink} />
+      </div>
+
+      {/* 연도 필터 */}
+      <div style={{ display: 'flex', gap: S[2], marginBottom: S[4], alignItems: 'center' }}>
+        <span style={{ fontSize: 12, color: T.textMute, fontWeight: 600 }}>연도</span>
+        {['all', ...years].map(y => (
+          <button key={y} onClick={() => setYearFilter(y)} style={{
+            padding: '5px 12px', borderRadius: 6, fontSize: 12, fontFamily: FONT, cursor: 'pointer',
+            border: `1px solid ${String(yearFilter) === String(y) ? T.brand : T.border}`,
+            background: String(yearFilter) === String(y) ? T.brand : T.surface,
+            color: String(yearFilter) === String(y) ? '#fff' : T.text, fontWeight: 600,
+          }}>{y === 'all' ? '전체' : `${y}년`}</button>
+        ))}
+      </div>
+
+      {shown.length === 0 ? (
+        <EmptyState icon={Briefcase} title="프로젝트가 없습니다" desc={canEdit ? '프로젝트 추가 또는 CSV 업로드로 시작하세요' : '등록된 프로젝트가 없습니다'} />
+      ) : (
+        <div style={{ ...card(), overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <Th>프로젝트</Th><Th>발주처</Th><Th>연도</Th>
+                <Th align="right">매출</Th><Th align="right">사업비</Th>
+                <Th align="right">영업이익</Th><Th align="right">수익률</Th>
+                <Th align="center">등급</Th><Th>투입 인원</Th>
+                {canEdit && <Th align="center">관리</Th>}
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map(p => {
+                const m = projectMetrics(p);
+                return (
+                  <tr key={p.id} style={{ borderBottom: `1px solid ${T.divider}` }}>
+                    <Td>
+                      <div style={{ fontWeight: 600, color: T.ink, whiteSpace: 'normal', maxWidth: 240 }}>{p.name}</div>
+                      <div style={{ marginTop: 3 }}><StatusBadge status={p.status} /></div>
+                    </Td>
+                    <Td>{p.client}</Td>
+                    <Td>{p.year}</Td>
+                    <Td align="right" mono>{fmtMoney(m.revenue)}</Td>
+                    <Td align="right" mono>{fmtMoney(m.cost)}</Td>
+                    <Td align="right" mono>
+                      <span style={{ color: m.profit >= 0 ? T.success : T.danger }}>{fmtMoney(m.profit)}</span>
+                    </Td>
+                    <Td align="right" mono>
+                      <strong style={{ color: m.rate != null ? T[m.grade] : T.textLight }}>
+                        {m.rate != null ? m.rate.toFixed(1) + '%' : '-'}
+                      </strong>
+                    </Td>
+                    <Td align="center"><GradeBadge grade={m.grade} size="sm" /></Td>
+                    <Td>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxWidth: 220, whiteSpace: 'normal' }}>
+                        {(p.members || []).map((mem, i) => (
+                          <span key={i} style={{ fontSize: 10, padding: '2px 6px', background: T.surfaceAlt, borderRadius: 4, color: T.text }}>
+                            {empName(mem.empId)} · {mem.contribution}%
+                          </span>
+                        ))}
+                        {(p.members || []).length === 0 && <span style={{ fontSize: 11, color: T.textLight }}>미지정</span>}
+                      </div>
+                    </Td>
+                    {canEdit && (
+                      <Td align="center">
+                        <div style={{ display: 'inline-flex', gap: 4 }}>
+                          <button onClick={() => setEditing(p)} title="수정" style={{ padding: 5, border: 'none', background: 'transparent', cursor: 'pointer', color: T.textMute }}><Pencil size={14} /></button>
+                          <button onClick={() => { if (window.confirm(`"${p.name}" 프로젝트를 삭제할까요?`)) deleteProject(p.id); }} title="삭제" style={{ padding: 5, border: 'none', background: 'transparent', cursor: 'pointer', color: T.danger }}><Trash2 size={14} /></button>
+                        </div>
+                      </Td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* 산정 방식 안내 */}
+      <div style={{ ...card(), padding: S[5], marginTop: S[6] }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: S[3] }}>기여도 산정 방식</div>
+        <div style={{ fontSize: 12, color: T.text, lineHeight: 1.8 }}>
+          · <strong>수익률(영업이익률)</strong> = (매출 − 사업비) ÷ 매출 × 100, 사업비 = 인건비 + 제경비 + 기타 직접비<br />
+          · <strong>수익률 등급</strong> — 25%↑ S(100) · 18~25% A(85) · 12~18% B(75) · 5~12% C(65) · 5%↓ D(50)<br />
+          · <strong>직원 기여도 점수</strong> = 참여 프로젝트별 (수익률 점수 × 기여도 비중)의 가중평균<br />
+          · 산정된 점수는 평가 입력 화면의 <strong>'프로젝트 기여도'</strong> 항목에서 '자동 산정' 버튼으로 반영됩니다.
+        </div>
+      </div>
+
+      {editing && (
+        <ProjectEditModal
+          project={editing === 'new' ? null : editing}
+          employees={employees}
+          currentYear={currentYear}
+          onSave={(p) => { upsertProject(p); setEditing(null); }}
+          onClose={() => setEditing(null)}
+        />
+      )}
+
+      {importOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,37,71,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: S[5] }} onClick={() => setImportOpen(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 10, width: '100%', maxWidth: 560, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: `${S[5]}px ${S[6]}px`, borderBottom: `1px solid ${T.border}` }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: T.ink }}>CSV 업로드</h2>
+              <button onClick={() => setImportOpen(false)} style={{ padding: 8, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}><X size={20} /></button>
+            </div>
+            <div style={{ padding: S[6] }}>
+              <div style={{ fontSize: 13, color: T.text, lineHeight: 1.8, marginBottom: S[4] }}>
+                프로젝트별 수익성 데이터를 CSV로 일괄 등록합니다. 동일한 프로젝트ID는 덮어쓰기됩니다.<br />
+                열 순서: <code style={{ fontSize: 11, background: T.surfaceAlt, padding: '1px 5px', borderRadius: 3 }}>프로젝트ID, 프로젝트명, 발주처, 연도, 기간, 상태, 매출, 인건비, 제경비, 기타비, 참여자, 비고</code>
+              </div>
+              <div style={{ display: 'flex', gap: S[3] }}>
+                <Button variant="outline" size="sm" icon={Download} onClick={downloadTemplate}>양식 다운로드</Button>
+                <Button variant="primary" size="sm" icon={Upload} onClick={() => fileRef.current?.click()}>CSV 파일 선택</Button>
+                <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: 'none' }} onChange={handleFile} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProjectEditModal({ project, employees, currentYear, onSave, onClose }) {
+  const [form, setForm] = useState(project ? { ...project, members: (project.members || []).map(m => ({ ...m })) } : {
+    id: `PRJ-${currentYear}-${String(Date.now()).slice(-4)}`, name: '', client: '',
+    year: currentYear, period: '', status: 'ongoing',
+    revenue: '', laborCost: '', overhead: '', otherCost: '', members: [], note: '',
+  });
+  const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+  const m = projectMetrics(form);
+  const memberSum = (form.members || []).reduce((s, x) => s + (Number(x.contribution) || 0), 0);
+
+  const addMember = () => set('members', [...(form.members || []), { empId: employees[0]?.id || '', role: '참여', contribution: 0 }]);
+  const updMember = (i, k, v) => set('members', form.members.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
+  const delMember = (i) => set('members', form.members.filter((_, idx) => idx !== i));
+
+  const save = () => {
+    if (!form.name.trim()) { alert('프로젝트명을 입력하세요.'); return; }
+    onSave({
+      ...form,
+      year: Number(form.year) || currentYear,
+      revenue: Number(form.revenue) || 0,
+      laborCost: Number(form.laborCost) || 0,
+      overhead: Number(form.overhead) || 0,
+      otherCost: Number(form.otherCost) || 0,
+      members: (form.members || []).filter(x => x.empId).map(x => ({ empId: x.empId, role: x.role, contribution: Number(x.contribution) || 0 })),
+    });
+  };
+
+  const inputStyle = { width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13, fontFamily: FONT, boxSizing: 'border-box', outline: 'none', color: T.ink };
+  const numStyle = { ...inputStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
+  const labelStyle = { fontSize: 11, fontWeight: 600, color: T.textMute, display: 'block', marginBottom: 4 };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,37,71,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: S[5] }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 10, width: '100%', maxWidth: 720, maxHeight: '92vh', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: `${S[5]}px ${S[6]}px`, borderBottom: `1px solid ${T.border}` }}>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: T.ink }}>{project ? '프로젝트 수정' : '프로젝트 추가'}</h2>
+          <button onClick={onClose} style={{ padding: 8, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}><X size={20} /></button>
+        </div>
+
+        <div style={{ padding: `${S[5]}px ${S[6]}px`, overflowY: 'auto', flex: 1 }}>
+          {/* 기본 정보 */}
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: S[3], marginBottom: S[3] }}>
+            <div><label style={labelStyle}>프로젝트명</label><input style={inputStyle} value={form.name} onChange={e => set('name', e.target.value)} placeholder="예) 동원탄좌 M650 아카이브 2차년도" /></div>
+            <div><label style={labelStyle}>발주처</label><input style={inputStyle} value={form.client} onChange={e => set('client', e.target.value)} placeholder="예) 강원랜드 사업본부" /></div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr 1fr', gap: S[3], marginBottom: S[5] }}>
+            <div><label style={labelStyle}>연도</label><input style={numStyle} type="number" value={form.year} onChange={e => set('year', e.target.value)} /></div>
+            <div><label style={labelStyle}>기간</label><input style={inputStyle} value={form.period} onChange={e => set('period', e.target.value)} placeholder="2026.01~2026.12" /></div>
+            <div>
+              <label style={labelStyle}>상태</label>
+              <select style={inputStyle} value={form.status} onChange={e => set('status', e.target.value)}>
+                <option value="ongoing">진행중</option>
+                <option value="completed">종료</option>
+              </select>
+            </div>
+          </div>
+
+          {/* 재무 입력 */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: S[3], paddingBottom: 6, borderBottom: `2px solid ${T.brand}` }}>재무 (원 단위)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: S[3], marginBottom: S[4] }}>
+            <div><label style={labelStyle}>매출</label><input style={numStyle} type="number" value={form.revenue} onChange={e => set('revenue', e.target.value)} placeholder="0" /></div>
+            <div><label style={labelStyle}>인건비</label><input style={numStyle} type="number" value={form.laborCost} onChange={e => set('laborCost', e.target.value)} placeholder="0" /></div>
+            <div><label style={labelStyle}>제경비</label><input style={numStyle} type="number" value={form.overhead} onChange={e => set('overhead', e.target.value)} placeholder="0" /></div>
+            <div><label style={labelStyle}>외주·기타비</label><input style={numStyle} type="number" value={form.otherCost} onChange={e => set('otherCost', e.target.value)} placeholder="0" /></div>
+          </div>
+
+          {/* 계산 결과 */}
+          <div style={{ display: 'flex', gap: S[4], flexWrap: 'wrap', padding: `${S[3]}px ${S[4]}px`, background: T.surfaceAlt, borderRadius: 6, marginBottom: S[5], alignItems: 'center' }}>
+            <div style={{ fontSize: 12 }}><span style={{ color: T.textMute }}>사업비 </span><strong style={{ color: T.ink }}>{fmtMoney(m.cost)}원</strong></div>
+            <div style={{ fontSize: 12 }}><span style={{ color: T.textMute }}>영업이익 </span><strong style={{ color: m.profit >= 0 ? T.success : T.danger }}>{fmtMoney(m.profit)}원</strong></div>
+            <div style={{ fontSize: 12 }}><span style={{ color: T.textMute }}>수익률 </span><strong style={{ color: m.rate != null ? T[m.grade] : T.textLight }}>{m.rate != null ? m.rate.toFixed(1) + '%' : '-'}</strong></div>
+            {m.grade && <GradeBadge grade={m.grade} size="sm" />}
+          </div>
+
+          {/* 투입 인원 · 기여도 */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: S[3], paddingBottom: 6, borderBottom: `2px solid ${T.success}` }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.success }}>투입 인원 · 기여도 비중</div>
+            <div style={{ fontSize: 11, color: memberSum === 100 ? T.success : T.warning, fontWeight: 600 }}>합계 {memberSum}%{memberSum !== 100 && ' (100% 권장)'}</div>
+          </div>
+          {(form.members || []).map((mem, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1fr auto', gap: S[2], marginBottom: S[2], alignItems: 'center' }}>
+              <select style={inputStyle} value={mem.empId} onChange={e => updMember(i, 'empId', e.target.value)}>
+                {employees.map(e => <option key={e.id} value={e.id}>{e.name} ({e.dept})</option>)}
+              </select>
+              <select style={inputStyle} value={mem.role} onChange={e => updMember(i, 'role', e.target.value)}>
+                {PROJECT_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+              <div style={{ position: 'relative' }}>
+                <input style={{ ...numStyle, paddingRight: 22 }} type="number" value={mem.contribution} onChange={e => updMember(i, 'contribution', e.target.value)} placeholder="0" />
+                <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: T.textMute }}>%</span>
+              </div>
+              <button onClick={() => delMember(i)} style={{ padding: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: T.danger }}><Trash2 size={14} /></button>
+            </div>
+          ))}
+          <Button variant="outline" size="sm" icon={Plus} onClick={addMember} style={{ marginTop: S[2] }}>인원 추가</Button>
+
+          <div style={{ marginTop: S[5] }}>
+            <label style={labelStyle}>비고</label>
+            <input style={inputStyle} value={form.note} onChange={e => set('note', e.target.value)} placeholder="메모" />
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: S[2], padding: `${S[4]}px ${S[6]}px`, borderTop: `1px solid ${T.border}` }}>
+          <Button variant="outline" onClick={onClose}>취소</Button>
+          <Button variant="primary" icon={Save} onClick={save}>저장</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 프로젝트 기여도 자동 산정 모달 (평가 입력용)
+function ContributionCalcModal({ employee, projects, currentYear, onApply, onClose }) {
+  const result = calcContributionScore(employee.id, projects, currentYear);
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,37,71,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: S[5] }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 10, width: '100%', maxWidth: 700, maxHeight: '92vh', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: `${S[5]}px ${S[6]}px`, borderBottom: `1px solid ${T.border}` }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Briefcase size={16} style={{ color: T.brand }} />
+              <div style={{ fontSize: 11, fontWeight: 600, color: T.brand, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Contribution</div>
+            </div>
+            <h2 style={{ margin: `${S[1]}px 0 0`, fontSize: 20, fontWeight: 700, color: T.ink }}>{employee.name} · 프로젝트 기여도 산정</h2>
+            <div style={{ fontSize: 12, color: T.textMute, marginTop: 4 }}>{currentYear}년 참여 프로젝트의 수익률 × 기여도 비중 가중평균 (경영지원부 수익성 데이터 연계)</div>
+          </div>
+          <button onClick={onClose} style={{ padding: 8, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}><X size={20} /></button>
+        </div>
+
+        <div style={{ padding: `${S[5]}px ${S[6]}px`, overflowY: 'auto', flex: 1 }}>
+          {!result ? (
+            <div style={{ padding: `${S[3]}px ${S[4]}px`, background: '#FFF8E6', borderRadius: 6, fontSize: 12, color: T.text, display: 'flex', gap: S[2], alignItems: 'flex-start' }}>
+              <AlertCircle size={14} style={{ color: T.warning, flexShrink: 0, marginTop: 1 }} />
+              <div>{currentYear}년 <strong>{employee.name}</strong>님이 투입된 프로젝트 수익성 데이터가 없습니다. '프로젝트 수익성' 메뉴에서 프로젝트를 등록하고 투입 인원을 지정하세요.</div>
+            </div>
+          ) : (
+            <>
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: S[5] }}>
+                <thead>
+                  <tr>
+                    <Th>프로젝트</Th><Th align="right">수익률</Th><Th align="center">등급</Th>
+                    <Th align="right">수익점수</Th><Th align="right">기여도</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.breakdown.map((b, i) => (
+                    <tr key={i} style={{ borderBottom: `1px solid ${T.divider}` }}>
+                      <Td>
+                        <div style={{ fontWeight: 600, color: T.ink, whiteSpace: 'normal', maxWidth: 300 }}>{b.project.name}</div>
+                        <div style={{ fontSize: 10, color: T.textMute }}>{b.member.role}</div>
+                      </Td>
+                      <Td align="right" mono>{b.metrics.rate != null ? b.metrics.rate.toFixed(1) + '%' : '-'}</Td>
+                      <Td align="center"><GradeBadge grade={b.metrics.grade} size="sm" /></Td>
+                      <Td align="right" mono>{b.metrics.score}</Td>
+                      <Td align="right" mono>{b.weight}%</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: S[4], background: T.surfaceAlt, borderRadius: 8 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: T.textMute, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>산정 기여도 점수</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: S[3] }}>
+                    <span style={{ fontSize: 32, fontWeight: 700, color: T.brand }}>{result.score}</span>
+                    <GradeBadge grade={result.grade} size="lg" />
+                  </div>
+                </div>
+                <Button variant="primary" icon={CheckCircle2} onClick={() => onApply(result.score)}>이 점수 적용</Button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // 승진 심사 카드 (평가 입력 화면용)
 // 평가자가 점수를 입력하는 동안 실시간으로 진급 Point 충족 여부를 표시
 // ============================================================
@@ -6814,8 +7408,9 @@ function PromotionEvalCard({ emp, policy, totalScore }) {
 // ============================================================
 // 평가 입력
 // ============================================================
-function EvaluationView({ user, employees, scores, updateScore, selfScores, comments, updateComment, policy, selectedEmp, setSelectedEmp, results, currentYear, submissions, copySelfToEvaluator }) {
+function EvaluationView({ user, employees, scores, updateScore, selfScores, comments, updateComment, policy, selectedEmp, setSelectedEmp, results, currentYear, submissions, copySelfToEvaluator, projects }) {
   const [kpiCalcOpen, setKpiCalcOpen] = useState(false);
+  const [contribCalcOpen, setContribCalcOpen] = useState(false);
   const targets = employees.filter(e => e.evalTarget);
   const current = selectedEmp ? employees.find(e => e.id === selectedEmp) : targets[0];
   if (!current) return <EmptyState icon={Users} title="평가 대상이 없습니다" desc="권한 범위 내 평가 대상자가 없습니다" />;
@@ -6941,10 +7536,27 @@ function EvaluationView({ user, employees, scores, updateScore, selfScores, comm
               
               {[
                 { key: 'perf_kpi', label: 'KPI 달성도', weight: policy.perf_kpi, desc: '연초 설정 KPI 달성률 · 계산기 사용 권장' },
-                { key: 'perf_profit', label: '프로젝트 수익성·기여도', weight: policy.perf_profit, desc: '담당 프로젝트 수익률, 신규 수주' },
+                { key: 'perf_profit', label: '프로젝트 기여도', weight: policy.perf_profit, desc: '참여 프로젝트 수익률 × 기여도 비중 · 경영지원부 데이터 연계' },
                 { key: 'perf_delivery', label: '납기 준수·완성도', weight: policy.perf_delivery, desc: '계획 대비 납기, 결과물 품질' },
                 { key: 'perf_customer', label: '고객 만족도·재계약', weight: policy.perf_customer, desc: '고객 평가, 재계약/추가 발주' },
-              ].map(it => <ScoreRow key={it.key} {...it} value={empScores[it.key]} selfValue={empSelf[it.key]} onChange={v => updateScore(current.id, it.key, v)} />)}
+              ].map(it => (
+                <div key={it.key}>
+                  <ScoreRow {...it} value={empScores[it.key]} selfValue={empSelf[it.key]} onChange={v => updateScore(current.id, it.key, v)} />
+                  {it.key === 'perf_profit' && (
+                    <div style={{ 
+                      margin: `${S[2]}px 0 ${S[3]}px`, padding: `${S[2]}px ${S[3]}px`,
+                      background: '#EEF3FA', borderLeft: `3px solid ${T.brand}`, borderRadius: 4,
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: S[3]
+                    }}>
+                      <div style={{ fontSize: 11, color: T.text, lineHeight: 1.5, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Briefcase size={13} style={{ color: T.brand, flexShrink: 0 }} />
+                        프로젝트 수익성 데이터에서 기여도 점수를 자동 산정합니다 (개인 정량평가 대체)
+                      </div>
+                      <Button variant="secondary" size="sm" icon={Calculator} onClick={() => setContribCalcOpen(true)}>기여도 자동 산정</Button>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
 
@@ -6953,8 +7565,21 @@ function EvaluationView({ user, employees, scores, updateScore, selfScores, comm
             <KPICalculatorModal 
               employee={current}
               currentScore={empScores.perf_kpi}
+              projects={projects}
+              currentYear={currentYear}
               onApply={(score) => { updateScore(current.id, 'perf_kpi', score); setKpiCalcOpen(false); }}
               onClose={() => setKpiCalcOpen(false)}
+            />
+          )}
+
+          {/* 프로젝트 기여도 산정 모달 */}
+          {contribCalcOpen && (
+            <ContributionCalcModal
+              employee={current}
+              projects={projects}
+              currentYear={currentYear}
+              onApply={(score) => { updateScore(current.id, 'perf_profit', score); setContribCalcOpen(false); }}
+              onClose={() => setContribCalcOpen(false)}
             />
           )}
 
@@ -7146,7 +7771,7 @@ function ResultDetailPanel({ emp, result, empScores, empSelfScores, empComments,
   ];
   const perfItems = [
     { key: 'perf_kpi', label: 'KPI 달성도', weight: policy.perf_kpi },
-    { key: 'perf_profit', label: '프로젝트 수익성·기여도', weight: policy.perf_profit },
+    { key: 'perf_profit', label: '프로젝트 기여도', weight: policy.perf_profit },
     { key: 'perf_delivery', label: '납기 준수·완성도', weight: policy.perf_delivery },
     { key: 'perf_customer', label: '고객 만족도·재계약', weight: policy.perf_customer },
   ];
@@ -8029,7 +8654,7 @@ function PolicyView({ policy, setPolicy }) {
         </PolicySection>
         <PolicySection title="업적평가 배점" sumK={['perf_kpi', 'perf_profit', 'perf_delivery', 'perf_customer']} policy={policy}>
           <PolicyInput label="KPI 달성도" value={policy.perf_kpi} onChange={v => up('perf_kpi', v)} />
-          <PolicyInput label="프로젝트 수익성" value={policy.perf_profit} onChange={v => up('perf_profit', v)} />
+          <PolicyInput label="프로젝트 기여도" value={policy.perf_profit} onChange={v => up('perf_profit', v)} />
           <PolicyInput label="납기·완성도" value={policy.perf_delivery} onChange={v => up('perf_delivery', v)} />
           <PolicyInput label="고객 만족도" value={policy.perf_customer} onChange={v => up('perf_customer', v)} />
         </PolicySection>
@@ -9165,7 +9790,7 @@ h2 { font-size: 15px; font-weight: 700; color: #1A1A1A; margin: 28px 0 14px; pad
 <thead><tr><th style="width: 50%;">평가 항목</th><th style="width: 20%; text-align: right;">배점</th><th style="width: 15%; text-align: right;">점수</th><th style="width: 15%; text-align: right;">가중점수</th></tr></thead>
 <tbody>
 <tr><td>KPI 달성도</td><td class="num">${policy.perf_kpi}%</td><td class="num">${scores.perf_kpi ?? '-'}</td><td class="num">${scores.perf_kpi != null ? (scores.perf_kpi * policy.perf_kpi / 100).toFixed(2) : '-'}</td></tr>
-<tr><td>프로젝트 수익성</td><td class="num">${policy.perf_profit}%</td><td class="num">${scores.perf_profit ?? '-'}</td><td class="num">${scores.perf_profit != null ? (scores.perf_profit * policy.perf_profit / 100).toFixed(2) : '-'}</td></tr>
+<tr><td>프로젝트 기여도</td><td class="num">${policy.perf_profit}%</td><td class="num">${scores.perf_profit ?? '-'}</td><td class="num">${scores.perf_profit != null ? (scores.perf_profit * policy.perf_profit / 100).toFixed(2) : '-'}</td></tr>
 <tr><td>납기·완성도</td><td class="num">${policy.perf_delivery}%</td><td class="num">${scores.perf_delivery ?? '-'}</td><td class="num">${scores.perf_delivery != null ? (scores.perf_delivery * policy.perf_delivery / 100).toFixed(2) : '-'}</td></tr>
 <tr><td>고객 만족도</td><td class="num">${policy.perf_customer}%</td><td class="num">${scores.perf_customer ?? '-'}</td><td class="num">${scores.perf_customer != null ? (scores.perf_customer * policy.perf_customer / 100).toFixed(2) : '-'}</td></tr>
 <tr class="total-row"><td>업적평가 가중점수</td><td class="num">100%</td><td></td><td class="num">${result.perf != null ? result.perf.toFixed(2) : '-'}</td></tr>
@@ -9211,7 +9836,7 @@ ${canIncludeSalary ? `
 const MANUAL_CONTENT = {
   title: '코이션 인사평가·보상 관리 시스템 매뉴얼',
   subtitle: 'KOITION HR Evaluation & Compensation System User Guide',
-  version: 'v6.0',
+  version: 'v7.0',
   company: '주식회사 코이션 · KOITION CO., LTD.',
   
   sections: [
@@ -9407,7 +10032,7 @@ const MANUAL_CONTENT = {
             ['역량', '학습·자기계발', '10%', '신규 지식 습득, 교육 이수, 자격 취득'],
             ['역량', '협업·커뮤니케이션', '10%', '팀워크, 보고·소통, 다면평가 반영'],
             ['업적', 'KPI 달성도', '15%', '담당 KPI 달성률 (정량 측정)'],
-            ['업적', '프로젝트 수익성', '15%', '담당 프로젝트의 이익률, 원가 관리'],
+            ['업적', '프로젝트 기여도', '15%', '참여 프로젝트 수익률 × 기여도 비중 (경영지원부 데이터 연계)'],
             ['업적', '납기·완성도', '10%', '약정 납기 준수, 결과물 품질'],
             ['업적', '고객 만족도', '10%', '발주처 CSAT, 재계약 기여'],
           ],
@@ -9513,7 +10138,25 @@ const MANUAL_CONTENT = {
         },
         {
           type: 'subtitle',
-          text: '5.3 평가 시 주의사항',
+          text: '5.3 프로젝트 기여도 자동 산정 (경영지원부 연계)',
+        },
+        {
+          type: 'paragraph',
+          text: '업적평가의 "프로젝트 기여도" 항목은 개인이 프로젝트 수익성을 정량 평가할 수 없다는 점을 반영하여, 경영지원부가 관리하는 프로젝트별 수익성 데이터에서 자동 산정됩니다. 경영지원부는 프로젝트 종료·연말에 "프로젝트 수익성" 메뉴에서 프로젝트별 매출·인건비·제경비를 입력(또는 CSV 업로드)하고 투입 인원별 기여도 비중을 지정합니다.',
+        },
+        {
+          type: 'list',
+          items: [
+            '수익률(영업이익률) = (매출 − 사업비) ÷ 매출 × 100, 사업비 = 인건비 + 제경비 + 기타 직접비',
+            '수익률 등급 — 25%↑ S(100) · 18~25% A(85) · 12~18% B(75) · 5~12% C(65) · 5%↓ D(50)',
+            '직원 기여도 점수 = 참여 프로젝트별 (수익률 점수 × 기여도 비중)의 가중평균',
+            '평가 입력 화면의 "프로젝트 기여도" 항목에서 "기여도 자동 산정" 버튼으로 점수를 반영',
+            '입력·수정 권한은 경영지원부(및 admin)로 제한되며, 그 외 관리자는 조회만 가능',
+          ],
+        },
+        {
+          type: 'subtitle',
+          text: '5.4 평가 시 주의사항',
         },
         {
           type: 'list',
@@ -9526,7 +10169,7 @@ const MANUAL_CONTENT = {
         },
         {
           type: 'subtitle',
-          text: '5.4 평가자 의견 작성',
+          text: '5.5 평가자 의견 작성',
         },
         {
           type: 'list',
