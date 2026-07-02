@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Users, Settings, FileText, BarChart3, Save, Download, Upload, Search, AlertCircle, Award, Wallet, Trash2, Printer, History, PieChart as PieIcon, LogIn, LogOut, Sparkles, Mail, UserCheck, CheckCircle2, ChevronRight, TrendingUp, Building2, Plus, Pencil, X, StickyNote, ChevronDown, Calendar, Briefcase, MessageSquare, Clock, Tag, Calculator } from 'lucide-react';
+import { Users, Settings, FileText, BarChart3, Save, Download, Upload, Search, AlertCircle, Award, Wallet, Trash2, Printer, History, PieChart as PieIcon, LogIn, LogOut, Sparkles, Mail, UserCheck, CheckCircle2, ChevronRight, TrendingUp, Building2, Plus, Pencil, X, StickyNote, ChevronDown, Calendar, Briefcase, MessageSquare, Clock, Tag, Calculator, FileSpreadsheet } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 // ============================================================
@@ -1280,6 +1280,14 @@ const INITIAL_POLICY = {
   ],
   piBase: { L1: 1500000, L2: 2500000, L3: 4000000, L4: 6000000 },
   psRate: 5.0,
+  // 프로젝트 원가구조 진단 기준 (경영기획부 조정 가능)
+  diag: {
+    ohWarn: 30, ohAlert: 45,        // 제경비/원가 % 주의·경고
+    laborRevWarn: 70, laborRevAlert: 85, // 인건비/매출 % 주의·경고
+    costRevWarn: 90, costRevAlert: 98,   // 원가율(원가/매출) % 주의·경고
+    peerDev: 12,                    // 동종 중앙값 대비 초과 폭(%p)
+    pmFloor: 20,                    // PM 최소 기여도 %
+  },
   // 로그인 화면 회사 정보 카드 (admin이 직접 편집)
   coverStats: {
     enabled: true,
@@ -2046,17 +2054,101 @@ function calcSalary(emp, scores, policy) {
 //   항목은 이 데이터를 근거로 자동 계산된다.
 // ============================================================
 const PROJECT_ROLES = ['PM', '핵심실무', '참여', '지원'];
+// PM 최소 기여도(자동 산정 시 하한) 및 제경비·직접경비 비중 경고 임계값
+const PM_MIN_CONTRIBUTION = 20;
+const OVERHEAD_WARN_PCT = 30;   // 주의
+const OVERHEAD_ALERT_PCT = 45;  // 경고
+function expenseWarnLevel(directExpensePct) {
+  if (directExpensePct == null) return 'none';
+  return directExpensePct >= OVERHEAD_ALERT_PCT ? 'alert' : directExpensePct >= OVERHEAD_WARN_PCT ? 'warn' : 'none';
+}
+
+// ── 프로젝트 원가구조 진단 모델 ──────────────────────────────
+// 인건비 과다 / 제경비 과다 / 원가 과다(수익성 위험)를 절대 임계값 + 동종 대비(중앙값 편차)로 진단
+const LABOR_REV_WARN = 70;    // 인건비/매출 % 주의
+const LABOR_REV_ALERT = 85;   // 인건비/매출 % 경고
+const COST_REV_WARN = 90;     // 원가율(원가/매출) % 주의
+const COST_REV_ALERT = 98;    // 원가율 % 경고
+const PEER_DEV_PP = 12;       // 동종 프로젝트 중앙값 대비 초과 폭(%p)
+
+function _median(arr) {
+  if (!arr.length) return null;
+  const s = [...arr].sort((a, b) => a - b); const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+function costBenchmark(projects) {
+  const ms = projects.map(projectMetrics).filter(m => m.cost > 0 && m.revenue > 0);
+  return {
+    laborMed: _median(ms.map(m => m.labor / m.cost * 100)),   // 원가 대비 인건비 비중 중앙값
+    ohMed: _median(ms.map(m => m.overhead / m.cost * 100)),   // 원가 대비 제경비 비중 중앙값
+    n: ms.length,
+  };
+}
+function costDiagnosis(m, bench, cfg) {
+  const c = cfg || {};
+  const ohWarn = c.ohWarn ?? OVERHEAD_WARN_PCT, ohAlert = c.ohAlert ?? OVERHEAD_ALERT_PCT;
+  const lrWarn = c.laborRevWarn ?? LABOR_REV_WARN, lrAlert = c.laborRevAlert ?? LABOR_REV_ALERT;
+  const crWarn = c.costRevWarn ?? COST_REV_WARN, crAlert = c.costRevAlert ?? COST_REV_ALERT;
+  const dev = c.peerDev ?? PEER_DEV_PP;
+  const flags = [];
+  if (m.cost <= 0 || m.revenue <= 0) return { flags, status: 'none' };
+  const laborPctCost = m.labor / m.cost * 100, ohPctCost = m.overhead / m.cost * 100;
+  const laborPctRev = m.labor / m.revenue * 100, costPctRev = m.cost / m.revenue * 100;
+  let l = 'none';
+  if (laborPctRev >= lrAlert) l = 'alert';
+  else if (laborPctRev >= lrWarn) l = 'warn';
+  else if (bench && bench.laborMed != null && laborPctCost >= bench.laborMed + dev) l = 'warn';
+  if (l !== 'none') flags.push({ type: 'labor', level: l, label: '인건비 과다', detail: `매출대비 ${laborPctRev.toFixed(0)}%` });
+  let o = 'none';
+  if (ohPctCost >= ohAlert) o = 'alert';
+  else if (ohPctCost >= ohWarn) o = 'warn';
+  else if (bench && bench.ohMed != null && ohPctCost >= bench.ohMed + dev) o = 'warn';
+  if (o !== 'none') flags.push({ type: 'overhead', level: o, label: '제경비 과다', detail: `원가대비 ${ohPctCost.toFixed(0)}%` });
+  let cc = 'none';
+  if (costPctRev >= crAlert) cc = 'alert';
+  else if (costPctRev >= crWarn) cc = 'warn';
+  if (cc !== 'none') flags.push({ type: 'cost', level: cc, label: '원가 과다', detail: `원가율 ${costPctRev.toFixed(0)}%` });
+  const status = flags.some(f => f.level === 'alert') ? 'alert' : flags.length ? 'warn' : 'none';
+  return { flags, status, laborPctCost, ohPctCost, laborPctRev, costPctRev };
+}
+// PM 기여도 하한 적용: PM이 floor 미만이면 floor로 올리고 나머지를 비례 축소해 합 100 유지
+function applyPmFloor(members, floor) {
+  if (!members || members.length === 0) return members;
+  const pmIdx = members.findIndex(m => m.role === 'PM');
+  if (pmIdx < 0) return members;
+  const pm = members[pmIdx];
+  if ((pm.contribution || 0) >= floor) return members;
+  const others = members.filter((_, i) => i !== pmIdx);
+  const othersSum = others.reduce((s, m) => s + (m.contribution || 0), 0);
+  const deficit = floor - (pm.contribution || 0);
+  if (othersSum <= 0) { pm.contribution = 100; return members; }
+  others.forEach(m => { m.contribution = Math.max(0, Math.round((m.contribution || 0) - deficit * ((m.contribution || 0) / othersSum))); });
+  pm.contribution = floor;
+  // 반올림 오차 보정 → 합 100
+  const sum = members.reduce((s, m) => s + (m.contribution || 0), 0);
+  if (sum !== 100 && others.length) {
+    const big = others.reduce((a, b) => (b.contribution > a.contribution ? b : a), others[0]);
+    big.contribution = Math.max(0, big.contribution + (100 - sum));
+  }
+  return members;
+}
 
 // 프로젝트 1건의 파생 지표 계산
 function projectMetrics(p) {
   const revenue = Number(p.revenue) || 0;      // 매출
-  const labor = Number(p.laborCost) || 0;      // 인건비
+  const labor = Number(p.laborCost) || 0;      // 인건비(작업자+관리자)
   const overhead = Number(p.overhead) || 0;    // 제경비
   const other = Number(p.otherCost) || 0;      // 외주·기타 직접비
+  // 작업자/관리자 분리 (없으면 전체를 작업자로 간주)
+  const hasSplit = (p.workerLabor != null) || (p.mgrLabor != null);
+  const worker = hasSplit ? (Number(p.workerLabor) || 0) : labor;
+  const mgr = hasSplit ? (Number(p.mgrLabor) || 0) : 0;
   const cost = labor + overhead + other;        // 사업비(총원가)
   const profit = revenue - cost;                // 영업이익
   const rate = revenue > 0 ? (profit / revenue * 100) : null; // 수익률(영업이익률)
-  return { revenue, labor, overhead, other, cost, profit, rate, grade: rateGrade(rate), score: rateToScore(rate) };
+  const overheadPct = cost > 0 ? (overhead / cost * 100) : null; // 사업비 대비 제경비 %
+  const directExpensePct = cost > 0 ? ((overhead + other) / cost * 100) : null; // 사업비 대비 제경비+직접경비 %
+  return { revenue, labor, worker, mgr, overhead, other, cost, profit, rate, overheadPct, directExpensePct, grade: rateGrade(rate), score: rateToScore(rate) };
 }
 
 // 수익률(%) → 점수(0~100) : Biz profit_rate 밴드 기준 통일
@@ -2105,7 +2197,7 @@ const INITIAL_PROJECTS = [
   {
     id: 'PRJ-2026-001', name: '동원탄좌 M650 아카이브 2차년도', client: '강원랜드 사업본부',
     year: 2026, period: '2026.01~2026.12', status: 'ongoing',
-    revenue: 350000000, laborCost: 210000000, overhead: 45000000, otherCost: 30000000,
+    revenue: 350000000, laborCost: 210000000, workerLabor: 150000000, mgrLabor: 60000000, overhead: 45000000, otherCost: 30000000,
     members: [
       { empId: 'K-180501', role: 'PM', contribution: 45 },
       { empId: 'K-170801', role: '핵심실무', contribution: 35 },
@@ -2115,7 +2207,7 @@ const INITIAL_PROJECTS = [
   {
     id: 'PRJ-2026-002', name: '광역시 공공기록물 정리·평가', client: '○○광역시 기록관',
     year: 2026, period: '2026.03~2026.09', status: 'completed',
-    revenue: 180000000, laborCost: 120000000, overhead: 22000000, otherCost: 10000000,
+    revenue: 180000000, laborCost: 120000000, workerLabor: 88000000, mgrLabor: 32000000, overhead: 22000000, otherCost: 10000000,
     members: [
       { empId: 'K-170801', role: 'PM', contribution: 50 },
       { empId: 'K-180501', role: '참여', contribution: 20 },
@@ -2325,7 +2417,8 @@ export default function App() {
             ...data.policy, 
             coverStats: data.policy.coverStats || INITIAL_POLICY.coverStats,
             coverImage: data.policy.coverImage || INITIAL_POLICY.coverImage,
-            promotion: data.policy.promotion || INITIAL_POLICY.promotion
+            promotion: data.policy.promotion || INITIAL_POLICY.promotion,
+            diag: { ...INITIAL_POLICY.diag, ...(data.policy.diag || {}) }
           };
           setPolicy(migrated);
         }
@@ -2387,7 +2480,8 @@ export default function App() {
             ...data.policy, 
             coverStats: data.policy.coverStats || INITIAL_POLICY.coverStats,
             coverImage: data.policy.coverImage || INITIAL_POLICY.coverImage,
-            promotion: data.policy.promotion || INITIAL_POLICY.promotion
+            promotion: data.policy.promotion || INITIAL_POLICY.promotion,
+            diag: { ...INITIAL_POLICY.diag, ...(data.policy.diag || {}) }
           };
           setPolicy(migrated);
         }
@@ -2533,7 +2627,7 @@ export default function App() {
               else showToast(`${emp.name}님의 계정을 찾을 수 없습니다`);
             }} />}
             {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} projects={projects} />}
-            {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} currentYear={currentYear} />}
+            {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} currentYear={currentYear} policy={policy} />}
             {tab === 'results' && <ResultsView user={user} employees={visibleEmployees} results={results} comments={comments} scores={scores} selfScores={selfScores} policy={policy} currentYear={currentYear} history={history} navigateToHistory={navigateToHistory} />}
             {tab === 'salary' && <SalaryView employees={employees} results={results} stats={stats} />}
             {tab === 'analytics' && <AnalyticsView employees={visibleEmployees} results={results} policy={policy} stats={stats} />}
@@ -6859,17 +6953,291 @@ function StatusBadge({ status }) {
     : <Badge color={T.warning} variant="outline" size="sm">진행중</Badge>;
 }
 
-function ProjectProfitView({ user, employees, projects, upsertProject, deleteProject, bulkUpsertProjects, currentYear }) {
+// 프로젝트 지출 분석 (작업자/관리자 인건비·제경비 시각화)
+const EXP_COLORS = { worker: '#2E5BA0', mgr: '#7FB0E0', overhead: '#E0A64D', other: '#9AA6B2' };
+function ProjectAnalytics({ projects, employees, cfg }) {
+  const shortName = (n) => { n = String(n || '').replace(/^\(예시\)\s*/, ''); return n.length > 12 ? n.slice(0, 11) + '…' : n; };
+  const bench = costBenchmark(projects);
+  const rows = projects.map(p => {
+    const m = projectMetrics(p);
+    const diag = costDiagnosis(m, bench, cfg);
+    return {
+      id: p.id, name: shortName(p.name), full: p.name, dept: p.dept || '미지정',
+      작업자: m.worker, 관리자: m.mgr, 제경비: m.overhead, 기타: m.other,
+      revenue: m.revenue, cost: m.cost, profit: m.profit,
+      overheadPct: m.overheadPct != null ? Math.round(m.overheadPct * 10) / 10 : 0,
+      laborPctCost: m.cost > 0 ? Math.round(m.labor / m.cost * 100) : 0,
+      laborPctRev: m.revenue > 0 ? Math.round(m.labor / m.revenue * 100) : 0,
+      costPctRev: m.revenue > 0 ? Math.round(m.cost / m.revenue * 100) : 0,
+      diag, warn: diag.status,
+    };
+  }).filter(r => r.cost > 0);
+
+  const tot = rows.reduce((a, r) => ({
+    worker: a.worker + r.작업자, mgr: a.mgr + r.관리자, overhead: a.overhead + r.제경비,
+    other: a.other + r.기타, revenue: a.revenue + r.revenue, cost: a.cost + r.cost,
+  }), { worker: 0, mgr: 0, overhead: 0, other: 0, revenue: 0, cost: 0 });
+  const totLabor = tot.worker + tot.mgr;
+  const ohPct = tot.cost > 0 ? (tot.overhead / tot.cost * 100) : 0;
+
+  // 조직(수행조직)별 롤업
+  const orgMap = {};
+  rows.forEach(r => {
+    if (!orgMap[r.dept]) orgMap[r.dept] = { name: r.dept, 매출: 0, 원가: 0, 영업이익: 0, cnt: 0 };
+    orgMap[r.dept].매출 += r.revenue; orgMap[r.dept].원가 += r.cost; orgMap[r.dept].영업이익 += r.profit; orgMap[r.dept].cnt++;
+  });
+  const orgData = Object.values(orgMap).map(o => ({ ...o, 이익률: o.매출 > 0 ? Math.round(o.영업이익 / o.매출 * 1000) / 10 : 0 }));
+
+  // 진단 경고 대상
+  const warnList = rows.filter(r => r.diag.status !== 'none').sort((a, b) => (b.diag.status === 'alert' ? 1 : 0) - (a.diag.status === 'alert' ? 1 : 0));
+
+  // 직원별 투입·기여 현황 (인력 배분 + 평가 반영 기여도 교차확인)
+  const empName = (id) => (employees || []).find(e => e.id === id)?.name || id;
+  const empDept = (id) => (employees || []).find(e => e.id === id)?.dept || '';
+  const empMap = {};
+  projects.forEach(p => {
+    const m = projectMetrics(p);
+    (p.members || []).forEach(mem => {
+      if (!empMap[mem.empId]) empMap[mem.empId] = { empId: mem.empId, count: 0, laborIn: 0, wsum: 0, hasPM: false };
+      const e = empMap[mem.empId];
+      e.count++; e.laborIn += m.labor * (mem.contribution || 0) / 100; e.wsum += (mem.contribution || 0);
+      if (mem.role === 'PM') e.hasPM = true;
+    });
+  });
+  const empRows = Object.values(empMap).map(e => {
+    const cs = calcContributionScore(e.empId, projects, null);
+    return { ...e, name: empName(e.empId), dept: empDept(e.empId), avg: e.count ? Math.round(e.wsum / e.count) : 0, score: cs ? cs.score : null, grade: cs ? cs.grade : null };
+  }).sort((a, b) => b.laborIn - a.laborIn);
+
+  const downloadCsv = () => {
+    const head = ['프로젝트ID', '프로젝트명', '수행조직', '매출', '작업자인건비', '관리자인건비', '제경비', '총원가', '영업이익', '수익률(%)', '인건비/매출(%)', '제경비/원가(%)', '원가율(%)', '진단'];
+    const lines = [head.join(',')];
+    rows.forEach(r => {
+      const m = projectMetrics(projects.find(p => p.id === r.id));
+      const diag = r.diag.flags.map(f => f.label).join(' ') || '정상';
+      const cells = [r.id, `"${r.full}"`, r.dept, r.revenue, r.작업자, r.관리자, r.제경비, r.cost, r.profit,
+        (m.rate != null ? m.rate.toFixed(1) : ''), r.laborPctRev, r.overheadPct, r.costPctRev, diag];
+      lines.push(cells.join(','));
+    });
+    const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `프로젝트수익성_분석.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const pieData = [
+    { name: '작업자인건비', value: tot.worker, key: 'worker' },
+    { name: '관리자인건비', value: tot.mgr, key: 'mgr' },
+    { name: '제경비', value: tot.overhead, key: 'overhead' },
+    ...(tot.other > 0 ? [{ name: '외주·기타', value: tot.other, key: 'other' }] : []),
+  ].filter(d => d.value > 0);
+
+  const tip = { contentStyle: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12 }, formatter: (v) => fmtMoney(v) + '원' };
+
+  if (rows.length === 0) return <EmptyState icon={PieIcon} title="원가 데이터가 없습니다" desc="사업관리 엑셀 업로드 또는 프로젝트 입력 후 표시됩니다" />;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: S[3] }}>
+        <Button variant="outline" size="sm" icon={Download} onClick={downloadCsv}>분석 CSV 내보내기</Button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: S[4], marginBottom: S[5] }}>
+        <MetricCard icon={TrendingUp} label="총 매출" value={fmtMoney(tot.revenue)} unit="원" />
+        <MetricCard icon={Wallet} label="총 인건비" value={fmtMoney(totLabor)} unit="원" sub={`작업자 ${totLabor > 0 ? Math.round(tot.worker / totLabor * 100) : 0}% · 관리자 ${totLabor > 0 ? Math.round(tot.mgr / totLabor * 100) : 0}%`} />
+        <MetricCard icon={Briefcase} label="총 제경비" value={fmtMoney(tot.overhead)} unit="원" />
+        <MetricCard icon={PieIcon} label="사업비 대비 제경비" value={ohPct.toFixed(1)} unit="%" color={EXP_COLORS.overhead} />
+      </div>
+
+      {warnList.length > 0 && (
+        <div style={{ ...card({ borderLeft: `3px solid ${warnList.some(w => w.diag.status === 'alert') ? T.danger : T.warning}` }), padding: `${S[4]}px ${S[5]}px`, marginBottom: S[5] }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: S[2] }}>
+            <AlertCircle size={16} style={{ color: warnList.some(w => w.diag.status === 'alert') ? T.danger : T.warning }} />
+            <span style={{ fontWeight: 700, color: T.ink, fontSize: 13 }}>원가구조 진단 경고 ({warnList.length}건)</span>
+            <span style={{ fontSize: 11, color: T.textMute }}>인건비/매출 {LABOR_REV_WARN}%↑ · 제경비/원가 {OVERHEAD_WARN_PCT}%↑ · 원가율 {COST_REV_WARN}%↑ 또는 동종 중앙값 +{PEER_DEV_PP}%p</span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: S[2] }}>
+            {warnList.map(w => (
+              <span key={w.id} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, background: w.diag.status === 'alert' ? '#FDECEC' : '#FFF6E5', color: w.diag.status === 'alert' ? T.danger : T.warning, fontWeight: 600 }}>
+                {w.full.length > 16 ? w.full.slice(0, 15) + '…' : w.full} · {w.diag.flags.map(f => f.label).join('/')}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[5], marginBottom: S[5] }}>
+        <div style={{ ...card(), padding: S[6] }}>
+          <SectionTitle>지출 구성 (작업자·관리자·제경비)</SectionTitle>
+          <ResponsiveContainer width="100%" height={280}>
+            <PieChart>
+              <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} innerRadius={55}
+                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                {pieData.map(d => <Cell key={d.key} fill={EXP_COLORS[d.key]} />)}
+              </Pie>
+              <Tooltip {...tip} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+        <div style={{ ...card(), padding: S[6] }}>
+          <SectionTitle>사업비 대비 제경비 %</SectionTitle>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={rows} margin={{ top: 10, right: 16, left: -10, bottom: 60 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
+              <XAxis dataKey="name" angle={-30} textAnchor="end" height={70} tick={{ fontSize: 10, fill: T.textMute }} interval={0} />
+              <YAxis tick={{ fontSize: 11, fill: T.textMute }} unit="%" />
+              <Tooltip contentStyle={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12 }} formatter={(v) => v + '%'} />
+              <Bar dataKey="overheadPct" name="제경비 비중" radius={[4, 4, 0, 0]}>
+                {rows.map(r => <Cell key={r.id} fill={r.warn === 'alert' ? T.danger : r.warn === 'warn' ? T.warning : EXP_COLORS.overhead} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div style={{ ...card(), padding: S[6], marginBottom: S[5] }}>
+        <SectionTitle>조직별 매출 · 원가 · 영업이익 (수익 롤업)</SectionTitle>
+        <ResponsiveContainer width="100%" height={320}>
+          <BarChart data={orgData} margin={{ top: 10, right: 16, left: 10, bottom: 60 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
+            <XAxis dataKey="name" angle={-25} textAnchor="end" height={70} tick={{ fontSize: 11, fill: T.textMute }} interval={0} />
+            <YAxis tick={{ fontSize: 11, fill: T.textMute }} tickFormatter={(v) => fmtMoney(v)} />
+            <Tooltip contentStyle={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12 }} formatter={(v, n) => [fmtMoney(v) + '원', n]} />
+            <Legend wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
+            <Bar dataKey="매출" fill={EXP_COLORS.worker} radius={[4, 4, 0, 0]} />
+            <Bar dataKey="원가" fill={EXP_COLORS.overhead} radius={[4, 4, 0, 0]} />
+            <Bar dataKey="영업이익" radius={[4, 4, 0, 0]}>
+              {orgData.map((o, i) => <Cell key={i} fill={o.영업이익 >= 0 ? T.success : T.danger} />)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+        <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2] }}>
+          조직별 합계 · 영업이익이 음수(적자)면 붉게 표시됩니다.
+        </div>
+      </div>
+
+      <div style={{ ...card(), padding: S[6] }}>
+        <SectionTitle>프로젝트별 지출 분포 (작업자/관리자 인건비 · 제경비)</SectionTitle>
+        <ResponsiveContainer width="100%" height={360}>
+          <BarChart data={rows} margin={{ top: 10, right: 16, left: 10, bottom: 80 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
+            <XAxis dataKey="name" angle={-30} textAnchor="end" height={90} tick={{ fontSize: 10, fill: T.textMute }} interval={0} />
+            <YAxis tick={{ fontSize: 11, fill: T.textMute }} tickFormatter={(v) => fmtMoney(v)} />
+            <Tooltip {...tip} />
+            <Legend wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
+            <Bar dataKey="작업자" stackId="c" fill={EXP_COLORS.worker} name="작업자인건비" />
+            <Bar dataKey="관리자" stackId="c" fill={EXP_COLORS.mgr} name="관리자인건비" />
+            <Bar dataKey="제경비" stackId="c" fill={EXP_COLORS.overhead} name="제경비" />
+            {tot.other > 0 && <Bar dataKey="기타" stackId="c" fill={EXP_COLORS.other} name="외주·기타" radius={[4, 4, 0, 0]} />}
+          </BarChart>
+        </ResponsiveContainer>
+        <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2] }}>
+          ※ 작업자/관리자 인건비 분리는 사업관리 엑셀(사업별집행내역) 업로드 시 자동 반영됩니다. 수동 입력 프로젝트는 작업자·관리자 인건비 칸을 나눠 입력하세요.
+        </div>
+      </div>
+
+      <div style={{ ...card(), padding: S[6], marginTop: S[5] }}>
+        <SectionTitle>프로젝트 원가구조 진단</SectionTitle>
+        <div style={{ fontSize: 11, color: T.textMute, marginBottom: S[3] }}>
+          동종 중앙값 — 인건비 비중(원가대비) {bench.laborMed != null ? bench.laborMed.toFixed(0) : '-'}% · 제경비 비중 {bench.ohMed != null ? bench.ohMed.toFixed(0) : '-'}% (분석 {bench.n}건 기준).
+          절대 기준 초과 또는 중앙값 +{PEER_DEV_PP}%p 초과 시 과다로 진단합니다.
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <Th>프로젝트</Th>
+                <Th align="right">인건비/원가</Th><Th align="right">인건비/매출</Th>
+                <Th align="right">제경비/원가</Th><Th align="right">원가율</Th>
+                <Th>진단</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...rows].sort((a, b) => (b.diag.status === 'alert' ? 2 : b.diag.status === 'warn' ? 1 : 0) - (a.diag.status === 'alert' ? 2 : a.diag.status === 'warn' ? 1 : 0)).map(r => {
+                const hasLabor = r.diag.flags.some(f => f.type === 'labor');
+                const hasOh = r.diag.flags.some(f => f.type === 'overhead');
+                const hasCost = r.diag.flags.some(f => f.type === 'cost');
+                const warnColor = (on) => on ? { color: T.danger, fontWeight: 700 } : {};
+                return (
+                  <tr key={r.id} style={{ borderBottom: `1px solid ${T.divider}` }}>
+                    <Td><div style={{ whiteSpace: 'normal', maxWidth: 260, fontWeight: 600, color: T.ink }}>{r.full}</div></Td>
+                    <Td align="right" mono><span style={warnColor(hasLabor)}>{r.laborPctCost}%</span></Td>
+                    <Td align="right" mono><span style={warnColor(hasLabor)}>{r.laborPctRev}%</span></Td>
+                    <Td align="right" mono><span style={warnColor(hasOh)}>{r.overheadPct}%</span></Td>
+                    <Td align="right" mono><span style={warnColor(hasCost)}>{r.costPctRev}%</span></Td>
+                    <Td>
+                      {r.diag.flags.length === 0
+                        ? <Badge color={T.success} variant="outline" size="sm">정상</Badge>
+                        : <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {r.diag.flags.map((f, fi) => (
+                              <Badge key={fi} color={f.level === 'alert' ? T.danger : T.warning} variant="outline" size="sm">{f.label} · {f.detail}</Badge>
+                            ))}
+                          </div>}
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style={{ ...card(), padding: S[6], marginTop: S[5] }}>
+        <SectionTitle>직원별 투입·기여 현황</SectionTitle>
+        <div style={{ fontSize: 11, color: T.textMute, marginBottom: S[3] }}>
+          참여 프로젝트 기준 투입 인건비(=프로젝트 인건비×기여도 비중)와 산정 기여도 점수입니다. 인력 배분과 평가 반영 기여도를 함께 점검할 수 있습니다.
+        </div>
+        {empRows.length === 0 ? (
+          <EmptyState icon={Users} title="투입 인원 데이터 없음" desc="사업관리 엑셀 업로드 시 인력운영현황에서 자동 반영됩니다" />
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <Th>성명</Th><Th>부서</Th><Th align="center">참여 PJ</Th>
+                  <Th align="right">투입 인건비(추정)</Th><Th align="right">평균 기여도</Th>
+                  <Th align="right">산정 기여도 점수</Th><Th align="center">등급</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {empRows.map(e => (
+                  <tr key={e.empId} style={{ borderBottom: `1px solid ${T.divider}` }}>
+                    <Td>
+                      <span style={{ fontWeight: 600, color: T.ink }}>{e.name}</span>
+                      {e.hasPM && <Badge color={T.brand} variant="outline" size="sm">PM</Badge>}
+                    </Td>
+                    <Td>{e.dept}</Td>
+                    <Td align="center">{e.count}</Td>
+                    <Td align="right" mono>{fmtMoney(e.laborIn)}</Td>
+                    <Td align="right" mono>{e.avg}%</Td>
+                    <Td align="right" mono>{e.score != null ? e.score : '-'}</Td>
+                    <Td align="center">{e.grade ? <GradeBadge grade={e.grade} size="sm" /> : '-'}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProjectProfitView({ user, employees, projects, upsertProject, deleteProject, bulkUpsertProjects, currentYear, policy }) {
   const canEdit = user.role === 'admin' || user.deptScope === '경영지원부';
+  const cfg = (policy && policy.diag) || {};
+  const pmFloor = cfg.pmFloor ?? PM_MIN_CONTRIBUTION;
   const [editing, setEditing] = useState(null);   // 프로젝트 객체 또는 'new'
   const [yearFilter, setYearFilter] = useState('all');
+  const [view, setView] = useState('list');
   const [importOpen, setImportOpen] = useState(false);
+  const [sagwanOpen, setSagwanOpen] = useState(false);
   const fileRef = useRef(null);
 
   const empName = (id) => employees.find(e => e.id === id)?.name || id;
 
   const years = Array.from(new Set(projects.map(p => Number(p.year)))).sort((a, b) => b - a);
   const shown = projects.filter(p => yearFilter === 'all' || Number(p.year) === Number(yearFilter));
+  const bench = costBenchmark(shown);
 
   // 전사 합계
   const totals = shown.reduce((acc, p) => {
@@ -6931,6 +7299,7 @@ function ProjectProfitView({ user, employees, projects, upsertProject, deletePro
         subtitle="프로젝트 종료·연말에 프로젝트별 매출·인건비·제경비를 입력하면 수익률이 자동 산정되고, 투입 직원의 업적평가 '프로젝트 기여도' 점수로 연계됩니다. (경영지원부 소관)"
         action={canEdit && (
           <div style={{ display: 'flex', gap: S[2] }}>
+            <Button variant="secondary" size="sm" icon={FileSpreadsheet} onClick={() => setSagwanOpen(true)}>사업관리 엑셀 업로드</Button>
             <Button variant="outline" size="sm" icon={Upload} onClick={() => setImportOpen(true)}>CSV 업로드</Button>
             <Button variant="primary" size="sm" icon={Plus} onClick={() => setEditing('new')}>프로젝트 추가</Button>
           </div>
@@ -6952,7 +7321,7 @@ function ProjectProfitView({ user, employees, projects, upsertProject, deletePro
         <MetricCard icon={PieIcon} label="평균 수익률" value={totalRate != null ? totalRate.toFixed(1) : '-'} unit="%" color={totalRate != null ? T[rateGrade(totalRate)] : T.ink} />
       </div>
 
-      {/* 연도 필터 */}
+      {/* 연도 필터 + 보기 전환 */}
       <div style={{ display: 'flex', gap: S[2], marginBottom: S[4], alignItems: 'center' }}>
         <span style={{ fontSize: 12, color: T.textMute, fontWeight: 600 }}>연도</span>
         {['all', ...years].map(y => (
@@ -6963,9 +7332,22 @@ function ProjectProfitView({ user, employees, projects, upsertProject, deletePro
             color: String(yearFilter) === String(y) ? '#fff' : T.text, fontWeight: 600,
           }}>{y === 'all' ? '전체' : `${y}년`}</button>
         ))}
+        <div style={{ flex: 1 }} />
+        {[['list', '목록'], ['analysis', '지출 분석']].map(([v, lab]) => (
+          <button key={v} onClick={() => setView(v)} style={{
+            padding: '5px 14px', borderRadius: 6, fontSize: 12, fontFamily: FONT, cursor: 'pointer',
+            border: `1px solid ${view === v ? T.brand : T.border}`,
+            background: view === v ? T.brand : T.surface,
+            color: view === v ? '#fff' : T.text, fontWeight: 600,
+          }}>{lab}</button>
+        ))}
       </div>
 
-      {shown.length === 0 ? (
+      {view === 'analysis' ? (
+        shown.length === 0
+          ? <EmptyState icon={PieIcon} title="분석할 데이터가 없습니다" desc="프로젝트를 등록하거나 사업관리 엑셀을 업로드하세요" />
+          : <ProjectAnalytics projects={shown} employees={employees} cfg={cfg} />
+      ) : shown.length === 0 ? (
         <EmptyState icon={Briefcase} title="프로젝트가 없습니다" desc={canEdit ? '프로젝트 추가 또는 CSV 업로드로 시작하세요' : '등록된 프로젝트가 없습니다'} />
       ) : (
         <div style={{ ...card(), overflow: 'hidden' }}>
@@ -6986,7 +7368,14 @@ function ProjectProfitView({ user, employees, projects, upsertProject, deletePro
                   <tr key={p.id} style={{ borderBottom: `1px solid ${T.divider}` }}>
                     <Td>
                       <div style={{ fontWeight: 600, color: T.ink, whiteSpace: 'normal', maxWidth: 240 }}>{p.name}</div>
-                      <div style={{ marginTop: 3 }}><StatusBadge status={p.status} /></div>
+                      <div style={{ marginTop: 3, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        <StatusBadge status={p.status} />
+                        {costDiagnosis(m, bench, cfg).flags.map((f, fi) => (
+                          <Badge key={fi} color={f.level === 'alert' ? T.danger : T.warning} variant="outline" size="sm">
+                            {f.label} {f.detail}
+                          </Badge>
+                        ))}
+                      </div>
                     </Td>
                     <Td>{p.client}</Td>
                     <Td>{p.year}</Td>
@@ -7069,18 +7458,28 @@ function ProjectProfitView({ user, employees, projects, upsertProject, deletePro
           </div>
         </div>
       )}
+      {sagwanOpen && (
+        <SagwanUploadModal
+          employees={employees}
+          currentYear={currentYear}
+          pmFloor={pmFloor}
+          onApply={(rows) => { bulkUpsertProjects(rows); setSagwanOpen(false); }}
+          onClose={() => setSagwanOpen(false)}
+        />
+      )}
     </div>
   );
 }
 
 function ProjectEditModal({ project, employees, currentYear, onSave, onClose }) {
-  const [form, setForm] = useState(project ? { ...project, members: (project.members || []).map(m => ({ ...m })) } : {
+  const [form, setForm] = useState(project ? { ...project, workerLabor: project.workerLabor ?? project.laborCost ?? '', mgrLabor: project.mgrLabor ?? '', members: (project.members || []).map(m => ({ ...m })) } : {
     id: `PRJ-${currentYear}-${String(Date.now()).slice(-4)}`, name: '', client: '',
     year: currentYear, period: '', status: 'ongoing',
-    revenue: '', laborCost: '', overhead: '', otherCost: '', members: [], note: '',
+    revenue: '', workerLabor: '', mgrLabor: '', overhead: '', otherCost: '', members: [], note: '',
   });
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
-  const m = projectMetrics(form);
+  const laborSum = (Number(form.workerLabor) || 0) + (Number(form.mgrLabor) || 0);
+  const m = projectMetrics({ ...form, laborCost: laborSum });
   const memberSum = (form.members || []).reduce((s, x) => s + (Number(x.contribution) || 0), 0);
 
   const addMember = () => set('members', [...(form.members || []), { empId: employees[0]?.id || '', role: '참여', contribution: 0 }]);
@@ -7089,11 +7488,12 @@ function ProjectEditModal({ project, employees, currentYear, onSave, onClose }) 
 
   const save = () => {
     if (!form.name.trim()) { alert('프로젝트명을 입력하세요.'); return; }
+    const worker = Number(form.workerLabor) || 0, mgr = Number(form.mgrLabor) || 0;
     onSave({
       ...form,
       year: Number(form.year) || currentYear,
       revenue: Number(form.revenue) || 0,
-      laborCost: Number(form.laborCost) || 0,
+      workerLabor: worker, mgrLabor: mgr, laborCost: worker + mgr,
       overhead: Number(form.overhead) || 0,
       otherCost: Number(form.otherCost) || 0,
       members: (form.members || []).filter(x => x.empId).map(x => ({ empId: x.empId, role: x.role, contribution: Number(x.contribution) || 0 })),
@@ -7134,8 +7534,11 @@ function ProjectEditModal({ project, employees, currentYear, onSave, onClose }) 
           <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: S[3], paddingBottom: 6, borderBottom: `2px solid ${T.brand}` }}>재무 (원 단위)</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: S[3], marginBottom: S[4] }}>
             <div><label style={labelStyle}>매출</label><input style={numStyle} type="number" value={form.revenue} onChange={e => set('revenue', e.target.value)} placeholder="0" /></div>
-            <div><label style={labelStyle}>인건비</label><input style={numStyle} type="number" value={form.laborCost} onChange={e => set('laborCost', e.target.value)} placeholder="0" /></div>
+            <div><label style={labelStyle}>작업자인건비</label><input style={numStyle} type="number" value={form.workerLabor} onChange={e => set('workerLabor', e.target.value)} placeholder="0" /></div>
+            <div><label style={labelStyle}>관리자인건비</label><input style={numStyle} type="number" value={form.mgrLabor} onChange={e => set('mgrLabor', e.target.value)} placeholder="0" /></div>
             <div><label style={labelStyle}>제경비</label><input style={numStyle} type="number" value={form.overhead} onChange={e => set('overhead', e.target.value)} placeholder="0" /></div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: S[3], marginBottom: S[4] }}>
             <div><label style={labelStyle}>외주·기타비</label><input style={numStyle} type="number" value={form.otherCost} onChange={e => set('otherCost', e.target.value)} placeholder="0" /></div>
           </div>
 
@@ -7253,7 +7656,249 @@ function ContributionCalcModal({ employee, projects, currentYear, onApply, onClo
 }
 
 // ============================================================
-// 승진 심사 카드 (평가 입력 화면용)
+// 사업관리 워크북(엑셀) → 프로젝트 수익성 자동 변환
+// SheetJS를 CDN에서 동적 로드하여 브라우저에서 직접 파싱
+// (검증된 파이썬 변환 로직 이식: 매출=계약금액, 인건비=소계−사업경비,
+//  제경비=사업경비, 참여자/기여도=인력운영현황 투입 인건비 비중)
+// ============================================================
+function ensureXLSX() {
+  if (typeof window !== 'undefined' && window.XLSX) return Promise.resolve(window.XLSX);
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.async = true;
+    s.onload = () => resolve(window.XLSX);
+    s.onerror = () => reject(new Error('엑셀 처리 모듈(SheetJS) 로드 실패 — 인터넷 연결을 확인하세요.'));
+    document.head.appendChild(s);
+  });
+}
+const _sgNorm = (v) => v == null ? '' : String(v).replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+const _sgKey = (v) => _sgNorm(v).replace(/\([^)]*\)/g, '').replace(/[^0-9A-Za-z가-힣]/g, '');
+const _sgTitle = (v) => _sgNorm(v).replace(/\s*(이사|부장|차장|과장|대리|주임|사원|팀장|부서장|연구원|선임|책임)\s*$/, '').trim();
+function _sgCell(ws, XLSX, r, c) { return ws[XLSX.utils.encode_cell({ r, c })]; }
+function _sgStr(ws, XLSX, r, c) { const x = _sgCell(ws, XLSX, r, c); return x ? _sgNorm(x.v) : ''; }
+function _sgNum(cell) {
+  if (!cell || cell.t === 'e') return null;
+  const v = cell.v;
+  if (typeof v === 'number') return v;
+  if (v instanceof Date) return null;
+  const t = String(v).replace(/,/g, '').trim();
+  if (t === '' || t === '-') return null;
+  const n = Number(t); return isNaN(n) ? null : n;
+}
+function _sgYM(cell) {
+  if (cell && cell.t === 'd' && cell.v instanceof Date) {
+    const d = cell.v; return d.getFullYear() + '.' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+  return '';
+}
+function parseSagwanWorkbook(XLSX, arrayBuffer, yearDefault, pmFloor) {
+  const floor = pmFloor != null ? pmFloor : PM_MIN_CONTRIBUTION;
+  const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+  for (const n of ['사업진행현황', '사업별집행내역', '인력운영현황']) {
+    if (!wb.Sheets[n]) throw new Error(`필수 시트가 없습니다: "${n}". 표준 사업관리 워크북인지 확인하세요.`);
+  }
+  // 1) 프로젝트 마스터
+  const ws1 = wb.Sheets['사업진행현황']; const rng1 = XLSX.utils.decode_range(ws1['!ref']);
+  const projects = {}; const name2no = {};
+  for (let r = 2; r <= rng1.e.r; r++) {
+    const NO = _sgStr(ws1, XLSX, r, 0); const name = _sgStr(ws1, XLSX, r, 3);
+    if (!NO || !name || !/^\d{4}-\d+/.test(NO)) continue;
+    const ks = _sgCell(ws1, XLSX, r, 10), ke = _sgCell(ws1, XLSX, r, 11);
+    const note = _sgStr(ws1, XLSX, r, 14);
+    projects[NO] = {
+      id: NO, name, client: _sgStr(ws1, XLSX, r, 2),
+      year: (ks && ks.t === 'd') ? ks.v.getFullYear() : (yearDefault || 2025),
+      period: (_sgYM(ks) || _sgYM(ke)) ? (_sgYM(ks) + '~' + _sgYM(ke)) : '',
+      status: /완료|종료/.test(note) ? 'completed' : 'ongoing',
+      revenue: _sgNum(_sgCell(ws1, XLSX, r, 6)) || 0,
+      pm: _sgTitle(_sgStr(ws1, XLSX, r, 13)), dept: _sgStr(ws1, XLSX, r, 12),
+      laborCost: 0, overhead: 0, otherCost: 0, members: [], note,
+      _fl: [], _el: null, _em: null, _ee: null, _et: null,
+    };
+    name2no[_sgKey(name)] = NO;
+  }
+  // 2) 사업별집행내역 → 원가
+  const ws2 = wb.Sheets['사업별집행내역']; const rng2 = XLSX.utils.decode_range(ws2['!ref']); let cur = null;
+  for (let r = 3; r <= rng2.e.r; r++) {
+    const NO = _sgStr(ws2, XLSX, r, 0); const F = _sgStr(ws2, XLSX, r, 5); const AG = _sgNum(_sgCell(ws2, XLSX, r, 32));
+    if (NO && /^\d{4}-\d+/.test(NO)) { cur = projects[NO] ? NO : null; continue; }
+    if (!cur) continue;
+    if (F === '작업자인건비') projects[cur]._el = AG;
+    else if (F === '관리자인건비') projects[cur]._em = AG;
+    else if (F === '사업경비') projects[cur]._ee = AG;
+    else if (F === '소계') projects[cur]._et = AG;
+  }
+  // 3) 인력운영현황 → 참여자·투입 인건비
+  const ws3 = wb.Sheets['인력운영현황']; const rng3 = XLSX.utils.decode_range(ws3['!ref']);
+  let emp = null, proj = null; const mm = {}; const unmatched = new Set();
+  for (let r = 2; r <= rng3.e.r; r++) {
+    const A = _sgStr(ws3, XLSX, r, 0);
+    if (A.indexOf('K-') === 0) emp = { id: A, name: _sgStr(ws3, XLSX, r, 1), pos: _sgStr(ws3, XLSX, r, 3) };
+    const F = _sgStr(ws3, XLSX, r, 5); const H = _sgStr(ws3, XLSX, r, 7);
+    if (F) proj = F;
+    if (H === '수행별인건비' && emp && proj) {
+      const V = _sgNum(_sgCell(ws3, XLSX, r, 21)) || 0;
+      const no = name2no[_sgKey(proj)];
+      if (no == null) { if (V > 0) unmatched.add(proj); continue; }
+      if (!mm[no]) mm[no] = {};
+      if (!mm[no][emp.id]) mm[no][emp.id] = { name: emp.name, pos: emp.pos, labor: 0 };
+      mm[no][emp.id].labor += V;
+    }
+  }
+  // 4) 합산 + 기여도
+  Object.keys(projects).forEach(no => {
+    const p = projects[no]; const team = mm[no] || {};
+    const totlabor = Object.values(team).reduce((s, m) => s + m.labor, 0);
+    const w = typeof p._el === 'number' ? p._el : null, mg = typeof p._em === 'number' ? p._em : null;
+    const etc = typeof p._ee === 'number' ? p._ee : null, tot = typeof p._et === 'number' ? p._et : null;
+    let labor, overhead;
+    if (tot != null && etc != null) { labor = Math.max(0, tot - etc); overhead = etc; }
+    else if (w != null || mg != null) { labor = (w || 0) + (mg || 0); overhead = etc || 0; if (w == null) p._fl.push('작업자인건비 오류'); }
+    else { labor = 0; overhead = etc || 0; p._fl.push('원가 미집계'); }
+    // 작업자/관리자 인건비 분리 (지출 분석용)
+    const worker = (w != null) ? w : Math.max(0, labor - (mg || 0));
+    const mgr = (mg != null) ? mg : Math.max(0, labor - worker);
+    p.workerLabor = Math.round(worker); p.mgrLabor = Math.round(mgr);
+    p.laborCost = Math.round(labor); p.overhead = Math.round(overhead);
+    const cost = labor + overhead;
+    if (p.revenue > 0 && cost > p.revenue * 1.5) p._fl.push('원가>매출');
+    if (p.revenue > 0 && cost === 0) p._fl.push('원가 0');
+    p.members = Object.entries(team).sort((a, b) => b[1].labor - a[1].labor).map(([eid, m]) => ({
+      empId: eid,
+      role: (p.pm && _sgTitle(m.name) === p.pm) ? 'PM' : (/부장|차장|부서장|이사|팀장/.test(m.pos) ? '핵심실무' : '참여'),
+      contribution: totlabor > 0 ? Math.round(m.labor / totlabor * 100) : 0,
+      _name: m.name,
+    }));
+    applyPmFloor(p.members, floor);
+  });
+  return { projects: Object.values(projects), unmatched: Array.from(unmatched) };
+}
+
+function SagwanUploadModal({ employees, currentYear, onApply, onClose, pmFloor }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [preview, setPreview] = useState(null); // { projects, unmatched }
+  const fileRef = useRef(null);
+
+  const handleFile = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    setBusy(true); setError(''); setPreview(null);
+    try {
+      const XLSX = await ensureXLSX();
+      const buf = await file.arrayBuffer();
+      const res = parseSagwanWorkbook(XLSX, buf, currentYear, pmFloor);
+      if (res.projects.length === 0) throw new Error('변환할 프로젝트를 찾지 못했습니다. 시트 서식을 확인하세요.');
+      setPreview(res);
+    } catch (err) {
+      setError(err.message || '엑셀 처리 중 오류가 발생했습니다.');
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  const apply = () => {
+    const rows = preview.projects.map(p => ({
+      id: p.id, name: p.name, client: p.client, year: Number(p.year) || currentYear,
+      period: p.period, status: p.status,
+      revenue: Math.round(p.revenue), laborCost: p.laborCost, workerLabor: p.workerLabor, mgrLabor: p.mgrLabor, overhead: p.overhead, otherCost: 0,
+      members: p.members.map(m => ({ empId: m.empId, role: m.role, contribution: m.contribution })),
+      note: (p.note + (p._fl.length ? ' · ' + p._fl.join(' / ') : '')).replace(/^ · /, '').trim(),
+    }));
+    onApply(rows);
+  };
+
+  const clean = preview ? preview.projects.filter(p => p._fl.length === 0).length : 0;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,37,71,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: S[5] }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 10, width: '100%', maxWidth: 860, maxHeight: '92vh', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: `${S[5]}px ${S[6]}px`, borderBottom: `1px solid ${T.border}` }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <FileSpreadsheet size={16} style={{ color: T.brand }} />
+              <div style={{ fontSize: 11, fontWeight: 600, color: T.brand, letterSpacing: '0.15em', textTransform: 'uppercase' }}>사업관리 워크북 자동 변환</div>
+            </div>
+            <h2 style={{ margin: `${S[1]}px 0 0`, fontSize: 20, fontWeight: 700, color: T.ink }}>사업관리 엑셀 업로드</h2>
+            <div style={{ fontSize: 12, color: T.textMute, marginTop: 4 }}>사업진행현황·사업별집행내역·인력운영현황을 읽어 프로젝트 수익성·기여도를 자동 산정합니다.</div>
+          </div>
+          <button onClick={onClose} style={{ padding: 8, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}><X size={20} /></button>
+        </div>
+
+        <div style={{ padding: `${S[5]}px ${S[6]}px`, overflowY: 'auto', flex: 1 }}>
+          {!preview && (
+            <>
+              <div style={{ fontSize: 13, color: T.text, lineHeight: 1.8, marginBottom: S[4] }}>
+                엑셀(.xlsx) 파일을 선택하면 브라우저에서 바로 분석합니다. 별도 설치는 필요 없습니다.<br />
+                매출=계약금액 · 인건비=소계−사업경비 · 제경비=사업경비 · 참여자·기여도=인력운영현황(투입 인건비 비중)으로 계산됩니다.
+              </div>
+              <Button variant="primary" icon={Upload} onClick={() => fileRef.current?.click()} disabled={busy}>
+                {busy ? '분석 중…' : '엑셀 파일 선택'}
+              </Button>
+              <input ref={fileRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style={{ display: 'none' }} onChange={handleFile} />
+              {error && (
+                <div style={{ marginTop: S[4], padding: `${S[3]}px ${S[4]}px`, background: '#FDECEC', borderRadius: 6, fontSize: 12, color: T.danger, display: 'flex', gap: S[2], alignItems: 'flex-start' }}>
+                  <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />{error}
+                </div>
+              )}
+            </>
+          )}
+
+          {preview && (
+            <>
+              <div style={{ display: 'flex', gap: S[3], marginBottom: S[4], flexWrap: 'wrap' }}>
+                <Badge color={T.brand} variant="outline">총 {preview.projects.length}개</Badge>
+                <Badge color={T.success} variant="outline">정상 {clean}개</Badge>
+                <Badge color={T.warning} variant="outline">검토 필요 {preview.projects.length - clean}개</Badge>
+                {preview.unmatched.length > 0 && <Badge color={T.textMute} variant="outline">이름 미매칭 {preview.unmatched.length}건</Badge>}
+              </div>
+              <div style={{ ...card(), overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <Th>프로젝트</Th><Th align="right">매출</Th><Th align="right">인건비</Th>
+                      <Th align="right">제경비</Th><Th align="right">수익률</Th><Th align="center">등급</Th>
+                      <Th align="center">인원</Th><Th>검토</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.projects.map(p => {
+                      const m = projectMetrics(p);
+                      return (
+                        <tr key={p.id} style={{ borderBottom: `1px solid ${T.divider}` }}>
+                          <Td><div style={{ fontWeight: 600, color: T.ink, whiteSpace: 'normal', maxWidth: 230 }}>{p.name}</div></Td>
+                          <Td align="right" mono>{fmtMoney(m.revenue)}</Td>
+                          <Td align="right" mono>{fmtMoney(m.labor)}</Td>
+                          <Td align="right" mono>{fmtMoney(m.overhead)}</Td>
+                          <Td align="right" mono><strong style={{ color: m.rate != null ? T[m.grade] : T.textLight }}>{m.rate != null ? m.rate.toFixed(1) + '%' : '-'}</strong></Td>
+                          <Td align="center"><GradeBadge grade={m.grade} size="sm" /></Td>
+                          <Td align="center">{p.members.length}</Td>
+                          <Td>{p._fl.length ? <span style={{ fontSize: 10, color: T.warning, fontWeight: 600 }}>{p._fl.join(', ')}</span> : <span style={{ fontSize: 10, color: T.success }}>정상</span>}</Td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: S[4], padding: `${S[3]}px ${S[4]}px`, background: '#FFF8E6', borderRadius: 6, fontSize: 11, color: T.text, lineHeight: 1.7 }}>
+                ‘검토 필요’ 항목은 원본 엑셀의 수식 오류(#VALUE!)나 원가 미집계로 수익률이 부정확할 수 있습니다. 반영 후 필요하면 각 프로젝트에서 직접 수정하거나, 원본을 보완해 다시 업로드하세요. 동일 프로젝트ID는 덮어쓰기됩니다.
+              </div>
+            </>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: `${S[4]}px ${S[6]}px`, borderTop: `1px solid ${T.border}` }}>
+          <div>{preview && <Button variant="ghost" size="sm" onClick={() => { setPreview(null); setError(''); }}>다른 파일 선택</Button>}</div>
+          <div style={{ display: 'flex', gap: S[2] }}>
+            <Button variant="outline" onClick={onClose}>취소</Button>
+            {preview && <Button variant="primary" icon={CheckCircle2} onClick={apply}>{preview.projects.length}개 프로젝트 반영</Button>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 // 평가자가 점수를 입력하는 동안 실시간으로 진급 Point 충족 여부를 표시
 // ============================================================
 function PromotionEvalCard({ emp, policy, totalScore }) {
@@ -8435,6 +9080,7 @@ function PolicyView({ policy, setPolicy }) {
   const [rubricTab, setRubricTab] = useState('comp');
   const [expandedKey, setExpandedKey] = useState('comp_expert');
   const up = (k, v) => setPolicy(prev => ({ ...prev, [k]: v }));
+  const upDiag = (k, v) => setPolicy(prev => ({ ...prev, diag: { ...(prev.diag || {}), [k]: Number(v) } }));
   const upG = (i, k, v) => setPolicy(prev => ({ ...prev, grades: prev.grades.map((g, idx) => idx === i ? { ...g, [k]: Number(v) } : g) }));
   
   return (
@@ -8669,6 +9315,30 @@ function PolicyView({ policy, setPolicy }) {
           </div>
         </PolicySection>
       </div>
+
+      {/* ========== 프로젝트 원가 진단 기준 ========== */}
+      {(() => { const d = policy.diag || INITIAL_POLICY.diag; return (
+      <div style={{ ...card({ borderLeft: `4px solid ${T.warning}` }), padding: S[6], marginBottom: S[5] }}>
+        <SectionTitle>프로젝트 원가 진단 기준</SectionTitle>
+        <div style={{ fontSize: 11, color: T.textMute, marginBottom: S[4] }}>
+          프로젝트 수익성 → 지출 분석에서 사용하는 경고 임계값과 PM 최소 기여도입니다. 주의(주황)·경고(빨강) 2단계로 표시됩니다.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: S[4] }}>
+          <PolicyInput label="제경비/원가 주의(%)" value={d.ohWarn} onChange={v => upDiag('ohWarn', v)} />
+          <PolicyInput label="제경비/원가 경고(%)" value={d.ohAlert} onChange={v => upDiag('ohAlert', v)} />
+          <PolicyInput label="인건비/매출 주의(%)" value={d.laborRevWarn} onChange={v => upDiag('laborRevWarn', v)} />
+          <PolicyInput label="인건비/매출 경고(%)" value={d.laborRevAlert} onChange={v => upDiag('laborRevAlert', v)} />
+          <PolicyInput label="원가율 주의(%)" value={d.costRevWarn} onChange={v => upDiag('costRevWarn', v)} />
+          <PolicyInput label="원가율 경고(%)" value={d.costRevAlert} onChange={v => upDiag('costRevAlert', v)} />
+          <PolicyInput label="동종 중앙값 초과폭(%p)" value={d.peerDev} onChange={v => upDiag('peerDev', v)} />
+          <PolicyInput label="PM 최소 기여도(%)" value={d.pmFloor} onChange={v => upDiag('pmFloor', v)} />
+        </div>
+        <div style={{ fontSize: 11, color: T.textMute, marginTop: S[4], padding: S[3], background: T.surfaceAlt, borderRadius: 4, lineHeight: 1.8 }}>
+          · 제경비/원가·인건비/매출·원가율이 임계값을 넘거나, 동종 프로젝트 중앙값 +초과폭(%p)을 넘으면 과다로 진단합니다.<br />
+          · PM 최소 기여도: 사업관리 엑셀 업로드로 기여도 자동 산정 시 PM(사업담당자)에게 보장하는 하한값입니다.
+        </div>
+      </div>
+      ); })()}
 
       <div style={{ ...card(), padding: S[6], marginBottom: S[5] }}>
         <SectionTitle>등급 기준 및 보상</SectionTitle>
