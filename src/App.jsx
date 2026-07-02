@@ -1280,6 +1280,10 @@ const INITIAL_POLICY = {
   ],
   piBase: { L1: 1500000, L2: 2500000, L3: 4000000, L4: 6000000 },
   psRate: 5.0,
+  // 연간 경영 목표 (경영기획부 설정)
+  targets: { revenue: 0, profit: 0 },
+  // 공통비(간접비) 배부: basis=기준, mode=annual(연) | monthly(월)
+  allocation: { basis: 'labor', mode: 'annual' },
   // 프로젝트 원가구조 진단 기준 (경영기획부 조정 가능)
   diag: {
     ohWarn: 30, ohAlert: 45,        // 제경비/원가 % 주의·경고
@@ -2071,6 +2075,52 @@ const COST_REV_WARN = 90;     // 원가율(원가/매출) % 주의
 const COST_REV_ALERT = 98;    // 원가율 % 경고
 const PEER_DEV_PP = 12;       // 동종 프로젝트 중앙값 대비 초과 폭(%p)
 
+// 공통비(간접비) 풀 · 배부
+function overheadPoolTotal(overheads, year) {
+  return (overheads || []).filter(o => Number(o.year) === Number(year)).reduce((s, o) => s + (Number(o.amount) || 0), 0);
+}
+function allocateOverhead(projects, poolTotal, basis) {
+  const map = {};
+  (projects || []).forEach(p => { map[p.id] = 0; });
+  if (!poolTotal || poolTotal <= 0 || basis === 'none') return map;
+  const ms = (projects || []).map(p => ({ id: p.id, m: projectMetrics(p) })).filter(x => x.m.cost > 0);
+  const val = (x) => basis === 'revenue' ? x.m.revenue : x.m.labor; // 기본: 직접인건비
+  const tot = ms.reduce((s, x) => s + val(x), 0);
+  if (tot <= 0) return map;
+  ms.forEach(x => { map[x.id] = Math.round(poolTotal * val(x) / tot); });
+  return map;
+}
+const ALLOC_LABELS = { labor: '직접인건비 기준', revenue: '매출 기준', none: '미배부' };
+
+// 월별 배부: 각 월의 공통비를 그 달의 프로젝트 직접비 비중으로 배부
+function allocateOverheadMonthly(projects, overheads, year) {
+  const map = {}; (projects || []).forEach(p => { map[p.id] = 0; });
+  const ent = (overheads || []).filter(o => Number(o.year) === Number(year));
+  if (ent.length === 0) return map;
+  // 프로젝트 월별 직접비 (monthly 없으면 연 직접비를 12개월 균등 분배)
+  const pm = {};
+  (projects || []).forEach(p => {
+    const m = projectMetrics(p);
+    if (Array.isArray(p.monthly) && p.monthly.some(v => v > 0)) pm[p.id] = p.monthly.slice(0, 13);
+    else { const per = m.cost / 12; pm[p.id] = new Array(13).fill(0).map((_, i) => i === 0 ? 0 : per); }
+  });
+  const dirM = new Array(13).fill(0);
+  Object.values(pm).forEach(arr => arr.forEach((v, i) => dirM[i] += (v || 0)));
+  const totalDir = dirM.reduce((s, v) => s + v, 0);
+  // 월별 공통비 풀: monthly 있으면 그 값, 없으면 amount를 월별 직접비 비중으로 분산
+  const poolM = new Array(13).fill(0);
+  ent.forEach(o => {
+    if (Array.isArray(o.monthly) && o.monthly.some(v => v > 0)) o.monthly.forEach((v, i) => poolM[i] += (v || 0));
+    else { const amt = Number(o.amount) || 0; for (let i = 0; i < 13; i++) poolM[i] += totalDir > 0 ? amt * dirM[i] / totalDir : amt / 12; }
+  });
+  // 월별 배부
+  for (let i = 0; i < 13; i++) {
+    if (poolM[i] <= 0 || dirM[i] <= 0) continue;
+    (projects || []).forEach(p => { map[p.id] += Math.round(poolM[i] * (pm[p.id][i] || 0) / dirM[i]); });
+  }
+  return map;
+}
+
 function _median(arr) {
   if (!arr.length) return null;
   const s = [...arr].sort((a, b) => a - b); const mid = Math.floor(s.length / 2);
@@ -2148,7 +2198,9 @@ function projectMetrics(p) {
   const rate = revenue > 0 ? (profit / revenue * 100) : null; // 수익률(영업이익률)
   const overheadPct = cost > 0 ? (overhead / cost * 100) : null; // 사업비 대비 제경비 %
   const directExpensePct = cost > 0 ? ((overhead + other) / cost * 100) : null; // 사업비 대비 제경비+직접경비 %
-  return { revenue, labor, worker, mgr, overhead, other, cost, profit, rate, overheadPct, directExpensePct, grade: rateGrade(rate), score: rateToScore(rate) };
+  const planCost = Number(p.planCost) || 0;     // 계획 원가(예산)
+  const planExecPct = planCost > 0 ? (cost / planCost * 100) : null; // 계획 대비 집행률
+  return { revenue, labor, worker, mgr, overhead, other, cost, profit, rate, overheadPct, directExpensePct, planCost, planExecPct, grade: rateGrade(rate), score: rateToScore(rate) };
 }
 
 // 수익률(%) → 점수(0~100) : Biz profit_rate 밴드 기준 통일
@@ -2231,6 +2283,8 @@ export default function App() {
   const [comments, setComments] = useState({});
   const [submissions, setSubmissions] = useState({});
   const [projects, setProjects] = useState(INITIAL_PROJECTS);  // 프로젝트별 수익성 데이터
+  const [proposals, setProposals] = useState([]);  // 수주 파이프라인(사업제안현황)
+  const [overheads, setOverheads] = useState([]);  // 공통비(간접비) 풀: {id, year, category, amount, note}
   const [history, setHistory] = useState([HISTORY_2025]);
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [historyHighlight, setHistoryHighlight] = useState(null);  // {empId, year}
@@ -2418,7 +2472,9 @@ export default function App() {
             coverStats: data.policy.coverStats || INITIAL_POLICY.coverStats,
             coverImage: data.policy.coverImage || INITIAL_POLICY.coverImage,
             promotion: data.policy.promotion || INITIAL_POLICY.promotion,
-            diag: { ...INITIAL_POLICY.diag, ...(data.policy.diag || {}) }
+            diag: { ...INITIAL_POLICY.diag, ...(data.policy.diag || {}) },
+            targets: data.policy.targets || INITIAL_POLICY.targets,
+            allocation: { ...INITIAL_POLICY.allocation, ...(data.policy.allocation || {}) }
           };
           setPolicy(migrated);
         }
@@ -2427,6 +2483,8 @@ export default function App() {
         if (data.comments) setComments(data.comments);
         if (data.submissions) setSubmissions(data.submissions);
         if (data.projects) setProjects(data.projects);
+        if (data.proposals) setProposals(data.proposals);
+        if (data.overheads) setOverheads(data.overheads);
         if (data.history) setHistory(data.history);
       }
     } catch (e) {}
@@ -2455,12 +2513,12 @@ export default function App() {
 
   const handleSave = () => {
     try {
-      localStorage.setItem('koition_hr_v6', JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, history }));
+      localStorage.setItem('koition_hr_v6', JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, history }));
       showToast('데이터가 저장되었습니다');
     } catch (e) { showToast('저장 실패', 'error'); }
   };
   const handleExport = () => {
-    const data = { year: currentYear, employees, policy, scores, selfScores, comments, submissions, projects, history };
+    const data = { year: currentYear, employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, history };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -2481,7 +2539,9 @@ export default function App() {
             coverStats: data.policy.coverStats || INITIAL_POLICY.coverStats,
             coverImage: data.policy.coverImage || INITIAL_POLICY.coverImage,
             promotion: data.policy.promotion || INITIAL_POLICY.promotion,
-            diag: { ...INITIAL_POLICY.diag, ...(data.policy.diag || {}) }
+            diag: { ...INITIAL_POLICY.diag, ...(data.policy.diag || {}) },
+            targets: data.policy.targets || INITIAL_POLICY.targets,
+            allocation: { ...INITIAL_POLICY.allocation, ...(data.policy.allocation || {}) }
           };
           setPolicy(migrated);
         }
@@ -2490,6 +2550,8 @@ export default function App() {
         if (data.comments) setComments(data.comments);
         if (data.submissions) setSubmissions(data.submissions);
         if (data.projects) setProjects(data.projects);
+        if (data.proposals) setProposals(data.proposals);
+        if (data.overheads) setOverheads(data.overheads);
         if (data.history) setHistory(data.history);
         showToast('데이터를 불러왔습니다');
       } catch (err) { showToast('파일 형식이 올바르지 않습니다', 'error'); }
@@ -2554,6 +2616,31 @@ export default function App() {
       return Array.from(map.values());
     });
     showToast(`${rows.length}개 프로젝트를 반영했습니다`);
+  };
+
+  const bulkUpsertProposals = (rows) => {
+    if (!rows || rows.length === 0) return;
+    setProposals(prev => {
+      const map = new Map(prev.map(p => [p.id, p]));
+      rows.forEach(r => map.set(r.id, r));
+      return Array.from(map.values());
+    });
+  };
+  const deleteProposal = (id) => setProposals(prev => prev.filter(x => x.id !== id));
+
+  const upsertOverhead = (item) => setOverheads(prev => {
+    const map = new Map(prev.map(o => [o.id, o]));
+    map.set(item.id, item);
+    return Array.from(map.values());
+  });
+  const deleteOverhead = (id) => setOverheads(prev => prev.filter(x => x.id !== id));
+  const bulkUpsertOverheads = (rows) => {
+    if (!rows || rows.length === 0) return;
+    setOverheads(prev => {
+      const map = new Map(prev.map(o => [o.id, o]));
+      rows.forEach(r => map.set(r.id, r));
+      return Array.from(map.values());
+    });
   };
 
   // 결과 상세 패널에서 다년도 이력 메뉴로 이동 + 특정 직원·연도 강조
@@ -2627,7 +2714,7 @@ export default function App() {
               else showToast(`${emp.name}님의 계정을 찾을 수 없습니다`);
             }} />}
             {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} projects={projects} />}
-            {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} currentYear={currentYear} policy={policy} />}
+            {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} currentYear={currentYear} policy={policy} setPolicy={setPolicy} />}
             {tab === 'results' && <ResultsView user={user} employees={visibleEmployees} results={results} comments={comments} scores={scores} selfScores={selfScores} policy={policy} currentYear={currentYear} history={history} navigateToHistory={navigateToHistory} />}
             {tab === 'salary' && <SalaryView employees={employees} results={results} stats={stats} />}
             {tab === 'analytics' && <AnalyticsView employees={visibleEmployees} results={results} policy={policy} stats={stats} />}
@@ -6953,9 +7040,221 @@ function StatusBadge({ status }) {
     : <Badge color={T.warning} variant="outline" size="sm">진행중</Badge>;
 }
 
+// 공통비(간접비) 풀 관리 + 배부 → 공헌이익 / 완전영업이익
+function OverheadView({ projects, overheads, currentYear, yearFilter, policy, setPolicy, canEdit, upsertOverhead, deleteOverhead }) {
+  const [cat, setCat] = useState('');
+  const [amt, setAmt] = useState('');
+  const poolYear = yearFilter === 'all' ? currentYear : Number(yearFilter);
+  const basis = (policy && policy.allocation && policy.allocation.basis) || 'labor';
+  const mode = (policy && policy.allocation && policy.allocation.mode) || 'annual';
+  const entries = (overheads || []).filter(o => Number(o.year) === poolYear);
+  const poolTotal = entries.reduce((s, o) => s + (Number(o.amount) || 0), 0);
+  const allocMap = mode === 'monthly'
+    ? allocateOverheadMonthly(projects, entries, poolYear)
+    : allocateOverhead(projects, poolTotal, basis);
+  const rows = projects.map(p => {
+    const m = projectMetrics(p); const alloc = allocMap[p.id] || 0;
+    return { id: p.id, name: p.name, revenue: m.revenue, cost: m.cost, contrib: m.profit, alloc, full: m.profit - alloc };
+  }).filter(r => r.cost > 0 || r.revenue > 0).sort((a, b) => b.revenue - a.revenue);
+  const totRev = rows.reduce((s, r) => s + r.revenue, 0);
+  const totContrib = rows.reduce((s, r) => s + r.contrib, 0);
+  const totFull = totContrib - poolTotal;
+  const ohRatio = totRev > 0 ? (poolTotal / totRev * 100) : 0;
+  const setBasis = (b) => setPolicy(prev => ({ ...prev, allocation: { ...(prev.allocation || {}), basis: b } }));
+  const setMode = (m) => setPolicy(prev => ({ ...prev, allocation: { ...(prev.allocation || {}), mode: m } }));
+  const add = () => {
+    if (!cat.trim() || !amt) { alert('항목과 금액을 입력하세요.'); return; }
+    upsertOverhead({ id: 'OH:' + poolYear + ':' + Date.now(), year: poolYear, category: cat.trim(), amount: Number(amt) || 0, note: '수기 입력' });
+    setCat(''); setAmt('');
+  };
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: S[4], marginBottom: S[5] }}>
+        <MetricCard icon={Wallet} label={`${poolYear}년 공통비(간접비)`} value={fmtMoney(poolTotal)} unit="원" color={T.warning} />
+        <MetricCard icon={TrendingUp} label="공헌이익 계" value={fmtMoney(totContrib)} unit="원" color={T.brand} />
+        <MetricCard icon={Award} label="완전영업이익 계" value={fmtMoney(totFull)} unit="원" color={totFull >= 0 ? T.success : T.danger} />
+        <MetricCard icon={PieIcon} label="공통비율(공통비/매출)" value={ohRatio.toFixed(1)} unit="%" color={T.warning} />
+      </div>
+
+      <div style={{ ...card(), padding: S[6], marginBottom: S[5] }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: S[3], marginBottom: S[3] }}>
+          <SectionTitle>배부 방식</SectionTitle>
+          <div style={{ display: 'flex', gap: S[4], flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: S[2], alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: T.textMute, fontWeight: 600 }}>기간</span>
+              {[['annual', '연 배부'], ['monthly', '월 배부']].map(([mo, lab]) => (
+                <button key={mo} disabled={!canEdit} onClick={() => setMode(mo)} style={{
+                  padding: '6px 12px', borderRadius: 6, fontSize: 12, fontFamily: FONT, cursor: canEdit ? 'pointer' : 'default',
+                  border: `1px solid ${mode === mo ? T.brand : T.border}`, background: mode === mo ? T.brand : T.surface,
+                  color: mode === mo ? '#fff' : T.text, fontWeight: 600,
+                }}>{lab}</button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: S[2], alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: T.textMute, fontWeight: 600 }}>기준</span>
+              {[['labor', '직접인건비'], ['revenue', '매출'], ['none', '미배부']].map(([b, lab]) => (
+                <button key={b} disabled={!canEdit || mode === 'monthly'} onClick={() => setBasis(b)} style={{
+                  padding: '6px 12px', borderRadius: 6, fontSize: 12, fontFamily: FONT, cursor: (canEdit && mode !== 'monthly') ? 'pointer' : 'default',
+                  border: `1px solid ${basis === b && mode !== 'monthly' ? T.brand : T.border}`, background: basis === b && mode !== 'monthly' ? T.brand : T.surface,
+                  color: mode === 'monthly' ? T.textLight : (basis === b ? '#fff' : T.text), fontWeight: 600, opacity: mode === 'monthly' ? 0.5 : 1,
+                }}>{lab}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: T.textMute, lineHeight: 1.7 }}>
+          {mode === 'monthly'
+            ? <>공통비를 <strong>월별</strong>로 나눠, 각 달의 공통비를 그 달의 프로젝트 <strong>직접비 비중</strong>으로 배부합니다. 특정 월에만 활동한 프로젝트에는 그 달의 공통비만 실립니다. (월별 직접비는 사업관리 엑셀의 월별 현황에서 자동 반영)</>
+            : <>공통비를 연 단위로 <strong>{ALLOC_LABELS[basis]}</strong>으로 배부합니다.</>}
+          {' '}공헌이익 = 매출 − 직접원가, 완전영업이익 = 공헌이익 − 배부공통비.
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: S[5] }}>
+        <div style={{ ...card(), padding: S[6] }}>
+          <SectionTitle>{poolYear}년 공통비 항목</SectionTitle>
+          {canEdit && (
+            <div style={{ display: 'flex', gap: S[2], marginBottom: S[3] }}>
+              <input value={cat} onChange={e => setCat(e.target.value)} placeholder="항목(예: 본사 임차료)" style={{ flex: 2, padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, fontFamily: FONT, boxSizing: 'border-box' }} />
+              <input value={amt} onChange={e => setAmt(e.target.value)} type="number" placeholder="금액" style={{ flex: 1, padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, fontFamily: FONT, textAlign: 'right', boxSizing: 'border-box' }} />
+              <Button variant="primary" size="sm" icon={Plus} onClick={add}>추가</Button>
+            </div>
+          )}
+          {entries.length === 0 ? (
+            <div style={{ fontSize: 12, color: T.textMute, padding: S[4], textAlign: 'center' }}>공통비 항목이 없습니다. 사업관리 엑셀 업로드(본사운영/공통경비) 또는 수기 입력으로 추가하세요.</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr><Th>항목</Th><Th align="right">금액</Th>{canEdit && <Th align="center"></Th>}</tr></thead>
+              <tbody>
+                {entries.map(o => (
+                  <tr key={o.id} style={{ borderBottom: `1px solid ${T.divider}` }}>
+                    <Td><div style={{ fontWeight: 600, color: T.ink }}>{o.category}</div>{o.note && <div style={{ fontSize: 10, color: T.textMute }}>{o.note}</div>}</Td>
+                    <Td align="right" mono>{fmtMoney(o.amount)}</Td>
+                    {canEdit && <Td align="center"><button onClick={() => deleteOverhead(o.id)} style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}><Trash2 size={14} /></button></Td>}
+                  </tr>
+                ))}
+                <tr><Td><strong>합계</strong></Td><Td align="right" mono><strong>{fmtMoney(poolTotal)}</strong></Td>{canEdit && <Td></Td>}</tr>
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div style={{ ...card(), padding: S[6] }}>
+          <SectionTitle>프로젝트별 배부 · 완전영업이익</SectionTitle>
+          {rows.length === 0 ? (
+            <EmptyState icon={PieIcon} title="프로젝트 데이터 없음" desc="프로젝트를 등록하거나 사업관리 엑셀을 업로드하세요" />
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr><Th>프로젝트</Th><Th align="right">매출</Th><Th align="right">직접원가</Th><Th align="right">공헌이익</Th><Th align="right">배부공통비</Th><Th align="right">완전영업이익</Th></tr>
+                </thead>
+                <tbody>
+                  {rows.map(r => (
+                    <tr key={r.id} style={{ borderBottom: `1px solid ${T.divider}` }}>
+                      <Td><div style={{ whiteSpace: 'normal', maxWidth: 200, fontWeight: 600, color: T.ink }}>{r.name}</div></Td>
+                      <Td align="right" mono>{fmtMoney(r.revenue)}</Td>
+                      <Td align="right" mono>{fmtMoney(r.cost)}</Td>
+                      <Td align="right" mono style={{ color: r.contrib >= 0 ? T.ink : T.danger }}>{fmtMoney(r.contrib)}</Td>
+                      <Td align="right" mono style={{ color: T.warning }}>{r.alloc ? '-' + fmtMoney(r.alloc) : '0'}</Td>
+                      <Td align="right" mono><strong style={{ color: r.full >= 0 ? T.success : T.danger }}>{fmtMoney(r.full)}</strong></Td>
+                    </tr>
+                  ))}
+                  <tr style={{ background: T.surfaceAlt }}>
+                    <Td><strong>합계</strong></Td>
+                    <Td align="right" mono><strong>{fmtMoney(totRev)}</strong></Td>
+                    <Td align="right" mono><strong>{fmtMoney(rows.reduce((s, r) => s + r.cost, 0))}</strong></Td>
+                    <Td align="right" mono><strong>{fmtMoney(totContrib)}</strong></Td>
+                    <Td align="right" mono><strong style={{ color: T.warning }}>-{fmtMoney(poolTotal)}</strong></Td>
+                    <Td align="right" mono><strong style={{ color: totFull >= 0 ? T.success : T.danger }}>{fmtMoney(totFull)}</strong></Td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2] }}>
+            {yearFilter === 'all' ? `공통비는 ${poolYear}년 기준으로 배부됩니다. 특정 연도를 선택하면 해당 연도 기준으로 계산됩니다.` : `${poolYear}년 프로젝트에 ${ALLOC_LABELS[basis]}으로 배부.`} 배부는 추정이므로 기준에 따라 프로젝트별 이익이 달라집니다.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 수주 파이프라인 (사업제안현황 연동)
+function ProjectPipeline({ proposals, canEdit, deleteProposal }) {
+  if (!proposals || proposals.length === 0) {
+    return <EmptyState icon={TrendingUp} title="제안 데이터가 없습니다" desc="사업관리 엑셀(사업제안현황 시트)을 업로드하면 수주 파이프라인이 표시됩니다" />;
+  }
+  const total = proposals.length;
+  const won = proposals.filter(p => p.status === '수주').length;
+  const convRate = total > 0 ? Math.round(won / total * 100) : 0;
+  const pipelineBudget = proposals.filter(p => p.status !== '수주').reduce((s, p) => s + (p.budget || 0), 0);
+  const wonBudget = proposals.filter(p => p.status === '수주').reduce((s, p) => s + (p.budget || 0), 0);
+  const chartData = [
+    { name: '제안중', 금액: pipelineBudget, key: 'p' },
+    { name: '수주', 금액: wonBudget, key: 'w' },
+  ];
+  const sorted = [...proposals].sort((a, b) => (b.status === '수주' ? 0 : 1) - (a.status === '수주' ? 0 : 1) || (b.budget || 0) - (a.budget || 0));
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: S[4], marginBottom: S[5] }}>
+        <MetricCard icon={FileText} label="총 제안" value={total} unit="건" />
+        <MetricCard icon={CheckCircle2} label="수주" value={won} unit="건" color={T.success} sub={`전환율 ${convRate}%`} />
+        <MetricCard icon={TrendingUp} label="예상 매출(제안중)" value={fmtMoney(pipelineBudget)} unit="원" color={T.brand} />
+        <MetricCard icon={Award} label="수주 확정 매출" value={fmtMoney(wonBudget)} unit="원" color={T.success} />
+      </div>
+
+      <div style={{ ...card(), padding: S[6], marginBottom: S[5] }}>
+        <SectionTitle>제안 → 수주 파이프라인 (예산 기준)</SectionTitle>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 20, left: 40, bottom: 10 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={T.divider} horizontal={false} />
+            <XAxis type="number" tick={{ fontSize: 11, fill: T.textMute }} tickFormatter={(v) => fmtMoney(v)} />
+            <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: T.textMute }} width={60} />
+            <Tooltip contentStyle={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12 }} formatter={(v) => fmtMoney(v) + '원'} />
+            <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
+              <Cell fill="#7FB0E0" /><Cell fill={T.success} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+        <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2] }}>수주 여부는 제안 사업명이 사업진행현황(수주 프로젝트)과 일치하면 '수주'로 자동 판정됩니다.</div>
+      </div>
+
+      <div style={{ ...card(), padding: S[6] }}>
+        <SectionTitle>제안 현황</SectionTitle>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <Th>사업명</Th><Th>주관기관</Th><Th align="right">사업예산</Th>
+                <Th>입찰</Th><Th>PM</Th><Th align="center">상태</Th>
+                {canEdit && <Th align="center">관리</Th>}
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map(p => (
+                <tr key={p.id} style={{ borderBottom: `1px solid ${T.divider}` }}>
+                  <Td><div style={{ whiteSpace: 'normal', maxWidth: 280, fontWeight: 600, color: T.ink }}>{p.name}</div>{p.consortium && <div style={{ fontSize: 10, color: T.textMute }}>{p.consortium}</div>}</Td>
+                  <Td>{p.client}</Td>
+                  <Td align="right" mono>{fmtMoney(p.budget)}</Td>
+                  <Td>{p.bidDate}</Td>
+                  <Td>{p.pm}</Td>
+                  <Td align="center"><Badge color={p.status === '수주' ? T.success : T.textMute} variant={p.status === '수주' ? 'solid' : 'outline'} size="sm">{p.status}</Badge></Td>
+                  {canEdit && <Td align="center"><button onClick={() => deleteProposal(p.id)} style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}><Trash2 size={14} /></button></Td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // 프로젝트 지출 분석 (작업자/관리자 인건비·제경비 시각화)
 const EXP_COLORS = { worker: '#2E5BA0', mgr: '#7FB0E0', overhead: '#E0A64D', other: '#9AA6B2' };
-function ProjectAnalytics({ projects, employees, cfg }) {
+function ProjectAnalytics({ projects, employees, cfg, targets, allProjects }) {
   const shortName = (n) => { n = String(n || '').replace(/^\(예시\)\s*/, ''); return n.length > 12 ? n.slice(0, 11) + '…' : n; };
   const bench = costBenchmark(projects);
   const rows = projects.map(p => {
@@ -6969,6 +7268,8 @@ function ProjectAnalytics({ projects, employees, cfg }) {
       laborPctCost: m.cost > 0 ? Math.round(m.labor / m.cost * 100) : 0,
       laborPctRev: m.revenue > 0 ? Math.round(m.labor / m.revenue * 100) : 0,
       costPctRev: m.revenue > 0 ? Math.round(m.cost / m.revenue * 100) : 0,
+      planCost: m.planCost, 계획: m.planCost, 실적: m.cost,
+      planExecPct: m.planExecPct != null ? Math.round(m.planExecPct) : null,
       diag, warn: diag.status,
     };
   }).filter(r => r.cost > 0);
@@ -6988,8 +7289,24 @@ function ProjectAnalytics({ projects, employees, cfg }) {
   });
   const orgData = Object.values(orgMap).map(o => ({ ...o, 이익률: o.매출 > 0 ? Math.round(o.영업이익 / o.매출 * 1000) / 10 : 0 }));
 
+  // 연도별 추세 (전체 연도 기준)
+  const yearMap = {};
+  (allProjects || projects).forEach(p => {
+    const m = projectMetrics(p); if (m.cost <= 0) return;
+    const y = Number(p.year) || 0; if (!y) return;
+    if (!yearMap[y]) yearMap[y] = { year: String(y), 매출: 0, 원가: 0, 영업이익: 0, overhead: 0 };
+    const e = yearMap[y]; e.매출 += m.revenue; e.원가 += m.cost; e.영업이익 += m.profit; e.overhead += m.overhead;
+  });
+  const yearData = Object.values(yearMap).sort((a, b) => Number(a.year) - Number(b.year)).map(e => ({
+    ...e, 수익률: e.매출 > 0 ? Math.round(e.영업이익 / e.매출 * 1000) / 10 : 0,
+    제경비비중: e.원가 > 0 ? Math.round(e.overhead / e.원가 * 1000) / 10 : 0,
+  }));
+
   // 진단 경고 대상
   const warnList = rows.filter(r => r.diag.status !== 'none').sort((a, b) => (b.diag.status === 'alert' ? 1 : 0) - (a.diag.status === 'alert' ? 1 : 0));
+  // 계획 대비 집행 (예산 데이터가 있는 프로젝트만)
+  const planRows = rows.filter(r => r.planCost > 0);
+  const overBudget = planRows.filter(r => r.planExecPct != null && r.planExecPct > 100).sort((a, b) => b.planExecPct - a.planExecPct);
 
   // 직원별 투입·기여 현황 (인력 배분 + 평가 반영 기여도 교차확인)
   const empName = (id) => (employees || []).find(e => e.id === id)?.name || id;
@@ -7047,6 +7364,33 @@ function ProjectAnalytics({ projects, employees, cfg }) {
         <MetricCard icon={Briefcase} label="총 제경비" value={fmtMoney(tot.overhead)} unit="원" />
         <MetricCard icon={PieIcon} label="사업비 대비 제경비" value={ohPct.toFixed(1)} unit="%" color={EXP_COLORS.overhead} />
       </div>
+
+      {targets && (targets.revenue > 0 || targets.profit > 0) && (() => {
+        const actualProfit = tot.revenue - tot.cost;
+        const bar = (label, actual, target, color) => {
+          const pct = target > 0 ? Math.min(100, Math.round(actual / target * 100)) : 0;
+          const realPct = target > 0 ? Math.round(actual / target * 100) : 0;
+          return (
+            <div style={{ marginBottom: S[3] }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                <span style={{ fontWeight: 600, color: T.ink }}>{label} <span style={{ color: realPct >= 100 ? T.success : T.textMute, fontWeight: 700 }}>{realPct}%</span></span>
+                <span style={{ color: T.textMute }}>{fmtMoney(actual)} / {fmtMoney(target)}원</span>
+              </div>
+              <div style={{ height: 10, borderRadius: 6, background: T.surfaceAlt, overflow: 'hidden' }}>
+                <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 6 }} />
+              </div>
+            </div>
+          );
+        };
+        return (
+          <div style={{ ...card(), padding: S[6], marginBottom: S[5] }}>
+            <SectionTitle>연간 목표 대비 실적</SectionTitle>
+            {targets.revenue > 0 && bar('매출', tot.revenue, targets.revenue, EXP_COLORS.worker)}
+            {targets.profit > 0 && bar('영업이익', actualProfit, targets.profit, T.success)}
+            <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2] }}>실적은 현재 조회 연도의 프로젝트 합계 기준입니다. 목표는 정책 설정에서 조정합니다.</div>
+          </div>
+        );
+      })()}
 
       {warnList.length > 0 && (
         <div style={{ ...card({ borderLeft: `3px solid ${warnList.some(w => w.diag.status === 'alert') ? T.danger : T.warning}` }), padding: `${S[4]}px ${S[5]}px`, marginBottom: S[5] }}>
@@ -7114,6 +7458,73 @@ function ProjectAnalytics({ projects, employees, cfg }) {
           조직별 합계 · 영업이익이 음수(적자)면 붉게 표시됩니다.
         </div>
       </div>
+
+      {yearData.length >= 2 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[5], marginBottom: S[5] }}>
+          <div style={{ ...card(), padding: S[6] }}>
+            <SectionTitle>연도별 매출·원가·영업이익 추세</SectionTitle>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={yearData} margin={{ top: 10, right: 16, left: 10, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
+                <XAxis dataKey="year" tick={{ fontSize: 12, fill: T.textMute }} />
+                <YAxis tick={{ fontSize: 11, fill: T.textMute }} tickFormatter={(v) => fmtMoney(v)} />
+                <Tooltip contentStyle={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12 }} formatter={(v) => fmtMoney(v) + '원'} />
+                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
+                <Bar dataKey="매출" fill={EXP_COLORS.worker} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="원가" fill={EXP_COLORS.overhead} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="영업이익" radius={[4, 4, 0, 0]}>
+                  {yearData.map((y, i) => <Cell key={i} fill={y.영업이익 >= 0 ? T.success : T.danger} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={{ ...card(), padding: S[6] }}>
+            <SectionTitle>연도별 수익률·제경비 비중 추세</SectionTitle>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={yearData} margin={{ top: 10, right: 16, left: -10, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
+                <XAxis dataKey="year" tick={{ fontSize: 12, fill: T.textMute }} />
+                <YAxis tick={{ fontSize: 11, fill: T.textMute }} unit="%" />
+                <Tooltip contentStyle={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12 }} formatter={(v) => v + '%'} />
+                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
+                <Bar dataKey="수익률" fill={T.success} radius={[4, 4, 0, 0]} name="수익률(%)" />
+                <Bar dataKey="제경비비중" fill={EXP_COLORS.overhead} radius={[4, 4, 0, 0]} name="제경비 비중(%)" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {planRows.length > 0 && (
+        <div style={{ ...card(), padding: S[6], marginBottom: S[5] }}>
+          <SectionTitle>계획 대비 집행 원가</SectionTitle>
+          {overBudget.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: S[3], padding: `${S[2]}px ${S[3]}px`, background: '#FDECEC', borderRadius: 6 }}>
+              <AlertCircle size={14} style={{ color: T.danger }} />
+              <span style={{ fontSize: 12, fontWeight: 700, color: T.danger }}>예산 초과 {overBudget.length}건</span>
+              {overBudget.map(r => (
+                <span key={r.id} style={{ fontSize: 11, color: T.danger }}>{r.name}({r.planExecPct}%)</span>
+              ))}
+            </div>
+          )}
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={planRows} margin={{ top: 10, right: 16, left: 10, bottom: 70 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
+              <XAxis dataKey="name" angle={-30} textAnchor="end" height={80} tick={{ fontSize: 10, fill: T.textMute }} interval={0} />
+              <YAxis tick={{ fontSize: 11, fill: T.textMute }} tickFormatter={(v) => fmtMoney(v)} />
+              <Tooltip contentStyle={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12 }} formatter={(v) => fmtMoney(v) + '원'} />
+              <Legend wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
+              <Bar dataKey="계획" fill={EXP_COLORS.mgr} radius={[4, 4, 0, 0]} name="계획원가(예산)" />
+              <Bar dataKey="실적" radius={[4, 4, 0, 0]} name="실적원가(집행)">
+                {planRows.map(r => <Cell key={r.id} fill={r.planExecPct != null && r.planExecPct > 100 ? T.danger : EXP_COLORS.worker} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2] }}>
+            실적원가가 계획(예산)을 초과하면 붉게 표시됩니다. 계획값은 사업관리 엑셀의 '계획' 열에서 자동 반영됩니다.
+          </div>
+        </div>
+      )}
 
       <div style={{ ...card(), padding: S[6] }}>
         <SectionTitle>프로젝트별 지출 분포 (작업자/관리자 인건비 · 제경비)</SectionTitle>
@@ -7222,7 +7633,7 @@ function ProjectAnalytics({ projects, employees, cfg }) {
   );
 }
 
-function ProjectProfitView({ user, employees, projects, upsertProject, deleteProject, bulkUpsertProjects, currentYear, policy }) {
+function ProjectProfitView({ user, employees, projects, proposals, overheads, upsertProject, deleteProject, bulkUpsertProjects, bulkUpsertProposals, deleteProposal, upsertOverhead, deleteOverhead, bulkUpsertOverheads, currentYear, policy, setPolicy }) {
   const canEdit = user.role === 'admin' || user.deptScope === '경영지원부';
   const cfg = (policy && policy.diag) || {};
   const pmFloor = cfg.pmFloor ?? PM_MIN_CONTRIBUTION;
@@ -7333,7 +7744,7 @@ function ProjectProfitView({ user, employees, projects, upsertProject, deletePro
           }}>{y === 'all' ? '전체' : `${y}년`}</button>
         ))}
         <div style={{ flex: 1 }} />
-        {[['list', '목록'], ['analysis', '지출 분석']].map(([v, lab]) => (
+        {[['list', '목록'], ['analysis', '지출 분석'], ['overhead', '공통비 배부'], ['pipeline', '수주 파이프라인']].map(([v, lab]) => (
           <button key={v} onClick={() => setView(v)} style={{
             padding: '5px 14px', borderRadius: 6, fontSize: 12, fontFamily: FONT, cursor: 'pointer',
             border: `1px solid ${view === v ? T.brand : T.border}`,
@@ -7343,10 +7754,16 @@ function ProjectProfitView({ user, employees, projects, upsertProject, deletePro
         ))}
       </div>
 
-      {view === 'analysis' ? (
+      {view === 'pipeline' ? (
+        <ProjectPipeline proposals={proposals || []} canEdit={canEdit} deleteProposal={deleteProposal} />
+      ) : view === 'overhead' ? (
+        <OverheadView projects={shown} overheads={overheads || []} currentYear={currentYear} yearFilter={yearFilter}
+          policy={policy} setPolicy={setPolicy} canEdit={canEdit}
+          upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} />
+      ) : view === 'analysis' ? (
         shown.length === 0
           ? <EmptyState icon={PieIcon} title="분석할 데이터가 없습니다" desc="프로젝트를 등록하거나 사업관리 엑셀을 업로드하세요" />
-          : <ProjectAnalytics projects={shown} employees={employees} cfg={cfg} />
+          : <ProjectAnalytics projects={shown} employees={employees} cfg={cfg} targets={(policy && policy.targets) || {}} allProjects={projects} />
       ) : shown.length === 0 ? (
         <EmptyState icon={Briefcase} title="프로젝트가 없습니다" desc={canEdit ? '프로젝트 추가 또는 CSV 업로드로 시작하세요' : '등록된 프로젝트가 없습니다'} />
       ) : (
@@ -7464,6 +7881,8 @@ function ProjectProfitView({ user, employees, projects, upsertProject, deletePro
           currentYear={currentYear}
           pmFloor={pmFloor}
           onApply={(rows) => { bulkUpsertProjects(rows); setSagwanOpen(false); }}
+          onApplyProposals={(props) => bulkUpsertProposals(props)}
+          onApplyOverheads={(ohs) => bulkUpsertOverheads(ohs)}
           onClose={() => setSagwanOpen(false)}
         />
       )}
@@ -7475,7 +7894,7 @@ function ProjectEditModal({ project, employees, currentYear, onSave, onClose }) 
   const [form, setForm] = useState(project ? { ...project, workerLabor: project.workerLabor ?? project.laborCost ?? '', mgrLabor: project.mgrLabor ?? '', members: (project.members || []).map(m => ({ ...m })) } : {
     id: `PRJ-${currentYear}-${String(Date.now()).slice(-4)}`, name: '', client: '',
     year: currentYear, period: '', status: 'ongoing',
-    revenue: '', workerLabor: '', mgrLabor: '', overhead: '', otherCost: '', members: [], note: '',
+    revenue: '', workerLabor: '', mgrLabor: '', overhead: '', otherCost: '', planCost: '', members: [], note: '',
   });
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
   const laborSum = (Number(form.workerLabor) || 0) + (Number(form.mgrLabor) || 0);
@@ -7496,6 +7915,7 @@ function ProjectEditModal({ project, employees, currentYear, onSave, onClose }) 
       workerLabor: worker, mgrLabor: mgr, laborCost: worker + mgr,
       overhead: Number(form.overhead) || 0,
       otherCost: Number(form.otherCost) || 0,
+      planCost: Number(form.planCost) || 0,
       members: (form.members || []).filter(x => x.empId).map(x => ({ empId: x.empId, role: x.role, contribution: Number(x.contribution) || 0 })),
     });
   };
@@ -7540,6 +7960,7 @@ function ProjectEditModal({ project, employees, currentYear, onSave, onClose }) 
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: S[3], marginBottom: S[4] }}>
             <div><label style={labelStyle}>외주·기타비</label><input style={numStyle} type="number" value={form.otherCost} onChange={e => set('otherCost', e.target.value)} placeholder="0" /></div>
+            <div><label style={labelStyle}>계획 원가(예산)</label><input style={numStyle} type="number" value={form.planCost} onChange={e => set('planCost', e.target.value)} placeholder="0" /></div>
           </div>
 
           {/* 계산 결과 */}
@@ -7714,19 +8135,34 @@ function parseSagwanWorkbook(XLSX, arrayBuffer, yearDefault, pmFloor) {
       revenue: _sgNum(_sgCell(ws1, XLSX, r, 6)) || 0,
       pm: _sgTitle(_sgStr(ws1, XLSX, r, 13)), dept: _sgStr(ws1, XLSX, r, 12),
       laborCost: 0, overhead: 0, otherCost: 0, members: [], note,
-      _fl: [], _el: null, _em: null, _ee: null, _et: null,
+      _fl: [], _el: null, _em: null, _ee: null, _et: null, _plan: 0, _monthly: new Array(13).fill(0),
     };
     name2no[_sgKey(name)] = NO;
   }
   // 2) 사업별집행내역 → 원가
-  const ws2 = wb.Sheets['사업별집행내역']; const rng2 = XLSX.utils.decode_range(ws2['!ref']); let cur = null;
+  const ws2 = wb.Sheets['사업별집행내역']; const rng2 = XLSX.utils.decode_range(ws2['!ref']); let cur = null; let curOH = false; let ohSum = 0;
+  const ohMonthly = new Array(13).fill(0);
+  const hyeonCols = []; for (let mo = 0; mo < 13; mo++) hyeonCols.push(6 + 2 * mo); // 현황 월 컬럼(0-based: G=6,I=8,...)
   for (let r = 3; r <= rng2.e.r; r++) {
-    const NO = _sgStr(ws2, XLSX, r, 0); const F = _sgStr(ws2, XLSX, r, 5); const AG = _sgNum(_sgCell(ws2, XLSX, r, 32));
-    if (NO && /^\d{4}-\d+/.test(NO)) { cur = projects[NO] ? NO : null; continue; }
+    const NO = _sgStr(ws2, XLSX, r, 0); const F = _sgStr(ws2, XLSX, r, 5);
+    const AG = _sgNum(_sgCell(ws2, XLSX, r, 32));  // 현황 합계
+    const AH = _sgNum(_sgCell(ws2, XLSX, r, 33));  // 계획 합계
+    if (NO && /^\d{4}-\d+/.test(NO)) {
+      cur = projects[NO] ? NO : null;
+      const nm = _sgStr(ws2, XLSX, r, 3);
+      curOH = !cur && /본사운영|공통경비|세종연구소운영|간접비/.test(nm + ' ' + NO);
+      continue;
+    }
+    const isCost = (F === '작업자인건비' || F === '관리자인건비' || F === '사업경비');
+    if (curOH) {
+      if (isCost && AG) { ohSum += AG; hyeonCols.forEach((c, mi) => { const v = _sgNum(_sgCell(ws2, XLSX, r, c)); if (v) ohMonthly[mi] += v; }); }
+      continue;
+    }
     if (!cur) continue;
-    if (F === '작업자인건비') projects[cur]._el = AG;
-    else if (F === '관리자인건비') projects[cur]._em = AG;
-    else if (F === '사업경비') projects[cur]._ee = AG;
+    if (isCost) hyeonCols.forEach((c, mi) => { const v = _sgNum(_sgCell(ws2, XLSX, r, c)); if (v) projects[cur]._monthly[mi] += v; });
+    if (F === '작업자인건비') { projects[cur]._el = AG; projects[cur]._plan += (AH || 0); }
+    else if (F === '관리자인건비') { projects[cur]._em = AG; projects[cur]._plan += (AH || 0); }
+    else if (F === '사업경비') { projects[cur]._ee = AG; projects[cur]._plan += (AH || 0); }
     else if (F === '소계') projects[cur]._et = AG;
   }
   // 3) 인력운영현황 → 참여자·투입 인건비
@@ -7761,6 +8197,8 @@ function parseSagwanWorkbook(XLSX, arrayBuffer, yearDefault, pmFloor) {
     const mgr = (mg != null) ? mg : Math.max(0, labor - worker);
     p.workerLabor = Math.round(worker); p.mgrLabor = Math.round(mgr);
     p.laborCost = Math.round(labor); p.overhead = Math.round(overhead);
+    p.planCost = Math.round(p._plan || 0);
+    p.monthly = p._monthly.map(v => Math.round(v));
     const cost = labor + overhead;
     if (p.revenue > 0 && cost > p.revenue * 1.5) p._fl.push('원가>매출');
     if (p.revenue > 0 && cost === 0) p._fl.push('원가 0');
@@ -7772,10 +8210,39 @@ function parseSagwanWorkbook(XLSX, arrayBuffer, yearDefault, pmFloor) {
     }));
     applyPmFloor(p.members, floor);
   });
-  return { projects: Object.values(projects), unmatched: Array.from(unmatched) };
+
+  // 5) 사업제안현황 → 수주 파이프라인 (있을 때만)
+  const proposals = [];
+  const wsP = wb.Sheets['사업제안현황'];
+  if (wsP) {
+    const rngP = XLSX.utils.decode_range(wsP['!ref']);
+    for (let r = 0; r <= rngP.e.r; r++) {
+      const name = _sgStr(wsP, XLSX, r, 2);
+      const client = _sgStr(wsP, XLSX, r, 3);
+      const budget = _sgNum(_sgCell(wsP, XLSX, r, 4));
+      if (!name || name === '사업명') continue;
+      if (!client && budget == null) continue;
+      const won = name2no[_sgKey(name)] != null;
+      proposals.push({
+        id: 'P:' + _sgKey(name),
+        name, client, category: _sgStr(wsP, XLSX, r, 1),
+        budget: Math.round(budget || 0),
+        bidDate: _sgYM(_sgCell(wsP, XLSX, r, 5)),
+        pm: _sgTitle(_sgStr(wsP, XLSX, r, 9)),
+        consortium: _sgStr(wsP, XLSX, r, 7),
+        note: _sgStr(wsP, XLSX, r, 10),
+        status: won ? '수주' : '제안',
+        wonProjectId: won ? name2no[_sgKey(name)] : null,
+      });
+    }
+  }
+
+  const ohYear = yearDefault || 2026;
+  const overheads = ohSum > 0 ? [{ id: 'OH:' + ohYear + ':excel', year: ohYear, category: '본사운영·공통경비(엑셀)', amount: Math.round(ohSum), monthly: ohMonthly.map(v => Math.round(v)), note: '사업관리 엑셀 업로드' }] : [];
+  return { projects: Object.values(projects), unmatched: Array.from(unmatched), proposals, overheads };
 }
 
-function SagwanUploadModal({ employees, currentYear, onApply, onClose, pmFloor }) {
+function SagwanUploadModal({ employees, currentYear, onApply, onApplyProposals, onApplyOverheads, onClose, pmFloor }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [preview, setPreview] = useState(null); // { projects, unmatched }
@@ -7802,11 +8269,13 @@ function SagwanUploadModal({ employees, currentYear, onApply, onClose, pmFloor }
     const rows = preview.projects.map(p => ({
       id: p.id, name: p.name, client: p.client, year: Number(p.year) || currentYear,
       period: p.period, status: p.status,
-      revenue: Math.round(p.revenue), laborCost: p.laborCost, workerLabor: p.workerLabor, mgrLabor: p.mgrLabor, overhead: p.overhead, otherCost: 0,
+      revenue: Math.round(p.revenue), laborCost: p.laborCost, workerLabor: p.workerLabor, mgrLabor: p.mgrLabor, overhead: p.overhead, otherCost: 0, planCost: p.planCost, monthly: p.monthly,
       members: p.members.map(m => ({ empId: m.empId, role: m.role, contribution: m.contribution })),
       note: (p.note + (p._fl.length ? ' · ' + p._fl.join(' / ') : '')).replace(/^ · /, '').trim(),
     }));
     onApply(rows);
+    if (onApplyProposals && preview.proposals && preview.proposals.length) onApplyProposals(preview.proposals);
+    if (onApplyOverheads && preview.overheads && preview.overheads.length) onApplyOverheads(preview.overheads);
   };
 
   const clean = preview ? preview.projects.filter(p => p._fl.length === 0).length : 0;
@@ -7852,6 +8321,8 @@ function SagwanUploadModal({ employees, currentYear, onApply, onClose, pmFloor }
                 <Badge color={T.success} variant="outline">정상 {clean}개</Badge>
                 <Badge color={T.warning} variant="outline">검토 필요 {preview.projects.length - clean}개</Badge>
                 {preview.unmatched.length > 0 && <Badge color={T.textMute} variant="outline">이름 미매칭 {preview.unmatched.length}건</Badge>}
+                {preview.proposals && preview.proposals.length > 0 && <Badge color={T.brand} variant="outline">제안현황 {preview.proposals.length}건</Badge>}
+                {preview.overheads && preview.overheads.length > 0 && <Badge color={T.warning} variant="outline">공통비 {fmtMoney(preview.overheads.reduce((s, o) => s + o.amount, 0))}원</Badge>}
               </div>
               <div style={{ ...card(), overflow: 'hidden' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -9317,11 +9788,21 @@ function PolicyView({ policy, setPolicy }) {
       </div>
 
       {/* ========== 프로젝트 원가 진단 기준 ========== */}
-      {(() => { const d = policy.diag || INITIAL_POLICY.diag; return (
+      {(() => { const d = policy.diag || INITIAL_POLICY.diag; const tg = policy.targets || INITIAL_POLICY.targets; return (
       <div style={{ ...card({ borderLeft: `4px solid ${T.warning}` }), padding: S[6], marginBottom: S[5] }}>
-        <SectionTitle>프로젝트 원가 진단 기준</SectionTitle>
+        <SectionTitle>연간 경영 목표 · 프로젝트 원가 진단 기준</SectionTitle>
         <div style={{ fontSize: 11, color: T.textMute, marginBottom: S[4] }}>
-          프로젝트 수익성 → 지출 분석에서 사용하는 경고 임계값과 PM 최소 기여도입니다. 주의(주황)·경고(빨강) 2단계로 표시됩니다.
+          연간 매출·영업이익 목표와, 프로젝트 수익성 → 지출 분석에서 사용하는 경고 임계값·PM 최소 기여도입니다.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: S[4], marginBottom: S[4] }}>
+          <div><label style={{ fontSize: 11, fontWeight: 600, color: T.textMute, display: 'block', marginBottom: 4 }}>연간 매출 목표(원)</label>
+            <input type="number" value={policy.targets?.revenue ?? 0} onChange={e => setPolicy(prev => ({ ...prev, targets: { ...(prev.targets || {}), revenue: Number(e.target.value) || 0 } }))} style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13, fontFamily: FONT, boxSizing: 'border-box', textAlign: 'right' }} /></div>
+          <div><label style={{ fontSize: 11, fontWeight: 600, color: T.textMute, display: 'block', marginBottom: 4 }}>연간 영업이익 목표(원)</label>
+            <input type="number" value={policy.targets?.profit ?? 0} onChange={e => setPolicy(prev => ({ ...prev, targets: { ...(prev.targets || {}), profit: Number(e.target.value) || 0 } }))} style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13, fontFamily: FONT, boxSizing: 'border-box', textAlign: 'right' }} /></div>
+          <div><label style={{ fontSize: 11, fontWeight: 600, color: T.textMute, display: 'block', marginBottom: 4 }}>공통비 배부 기준</label>
+            <select value={policy.allocation?.basis || 'labor'} onChange={e => setPolicy(prev => ({ ...prev, allocation: { ...(prev.allocation || {}), basis: e.target.value } }))} style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13, fontFamily: FONT, boxSizing: 'border-box' }}>
+              <option value="labor">직접인건비 기준</option><option value="revenue">매출 기준</option><option value="none">미배부</option>
+            </select></div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: S[4] }}>
           <PolicyInput label="제경비/원가 주의(%)" value={d.ohWarn} onChange={v => upDiag('ohWarn', v)} />
