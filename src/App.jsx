@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Users, Settings, FileText, BarChart3, Save, Download, Upload, Search, AlertCircle, Award, Wallet, Trash2, Printer, History, PieChart as PieIcon, LogIn, LogOut, Sparkles, Mail, UserCheck, CheckCircle2, ChevronRight, TrendingUp, Building2, Plus, Pencil, X, StickyNote, ChevronDown, Calendar, Briefcase, MessageSquare, Clock, Tag, Calculator, FileSpreadsheet } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { Users, Settings, FileText, BarChart3, Save, Download, Upload, Search, AlertCircle, Award, Wallet, Trash2, Printer, History, PieChart as PieIcon, LogIn, LogOut, Sparkles, Mail, UserCheck, CheckCircle2, ChevronRight, TrendingUp, Building2, Plus, Pencil, X, StickyNote, ChevronDown, Calendar, Briefcase, MessageSquare, Clock, Tag, Calculator, FileSpreadsheet, TrendingDown, Target, Activity, AlertTriangle, ShieldAlert, Layers, Percent, ArrowUpRight, ArrowDownRight, FileBarChart } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ComposedChart, Area, LabelList } from 'recharts';
 
 // ============================================================
 // 디자인 토큰 시스템
@@ -2285,6 +2285,7 @@ export default function App() {
   const [projects, setProjects] = useState(INITIAL_PROJECTS);  // 프로젝트별 수익성 데이터
   const [proposals, setProposals] = useState([]);  // 수주 파이프라인(사업제안현황)
   const [overheads, setOverheads] = useState([]);  // 공통비(간접비) 풀: {id, year, category, amount, note}
+  const [empLedger, setEmpLedger] = useState([]);  // 직원별 경비/수주: {name, empId, card, newOrder, year}
   const [history, setHistory] = useState([HISTORY_2025]);
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [historyHighlight, setHistoryHighlight] = useState(null);  // {empId, year}
@@ -2485,6 +2486,7 @@ export default function App() {
         if (data.projects) setProjects(data.projects);
         if (data.proposals) setProposals(data.proposals);
         if (data.overheads) setOverheads(data.overheads);
+        if (data.empLedger) setEmpLedger(data.empLedger);
         if (data.history) setHistory(data.history);
       }
     } catch (e) {}
@@ -2513,12 +2515,12 @@ export default function App() {
 
   const handleSave = () => {
     try {
-      localStorage.setItem('koition_hr_v6', JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, history }));
+      localStorage.setItem('koition_hr_v6', JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, history }));
       showToast('데이터가 저장되었습니다');
     } catch (e) { showToast('저장 실패', 'error'); }
   };
   const handleExport = () => {
-    const data = { year: currentYear, employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, history };
+    const data = { year: currentYear, employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, history };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -2552,6 +2554,7 @@ export default function App() {
         if (data.projects) setProjects(data.projects);
         if (data.proposals) setProposals(data.proposals);
         if (data.overheads) setOverheads(data.overheads);
+        if (data.empLedger) setEmpLedger(data.empLedger);
         if (data.history) setHistory(data.history);
         showToast('데이터를 불러왔습니다');
       } catch (err) { showToast('파일 형식이 올바르지 않습니다', 'error'); }
@@ -2628,6 +2631,7 @@ export default function App() {
   };
   const deleteProposal = (id) => setProposals(prev => prev.filter(x => x.id !== id));
 
+  const bulkSetEmpLedger = (rows) => { if (rows && rows.length) setEmpLedger(rows); };
   const upsertOverhead = (item) => setOverheads(prev => {
     const map = new Map(prev.map(o => [o.id, o]));
     map.set(item.id, item);
@@ -2671,6 +2675,7 @@ export default function App() {
     { id: 'employees', label: '직원 관리', icon: Users, roles: ['admin'] },
     { id: 'evaluation', label: '평가 입력', icon: FileText, roles: ['admin', 'manager', 'evaluator'] },
     { id: 'projects', label: '프로젝트 수익성', icon: Briefcase, roles: ['admin', 'manager'] },
+    { id: 'report', label: '경영보고서', icon: FileBarChart, roles: ['admin', 'manager'] },
     { id: 'results', label: '평가 결과', icon: Award, roles: ['admin', 'manager'] },
     { id: 'salary', label: '급여 산정', icon: Wallet, roles: ['admin'] },
     { id: 'analytics', label: '통계 분석', icon: PieIcon, roles: ['admin', 'manager'] },
@@ -2714,7 +2719,8 @@ export default function App() {
               else showToast(`${emp.name}님의 계정을 찾을 수 없습니다`);
             }} />}
             {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} projects={projects} />}
-            {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} currentYear={currentYear} policy={policy} setPolicy={setPolicy} />}
+            {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} />}
+            {tab === 'report' && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} currentYear={currentYear} policy={policy} />}
             {tab === 'results' && <ResultsView user={user} employees={visibleEmployees} results={results} comments={comments} scores={scores} selfScores={selfScores} policy={policy} currentYear={currentYear} history={history} navigateToHistory={navigateToHistory} />}
             {tab === 'salary' && <SalaryView employees={employees} results={results} stats={stats} />}
             {tab === 'analytics' && <AnalyticsView employees={visibleEmployees} results={results} policy={policy} stats={stats} />}
@@ -7633,7 +7639,557 @@ function ProjectAnalytics({ projects, employees, cfg, targets, allProjects }) {
   );
 }
 
-function ProjectProfitView({ user, employees, projects, proposals, overheads, upsertProject, deleteProject, bulkUpsertProjects, bulkUpsertProposals, deleteProposal, upsertOverhead, deleteOverhead, bulkUpsertOverheads, currentYear, policy, setPolicy }) {
+// ============================================================
+// 경영보고서 (월간 경영진단 보고서) — 경영기획 관점 종합 분석
+// ============================================================
+function ManagementReportView({ user, projects, proposals, overheads, employees, empLedger, currentYear, policy }) {
+  const yr = currentYear;
+  const cfg = (policy && policy.diag) || {};
+  const targets = (policy && policy.targets) || { revenue: 0, profit: 0 };
+  const allocCfg = (policy && policy.allocation) || { basis: 'labor', mode: 'annual' };
+
+  const yprojects = (projects || []).filter(p => p.year == null || Number(p.year) === yr);
+  const shortName = (n) => { n = String(n || '').replace(/^\(예시\)\s*/, ''); return n.length > 16 ? n.slice(0, 15) + '…' : n; };
+  const pct = (a, b) => (b > 0 ? (a / b * 100) : 0);
+  const won = (n) => fmtMoney(n) + '원';
+  const f1 = (n) => (Math.round(n * 10) / 10);
+
+  // ---- 프로젝트별 지표 + 진단 ----
+  const bench = costBenchmark(yprojects);
+  const rows = yprojects.map(p => {
+    const m = projectMetrics(p);
+    const diag = costDiagnosis(m, bench, cfg);
+    return { p, m, diag, id: p.id, name: shortName(p.name), full: p.name, dept: p.dept || p.org || '미지정' };
+  }).filter(r => r.m.revenue > 0 || r.m.cost > 0);
+
+  // ---- 합계 ----
+  const T0 = rows.reduce((a, r) => ({
+    revenue: a.revenue + r.m.revenue, worker: a.worker + r.m.worker, mgr: a.mgr + r.m.mgr,
+    labor: a.labor + r.m.labor, overhead: a.overhead + r.m.overhead, cost: a.cost + r.m.cost,
+  }), { revenue: 0, worker: 0, mgr: 0, labor: 0, overhead: 0, cost: 0 });
+  const pool = overheadPoolTotal(overheads, yr);
+  const contrib = T0.revenue - T0.cost;
+  const full = contrib - pool;
+  const marginContrib = pct(contrib, T0.revenue);
+  const marginFull = pct(full, T0.revenue);
+  const laborRev = pct(T0.labor, T0.revenue);
+  const costRev = pct(T0.cost, T0.revenue);
+  const poolRev = pct(pool, T0.revenue);
+  const totCostAll = T0.cost + pool;
+
+  const allocMap = allocCfg.mode === 'monthly'
+    ? allocateOverheadMonthly(yprojects, (overheads || []).filter(o => Number(o.year) === yr), yr)
+    : allocateOverhead(yprojects, pool, allocCfg.basis);
+
+  // ---- 월별 추이 ----
+  const monthLabels = ['2025.12', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
+  const dirM = new Array(13).fill(0);
+  yprojects.forEach(p => { if (Array.isArray(p.monthly)) p.monthly.forEach((v, i) => dirM[i] += (Number(v) || 0)); });
+  const ohM = new Array(13).fill(0);
+  (overheads || []).filter(o => Number(o.year) === yr).forEach(o => { if (Array.isArray(o.monthly) && o.monthly.some(v => v > 0)) o.monthly.forEach((v, i) => ohM[i] += (Number(v) || 0)); });
+  const lastM = (() => { let last = 0; for (let i = 1; i <= 12; i++) if (dirM[i] > 0 || ohM[i] > 0) last = i; return last; })();
+  const trendData = [];
+  for (let i = 1; i <= (lastM || 12); i++) trendData.push({ month: monthLabels[i], 직접원가: Math.round(dirM[i]), 공통비: Math.round(ohM[i]) });
+  const refLabel = lastM ? `1~${lastM}월` : '연간';
+  const activeMonths = lastM || 12;
+
+  // ---- 수주 파이프라인 / 목표 ----
+  const pipe = (proposals || []).filter(p => p.year == null || Number(p.year) === yr);
+  const pipeAmt = pipe.reduce((s, p) => s + (Number(p.expectedRevenue || p.amount || p.revenue) || 0), 0);
+  const revAch = targets.revenue > 0 ? pct(T0.revenue, targets.revenue) : null;
+  const profAch = targets.profit > 0 ? pct(full, targets.profit) : null;
+
+  // ---- 조직·본부별 손익 롤업 ----
+  const orgMap = {};
+  rows.forEach(r => {
+    const k = r.dept;
+    if (!orgMap[k]) orgMap[k] = { name: k, revenue: 0, labor: 0, worker: 0, mgr: 0, overhead: 0, cost: 0, alloc: 0, cnt: 0 };
+    const o = orgMap[k];
+    o.revenue += r.m.revenue; o.labor += r.m.labor; o.worker += r.m.worker; o.mgr += r.m.mgr;
+    o.overhead += r.m.overhead; o.cost += r.m.cost; o.alloc += (allocMap[r.id] || 0); o.cnt++;
+  });
+  const empActive = (employees || []).filter(e => (e.status ? e.status === 'active' : true));
+  const headOf = (orgName) => {
+    if (!orgName || orgName === '미지정') return 0;
+    return empActive.filter(e => { const d = String(e.dept || ''); return d && (d.includes(orgName) || orgName.includes(d.split('/')[0])); }).length;
+  };
+  const orgRows = Object.values(orgMap).map(o => {
+    const contribO = o.revenue - o.cost; const fullO = contribO - o.alloc;
+    const head = headOf(o.name);
+    return { ...o, contrib: contribO, full: fullO, margin: pct(contribO, o.revenue), fullMargin: pct(fullO, o.revenue), head, perRev: head > 0 ? o.revenue / head : null };
+  }).sort((a, b) => b.revenue - a.revenue);
+  const orgBar = orgRows.map(o => ({ name: shortName(o.name), 매출: Math.round(o.revenue), 공헌이익: Math.round(o.contrib), 완전이익: Math.round(o.full) }));
+
+  // ---- 인당 생산성 ----
+  const N = empActive.length;
+  const perRev = N > 0 ? T0.revenue / N : 0;
+  const perContrib = N > 0 ? contrib / N : 0;
+  const perFull = N > 0 ? full / N : 0;
+  const perLabor = N > 0 ? T0.labor / N : 0;
+  const valueAddPerLabor = T0.labor > 0 ? contrib / T0.labor : 0;     // 인건비 1원당 공헌이익
+  const laborShare = contrib + T0.labor > 0 ? pct(T0.labor, contrib + T0.labor) : 0; // 노동소득분배율(근사)
+  const monthlyPerRev = activeMonths > 0 && N > 0 ? T0.revenue / N / activeMonths : 0;
+
+  // ---- 직원별 순기여 (프로젝트 참여·기여도 기준) ----
+  const empName = (id) => (employees || []).find(e => e.id === id)?.name || id;
+  const empDept = (id) => (employees || []).find(e => e.id === id)?.dept || '';
+  const empStatus = (id) => (employees || []).find(e => e.id === id)?.status || '';
+  const STATUS_LABEL = { active: '', freelancer: '프리랜서', advisor: '자문', contract: '계약직', inactive: '비활성' };
+  const perfLinked = (st) => st === 'freelancer' || st === 'advisor';
+  const eMap = {};
+  rows.forEach(r => {
+    const m = r.m;
+    (r.p.members || []).forEach(mem => {
+      const c = (Number(mem.contribution) || 0) / 100;
+      if (!eMap[mem.empId]) eMap[mem.empId] = { empId: mem.empId, cnt: 0, labor: 0, rev: 0, profit: 0, pm: false };
+      const e = eMap[mem.empId]; e.cnt++; e.labor += m.labor * c; e.rev += m.revenue * c; e.profit += m.profit * c;
+      if (mem.role === 'PM') e.pm = true;
+    });
+  });
+  const ledger = (empLedger || []).filter(l => l.year == null || Number(l.year) === yr);
+  const ledgerById = {}; const ledgerByName = {};
+  ledger.forEach(l => { if (l.empId) ledgerById[l.empId] = l; if (l.name) ledgerByName[String(l.name).trim()] = l; });
+  const findLedger = (id, name) => ledgerById[id] || ledgerByName[String(name || '').trim()] || null;
+  const empRows = Object.values(eMap).map(e => {
+    const nm = empName(e.empId); const lg = findLedger(e.empId, nm);
+    const card = lg ? (lg.card || 0) : 0; const newOrder = lg ? (lg.newOrder || 0) : 0;
+    return { ...e, name: nm, dept: empDept(e.empId), status: empStatus(e.empId), cover: e.labor > 0 ? e.rev / e.labor : null, net: e.profit, card, newOrder, total: e.profit - card, score: (calcContributionScore(e.empId, yprojects, yr) || {}).score ?? null };
+  });
+  // 사업 참여는 없지만 카드/수주 원장에만 있는 인원도 포함
+  const seen = new Set(empRows.map(e => (e.empId || '') + '|' + e.name));
+  ledger.forEach(l => {
+    const key = (l.empId || '') + '|' + (l.name || '');
+    const byName = empRows.find(e => e.name === l.name);
+    if (l.empId && seen.has(key)) return;
+    if (byName) return;
+    empRows.push({ empId: l.empId, name: l.name, dept: '', status: empStatus(l.empId), cnt: 0, labor: 0, rev: 0, profit: 0, pm: false, cover: null, net: 0, card: l.card || 0, newOrder: l.newOrder || 0, total: -(l.card || 0), score: null });
+  });
+  empRows.sort((a, b) => a.total - b.total);
+  const negEmp = empRows.filter(e => e.total < 0).length;
+  const perfRows = empRows.filter(e => perfLinked(e.status));
+  const hasLedger = ledger.length > 0;
+
+  // ---- 원가 구성 ----
+  const costMix = [
+    { name: '작업자 인건비', value: Math.round(T0.worker), color: T.brand },
+    { name: '관리자 인건비', value: Math.round(T0.mgr), color: T.brandLight },
+    { name: '사업경비(제경비)', value: Math.round(T0.overhead), color: T.warning },
+    { name: '공통비(간접비)', value: Math.round(pool), color: T.textMute },
+  ].filter(x => x.value > 0);
+
+  // ---- 매출 상위 ----
+  const byRev = [...rows].sort((a, b) => b.m.revenue - a.m.revenue);
+  const revBar = byRev.slice(0, 8).map(r => ({ name: r.name, 매출: Math.round(r.m.revenue), 원가: Math.round(r.m.cost) }));
+  const topShare = T0.revenue > 0 && byRev.length ? pct(byRev[0].m.revenue, T0.revenue) : 0;
+  const profitable = rows.filter(r => r.m.profit > 0).length;
+  const lossmaking = rows.filter(r => r.m.revenue > 0 && r.m.profit < 0).length;
+
+  // ---- 위험요소 ----
+  const risks = [];
+  rows.forEach(r => {
+    const m = r.m;
+    if (m.revenue > 0 && m.profit < 0) risks.push({ level: '심각', title: `${r.name} 적자`, detail: `공헌이익 ${won(m.profit)} · 수익률 ${m.rate != null ? m.rate.toFixed(0) : '-'}%`, action: '원가 재점검·정산 협의 또는 계약금액 확인' });
+    else if (m.rate != null && m.rate >= 0 && m.rate < 10) risks.push({ level: '주의', title: `${r.name} 저수익`, detail: `수익률 ${m.rate.toFixed(0)}% · 공헌이익 ${won(m.profit)}`, action: '투입 인력·경비 효율화 검토' });
+    if (m.planCost > 0 && m.planExecPct != null && m.planExecPct > 100) risks.push({ level: '주의', title: `${r.name} 예산 초과집행`, detail: `계획 대비 ${m.planExecPct.toFixed(0)}%`, action: '잔여 예산·추가원가 통제' });
+    (r.diag.flags || []).forEach(fl => { if (fl.level === 'alert') risks.push({ level: '심각', title: `${r.name} ${fl.label}`, detail: fl.detail, action: fl.type === 'labor' ? '투입 인력 재배치' : fl.type === 'overhead' ? '경비 집행 점검' : '원가구조 전면 재검토' }); });
+  });
+  orgRows.forEach(o => { if (o.revenue > 0 && o.full < 0) risks.push({ level: '주의', title: `${shortName(o.name)} 본부 손실`, detail: `완전영업이익 ${won(o.full)} (이익률 ${o.fullMargin.toFixed(0)}%)`, action: '해당 본부 사업 포트폴리오·원가 점검' }); });
+  if (poolRev > 15) risks.push({ level: '주의', title: '공통비(간접비) 부담 과다', detail: `매출 대비 ${poolRev.toFixed(0)}%`, action: '본사운영비 절감·배부기준 재검토' });
+  if (topShare > 40) risks.push({ level: '주의', title: '특정 사업 매출 편중', detail: `최대 사업이 총매출의 ${topShare.toFixed(0)}%`, action: '수주 다변화로 리스크 분산' });
+  if (revAch != null && activeMonths > 0 && revAch < (activeMonths / 12 * 100) - 10) risks.push({ level: '주의', title: '연간 매출목표 진도 미달', detail: `달성 ${revAch.toFixed(0)}% · 기준 ${(activeMonths / 12 * 100).toFixed(0)}%`, action: '파이프라인 조기 수주 전환' });
+  if (valueAddPerLabor < 1.2 && T0.labor > 0) risks.push({ level: '주의', title: '노동생산성 저하', detail: `인건비 1원당 공헌이익 ${valueAddPerLabor.toFixed(2)}원`, action: '가동률 제고·고부가 사업 확대' });
+  if (full < 0) risks.push({ level: '심각', title: '전사 완전영업이익 적자', detail: `${won(full)} (공헌이익 ${won(contrib)} − 공통비 ${won(pool)})`, action: '공통비 절감 및 고수익 사업 확대 시급' });
+  const sev = risks.filter(r => r.level === '심각');
+  const wrn = risks.filter(r => r.level === '주의');
+
+  // ---- 종합 진단 ----
+  const health = full >= 0 && marginContrib >= 15 && sev.length === 0 ? '양호' : full >= 0 && sev.length <= 1 ? '보통' : '주의';
+  const healthColor = health === '양호' ? T.success : health === '보통' ? T.warning : T.danger;
+  const bestOrg = orgRows.filter(o => o.revenue > 0).sort((a, b) => b.fullMargin - a.fullMargin)[0];
+  const worstOrg = orgRows.filter(o => o.revenue > 0).sort((a, b) => a.fullMargin - b.fullMargin)[0];
+  const assess = [];
+  assess.push(`${yr}년 ${refLabel} 누적 기준, 총 ${rows.length}개 사업(수익 ${profitable}건·손실 ${lossmaking}건)에서 계약·수주 매출 ${won(T0.revenue)}, 직접원가 ${won(T0.cost)}로 공헌이익 ${won(contrib)}(공헌이익률 ${marginContrib.toFixed(1)}%)를 시현했습니다. 공통비 ${won(pool)} 배부 후 완전영업이익은 ${won(full)}(${marginFull.toFixed(1)}%)입니다.`);
+  assess.push(`원가 구조는 인건비가 매출의 ${laborRev.toFixed(0)}%(총원가의 ${pct(T0.labor, totCostAll).toFixed(0)}%), 사업경비가 총원가의 ${pct(T0.overhead, totCostAll).toFixed(0)}%, 공통비가 ${pct(pool, totCostAll).toFixed(0)}%를 차지합니다. ${laborRev >= 70 ? '인건비 비중이 높아 가동률·투입관리가 수익성의 핵심 변수입니다.' : '인건비 비중은 관리 가능한 수준입니다.'}`);
+  if (N > 0) assess.push(`인력 ${N}명 기준 1인당 매출은 ${won(perRev)}(월 ${won(monthlyPerRev)}), 1인당 공헌이익 ${won(perContrib)}이며, 인건비 1원당 ${valueAddPerLabor.toFixed(2)}원의 공헌이익을 창출했습니다(노동소득분배율 ${laborShare.toFixed(0)}%).`);
+  if (bestOrg && worstOrg && bestOrg.name !== worstOrg.name) assess.push(`본부별로는 ${shortName(bestOrg.name)}(이익률 ${bestOrg.fullMargin.toFixed(0)}%)이 가장 우수하고, ${shortName(worstOrg.name)}(${worstOrg.fullMargin.toFixed(0)}%)이 상대적으로 부진해 포트폴리오 조정이 필요합니다.`);
+  if (sev.length) assess.push(`심각 위험 ${sev.length}건: ${sev.slice(0, 3).map(r => r.title).join(', ')}${sev.length > 3 ? ' 등' : ''}. 즉시 대응이 필요합니다.`);
+  else assess.push(`심각 위험은 없으며 주의 항목 ${wrn.length}건을 모니터링합니다.`);
+  if (pipeAmt > 0) assess.push(`수주 파이프라인은 ${pipe.length}건·예상매출 ${won(pipeAmt)}로 현 매출 대비 ${pct(pipeAmt, T0.revenue).toFixed(0)}% 규모입니다.`);
+  const recs = [];
+  if (full < 0 || marginFull < 5) recs.push('저수익·적자 사업의 정산·계약금액을 재확인하고 고수익 사업 비중을 확대해 완전영업이익률을 개선합니다.');
+  if (laborRev >= 70 || valueAddPerLabor < 1.3) recs.push('사업별 인력 가동률을 관리하고 유휴 인력을 수주 사업으로 재배치해 노동생산성을 높입니다.');
+  if (poolRev > 12) recs.push('본사운영·공통경비를 항목별로 점검해 간접비 부담을 낮춥니다.');
+  if (worstOrg && worstOrg.fullMargin < 5) recs.push(`${shortName(worstOrg.name)} 본부의 사업 포트폴리오와 원가구조를 재점검합니다.`);
+  if (topShare > 40) recs.push('특정 사업 의존도를 낮추도록 파이프라인을 다변화합니다.');
+  if (revAch != null && revAch < 90) recs.push('연간 매출목표 달성을 위해 파이프라인의 수주 전환을 가속합니다.');
+  if (recs.length === 0) recs.push('현 수익구조를 유지하며 신규 수주와 원가 통제를 병행해 이익률을 안정화합니다.');
+
+  const KPI = ({ icon: Icon, label, value, unit, sub, color }) => (
+    <div style={{ ...card(), padding: S[5], display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: T.textMute, fontSize: 12, fontWeight: 600 }}>{Icon && <Icon size={15} color={color || T.brand} />}{label}</div>
+      <div style={{ fontSize: 23, fontWeight: 800, color: color || T.ink, lineHeight: 1.1 }}>{value}<span style={{ fontSize: 13, fontWeight: 600, color: T.textMute, marginLeft: 3 }}>{unit}</span></div>
+      {sub && <div style={{ fontSize: 12, color: T.textMute }}>{sub}</div>}
+    </div>
+  );
+  const H = ({ n, icon: Icon, children, sub }) => (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, margin: `${S[7]}px 0 ${S[4]}px` }}>
+      <span style={{ width: 26, height: 26, borderRadius: 7, background: T.brand, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0, alignSelf: 'center' }}>{n}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>{Icon && <Icon size={17} color={T.brand} />}<h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.ink }}>{children}</h3></div>
+      {sub && <span style={{ fontSize: 12, color: T.textMute }}>{sub}</span>}
+    </div>
+  );
+  const Note = ({ children }) => (
+    <div style={{ marginTop: S[3], padding: `10px 14px`, background: T.surfaceAlt, borderRadius: 8, fontSize: 12.5, color: T.text, lineHeight: 1.7, borderLeft: `3px solid ${T.brandLight}` }}>
+      <strong style={{ color: T.brand }}>분석 ▹ </strong>{children}
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 1120 }}>
+      {/* 표지 */}
+      <div style={{ ...card(), padding: S[6], marginBottom: S[5], background: `linear-gradient(135deg, ${T.brandDark}, ${T.brand})`, color: '#fff', border: 'none' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: S[3] }}>
+          <div>
+            <div style={{ fontSize: 12, letterSpacing: 2, opacity: 0.8, fontWeight: 600 }}>KOITION · MANAGEMENT REPORT</div>
+            <div style={{ fontSize: 24, fontWeight: 800, margin: '6px 0 4px' }}>{yr}년 경영진단 보고서</div>
+            <div style={{ fontSize: 13, opacity: 0.85 }}>기준: {yr}년 {refLabel} 누적 · 작성 {new Date().toLocaleDateString('ko-KR')} · 경영기획 {user?.name || ''}</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: S[3] }}>
+            <div style={{ textAlign: 'center', background: 'rgba(255,255,255,0.12)', borderRadius: 10, padding: '10px 16px' }}>
+              <div style={{ fontSize: 11, opacity: 0.8 }}>경영상태 종합</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: health === '양호' ? '#7DE0A6' : health === '보통' ? '#FCD34D' : '#FCA5A5' }}>{health}</div>
+            </div>
+            <Button variant="secondary" icon={Printer} onClick={() => window.print()} style={{ background: '#fff' }}>인쇄 / PDF</Button>
+          </div>
+        </div>
+      </div>
+
+      {/* 1. 경영 요약 */}
+      <H n="1" icon={Activity}>경영 요약 (Executive Summary)</H>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: S[3], marginBottom: S[3] }}>
+        <KPI icon={TrendingUp} label="계약·수주 매출" value={fmtMoney(T0.revenue)} unit="원" color={T.brand} sub={targets.revenue > 0 ? `연간목표 대비 ${revAch.toFixed(0)}%` : `${rows.length}개 사업`} />
+        <KPI icon={Layers} label="직접원가" value={fmtMoney(T0.cost)} unit="원" color={T.text} sub={`원가율 ${costRev.toFixed(0)}%`} />
+        <KPI icon={Wallet} label="공헌이익" value={fmtMoney(contrib)} unit="원" color={contrib >= 0 ? T.success : T.danger} sub={`공헌이익률 ${marginContrib.toFixed(1)}%`} />
+        <KPI icon={Award} label="완전영업이익" value={fmtMoney(full)} unit="원" color={full >= 0 ? T.success : T.danger} sub={`영업이익률 ${marginFull.toFixed(1)}% · 공통비 차감 후`} />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: S[3] }}>
+        <KPI icon={Users} label="인건비 계" value={fmtMoney(T0.labor)} unit="원" sub={`작업자 ${fmtMoney(T0.worker)} · 관리자 ${fmtMoney(T0.mgr)}`} />
+        <KPI icon={Percent} label="인건비율" value={laborRev.toFixed(0)} unit="%" sub="매출 대비 인건비" color={laborRev >= 70 ? T.warning : T.text} />
+        <KPI icon={Building2} label="공통비(간접비)" value={fmtMoney(pool)} unit="원" sub={`매출 대비 ${poolRev.toFixed(0)}%`} color={T.warning} />
+        <KPI icon={ShieldAlert} label="위험요소" value={`${sev.length}·${wrn.length}`} unit="건" sub="심각 · 주의" color={sev.length ? T.danger : wrn.length ? T.warning : T.success} />
+      </div>
+      <Note>{`${refLabel} 누적 공헌이익률 ${marginContrib.toFixed(1)}%, 완전영업이익률 ${marginFull.toFixed(1)}%. 수익 사업 ${profitable}건·손실 사업 ${lossmaking}건이며, ${laborRev >= 70 ? '인건비 비중이 높아 가동률 관리가 이익의 관건' : '원가 구조는 안정적'}입니다.${revAch != null ? ` 연간 매출목표 달성률은 ${revAch.toFixed(0)}%(진도기준 ${(activeMonths / 12 * 100).toFixed(0)}%)입니다.` : ''}`}</Note>
+
+      {/* 2. 매출·수주 분석 */}
+      <H n="2" icon={TrendingUp}>매출·수주 분석</H>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: S[4] }}>
+        <div style={{ ...card(), padding: S[5] }}>
+          <SectionTitle>프로젝트별 매출·원가 (상위 8)</SectionTitle>
+          <div style={{ height: 260, marginTop: S[3] }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={revBar} margin={{ top: 8, right: 8, left: 0, bottom: 40 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textMute }} angle={-30} textAnchor="end" height={60} interval={0} />
+                <YAxis tick={{ fontSize: 10, fill: T.textMute }} tickFormatter={v => fmtMoney(v)} />
+                <Tooltip formatter={(v) => won(v)} contentStyle={{ fontSize: 12, fontFamily: FONT }} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="매출" fill={T.brand} radius={[3, 3, 0, 0]} />
+                <Bar dataKey="원가" fill={T.warning} radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: S[3] }}>
+          <div style={{ ...card(), padding: S[5] }}>
+            <SectionTitle>수주 파이프라인</SectionTitle>
+            <div style={{ marginTop: S[3], display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span style={{ color: T.textMute }}>제안·진행 건수</span><strong>{pipe.length}건</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span style={{ color: T.textMute }}>예상 매출</span><strong style={{ color: T.brand }}>{won(pipeAmt)}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span style={{ color: T.textMute }}>현 매출 대비</span><strong>{pct(pipeAmt, T0.revenue).toFixed(0)}%</strong></div>
+            </div>
+          </div>
+          <div style={{ ...card(), padding: S[5] }}>
+            <SectionTitle>매출 편중도</SectionTitle>
+            <div style={{ marginTop: S[3], fontSize: 13, color: T.textMute }}>최대 사업 비중</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: topShare > 40 ? T.warning : T.ink }}>{topShare.toFixed(0)}%</div>
+            <div style={{ fontSize: 12, color: T.textMute, marginTop: 4 }}>{byRev[0] ? byRev[0].name : '-'}</div>
+          </div>
+        </div>
+      </div>
+      <Note>{`상위 3개 사업이 매출의 ${pct(byRev.slice(0, 3).reduce((s, r) => s + r.m.revenue, 0), T0.revenue).toFixed(0)}%를 차지합니다. ${topShare > 40 ? '특정 사업 편중이 높아 수주 다변화가 필요합니다.' : '매출이 비교적 분산되어 있습니다.'} 파이프라인(${won(pipeAmt)})은 현 매출의 ${pct(pipeAmt, T0.revenue).toFixed(0)}% 수준으로, ${pipeAmt >= T0.revenue * 0.5 ? '차기 수주 여력이 양호' : '추가 수주 발굴이 필요'}합니다.`}</Note>
+
+      {/* 3. 조직·본부별 손익 */}
+      <H n="3" icon={Building2}>조직·본부별 손익</H>
+      <div style={{ ...card(), padding: 0, overflow: 'auto', marginBottom: S[3] }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 820 }}>
+          <thead><tr style={{ background: T.surfaceAlt }}>
+            <Th>본부·조직</Th><Th align="center">사업</Th><Th align="center">인원</Th><Th align="right">매출</Th><Th align="right">인건비</Th><Th align="right">사업경비</Th><Th align="right">공헌이익</Th><Th align="right">배부공통비</Th><Th align="right">완전이익</Th><Th align="right">이익률</Th>
+          </tr></thead>
+          <tbody>
+            {orgRows.map((o, i) => (
+              <tr key={i}>
+                <Td>{o.name}</Td>
+                <Td align="center">{o.cnt}</Td>
+                <Td align="center">{o.head > 0 ? o.head + '명' : '-'}</Td>
+                <Td align="right" mono>{fmtMoney(o.revenue)}</Td>
+                <Td align="right" mono>{fmtMoney(o.labor)}</Td>
+                <Td align="right" mono>{fmtMoney(o.overhead)}</Td>
+                <Td align="right" mono style={{ color: o.contrib >= 0 ? T.ink : T.danger }}>{fmtMoney(o.contrib)}</Td>
+                <Td align="right" mono style={{ color: T.warning }}>{o.alloc ? '-' + fmtMoney(o.alloc) : '0'}</Td>
+                <Td align="right" mono><strong style={{ color: o.full >= 0 ? T.success : T.danger }}>{fmtMoney(o.full)}</strong></Td>
+                <Td align="right" mono style={{ color: o.fullMargin >= 10 ? T.success : o.fullMargin >= 0 ? T.warning : T.danger }}>{o.fullMargin.toFixed(0)}%</Td>
+              </tr>
+            ))}
+            <tr style={{ background: T.surfaceAlt }}>
+              <Td><strong>합계</strong></Td><Td align="center"><strong>{rows.length}</strong></Td><Td align="center"><strong>{N}명</strong></Td>
+              <Td align="right" mono><strong>{fmtMoney(T0.revenue)}</strong></Td><Td align="right" mono><strong>{fmtMoney(T0.labor)}</strong></Td>
+              <Td align="right" mono><strong>{fmtMoney(T0.overhead)}</strong></Td><Td align="right" mono><strong>{fmtMoney(contrib)}</strong></Td>
+              <Td align="right" mono><strong>-{fmtMoney(pool)}</strong></Td><Td align="right" mono><strong style={{ color: full >= 0 ? T.success : T.danger }}>{fmtMoney(full)}</strong></Td>
+              <Td align="right" mono><strong>{marginFull.toFixed(0)}%</strong></Td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div style={{ ...card(), padding: S[5] }}>
+        <SectionTitle>본부별 손익 비교</SectionTitle>
+        <div style={{ height: 260, marginTop: S[3] }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={orgBar} margin={{ top: 8, right: 8, left: 0, bottom: 30 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 11, fill: T.textMute }} interval={0} />
+              <YAxis tick={{ fontSize: 10, fill: T.textMute }} tickFormatter={v => fmtMoney(v)} />
+              <Tooltip formatter={(v) => won(v)} contentStyle={{ fontSize: 12, fontFamily: FONT }} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar dataKey="매출" fill={T.brandLight} radius={[3, 3, 0, 0]} />
+              <Bar dataKey="공헌이익" fill={T.brand} radius={[3, 3, 0, 0]} />
+              <Bar dataKey="완전이익" fill={T.success} radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+      <Note>{bestOrg && worstOrg ? `${shortName(bestOrg.name)}이(가) 이익률 ${bestOrg.fullMargin.toFixed(0)}%로 가장 우수하고, ${shortName(worstOrg.name)}이(가) ${worstOrg.fullMargin.toFixed(0)}%로 가장 낮습니다. 본부 간 수익성 격차를 고려해 인력·사업 배분을 조정하면 전사 이익률을 끌어올릴 수 있습니다.` : '수행조직 정보가 있는 사업이 제한적입니다. 사업진행현황의 수행조직을 채우면 본부별 손익이 정확히 집계됩니다.'} 인원은 임직원의 소속 본부명 매칭 기준이며, 미매칭 시 ‘-’로 표시됩니다.</Note>
+
+      {/* 4. 인건비 분석 */}
+      <H n="4" icon={Users}>인건비 분석</H>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: S[4] }}>
+        <div style={{ ...card(), padding: S[5] }}>
+          <SectionTitle>인건비 구성</SectionTitle>
+          <div style={{ marginTop: S[3], display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {[['작업자 인건비(계약직)', T0.worker, T.brand], ['관리자 인건비(정규직)', T0.mgr, T.brandLight]].map(([lb, v, c]) => (
+              <div key={lb}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}><span style={{ color: T.textMute }}>{lb}</span><strong>{won(v)}</strong></div>
+                <div style={{ height: 8, background: T.surfaceAlt, borderRadius: 4, overflow: 'hidden' }}><div style={{ width: `${pct(v, T0.labor)}%`, height: '100%', background: c }} /></div>
+              </div>
+            ))}
+            <div style={{ borderTop: `1px solid ${T.divider}`, paddingTop: 10, display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span style={{ color: T.textMute }}>인건비 계 / 매출 대비</span><strong>{won(T0.labor)} · {laborRev.toFixed(0)}%</strong></div>
+          </div>
+        </div>
+        <div style={{ ...card(), padding: S[5] }}>
+          <SectionTitle>월별 집행원가 추이 <span style={{ fontWeight: 400, color: T.textMute }}>(직접원가 + 공통비)</span></SectionTitle>
+          <div style={{ height: 240, marginTop: S[3] }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={trendData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: T.textMute }} />
+                <YAxis tick={{ fontSize: 10, fill: T.textMute }} tickFormatter={v => fmtMoney(v)} />
+                <Tooltip formatter={(v) => won(v)} contentStyle={{ fontSize: 12, fontFamily: FONT }} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="직접원가" fill={T.brand} radius={[3, 3, 0, 0]} />
+                <Line dataKey="공통비" stroke={T.warning} strokeWidth={2} dot={{ r: 3 }} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+      <Note>{`인건비 계 ${won(T0.labor)} 중 작업자(계약직) ${pct(T0.worker, T0.labor).toFixed(0)}%·관리자(정규직) ${pct(T0.mgr, T0.labor).toFixed(0)}% 구성입니다. 매출 대비 인건비율 ${laborRev.toFixed(0)}%로 ${laborRev >= 85 ? '경보 수준이며 즉시 투입 효율화가 필요' : laborRev >= 70 ? '다소 높아 가동률 관리가 중요' : '적정 범위'}합니다.`}</Note>
+
+      {/* 5. 인당 생산성 */}
+      <H n="5" icon={Activity}>인당 생산성 (Per-capita)</H>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: S[3] }}>
+        <KPI icon={TrendingUp} label="1인당 매출" value={fmtMoney(perRev)} unit="원" color={T.brand} sub={`월 환산 ${fmtMoney(monthlyPerRev)}`} />
+        <KPI icon={Wallet} label="1인당 공헌이익" value={fmtMoney(perContrib)} unit="원" color={perContrib >= 0 ? T.success : T.danger} sub={`1인당 완전이익 ${fmtMoney(perFull)}`} />
+        <KPI icon={Users} label="1인당 인건비" value={fmtMoney(perLabor)} unit="원" sub={`인력 ${N}명 기준(정규직)`} />
+        <KPI icon={Percent} label="노동생산성" value={valueAddPerLabor.toFixed(2)} unit="배" color={valueAddPerLabor >= 1.5 ? T.success : valueAddPerLabor >= 1.2 ? T.warning : T.danger} sub={`인건비 1원당 공헌이익 · 분배율 ${laborShare.toFixed(0)}%`} />
+      </div>
+      <Note>{`인력 ${N}명 기준 1인당 매출 ${won(perRev)}, 1인당 공헌이익 ${won(perContrib)}입니다. 인건비 1원당 ${valueAddPerLabor.toFixed(2)}원의 공헌이익을 창출했으며(1.0 미만이면 인건비가 창출가치를 초과), ${valueAddPerLabor >= 1.5 ? '생산성이 양호' : valueAddPerLabor >= 1.2 ? '보통 수준이나 개선 여지' : '생산성이 낮아 가동률 제고가 시급'}합니다. 노동소득분배율 ${laborShare.toFixed(0)}%. (인원은 정규직 기준이며 계약직 인건비는 원가에 포함)`}</Note>
+
+      {/* 6. 직원별 순기여 */}
+      <H n="6" icon={UserCheck}>직원별 순기여 (사업 참여 기준)</H>
+      <div style={{ ...card(), padding: 0, overflow: 'auto', marginBottom: S[3] }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 860 }}>
+          <thead><tr style={{ background: T.surfaceAlt }}>
+            <Th>직원</Th><Th>본부</Th><Th align="center">참여</Th><Th align="right">배분인건비</Th><Th align="right">창출매출</Th><Th align="right">순기여(사업)</Th><Th align="right">신규수주</Th><Th align="right">법인카드</Th><Th align="right">종합(순기여−카드)</Th><Th align="center">점수</Th>
+          </tr></thead>
+          <tbody>
+            {empRows.length === 0 && <tr><td colSpan={10} style={{ textAlign: "center", color: T.textLight, padding: 20, fontSize: 12.5 }}>사업 참여(인력배분) 데이터가 없습니다</td></tr>}
+            {empRows.map((e, i) => (
+              <tr key={i} style={e.total < 0 ? { background: 'rgba(220,38,38,0.05)' } : undefined}>
+                <Td><strong>{e.name}</strong>{e.pm && <span style={{ fontSize: 10, color: T.brand, marginLeft: 4 }}>PM</span>}{STATUS_LABEL[e.status] && <span style={{ fontSize: 10, color: '#fff', background: T.textMute, borderRadius: 4, padding: '1px 5px', marginLeft: 5 }}>{STATUS_LABEL[e.status]}</span>}</Td>
+                <Td style={{ fontSize: 11, color: T.textMute }}>{shortName(e.dept)}</Td>
+                <Td align="center">{e.cnt}</Td>
+                <Td align="right" mono>{fmtMoney(e.labor)}</Td>
+                <Td align="right" mono>{fmtMoney(e.rev)}</Td>
+                <Td align="right" mono style={{ color: e.net >= 0 ? T.ink : T.danger }}>{fmtMoney(e.net)}</Td>
+                <Td align="right" mono style={{ color: hasLedger ? (e.newOrder > 0 ? T.success : T.danger) : T.textLight }}>{hasLedger ? fmtMoney(e.newOrder) : '-'}</Td>
+                <Td align="right" mono style={{ color: e.card > 0 ? T.warning : T.textLight }}>{hasLedger ? fmtMoney(e.card) : '-'}</Td>
+                <Td align="right" mono><strong style={{ color: e.total >= 0 ? T.success : T.danger }}>{fmtMoney(e.total)}</strong></Td>
+                <Td align="center">{e.score != null ? <Badge color={e.score >= 80 ? T.success : e.score >= 70 ? T.warning : T.danger} size="sm">{e.score}</Badge> : '-'}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Note>{hasLedger
+        ? `창출매출·순기여(사업)는 사업 참여·기여도 기준, 신규수주·법인카드는 업로드된 직원별 원장 기준입니다. ‘종합(순기여−카드)’이 음수인 인원 ${negEmp}명 — 사업 기여보다 개인 경비가 큰 경우입니다. 신규수주가 0인데 법인카드 지출이 있는 직원은 영업·사업개발 성과 점검 대상입니다(예: 사업 담당은 있으나 신규 수주가 없는 경우).`
+        : `사업 참여(인력배분·기여도) 기준 순기여입니다. 순기여가 음수인 인원 ${negEmp}명. ⚠ 신규수주·법인카드 열이 ‘-’인 것은 업로드 파일에 「직원별경비수주」 시트가 없기 때문입니다 — 이 시트(사원코드·성명·법인카드·신규수주)를 넣으면 개인별 카드지출·신규수주까지 자동 반영되어, 신규수주 0·카드지출 발생 같은 케이스가 종합순기여로 드러납니다.`}</Note>
+
+      {perfRows.length > 0 && (
+        <div style={{ ...card(), padding: S[5], marginTop: S[3], borderLeft: `4px solid ${T.brand}` }}>
+          <SectionTitle>성과연동형 인력 (자문·프리랜서 · 기여 기준 별도 평가)</SectionTitle>
+          <div style={{ overflow: 'auto', marginTop: S[3] }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 640 }}>
+              <thead><tr style={{ background: T.surfaceAlt }}>
+                <Th>직원</Th><Th align="center">구분</Th><Th align="right">월 기본급</Th><Th align="center">참여</Th><Th align="right">순기여(사업)</Th><Th align="right">신규수주</Th><Th align="center">기여점수</Th>
+              </tr></thead>
+              <tbody>
+                {perfRows.map((e, i) => {
+                  const emp = (employees || []).find(x => x.id === e.empId) || {};
+                  const base = (emp.baseSalary || 0) + (emp.allowance || 0) + (emp.mealCar || 0);
+                  return (
+                    <tr key={i}>
+                      <Td><strong>{e.name}</strong></Td>
+                      <Td align="center"><Badge color={T.textMute} size="sm">{STATUS_LABEL[e.status] || '-'}</Badge></Td>
+                      <Td align="right" mono>{fmtMoney(base)}</Td>
+                      <Td align="center">{e.cnt}</Td>
+                      <Td align="right" mono style={{ color: e.net >= 0 ? T.ink : T.danger }}>{fmtMoney(e.net)}</Td>
+                      <Td align="right" mono style={{ color: hasLedger ? (e.newOrder > 0 ? T.success : T.danger) : T.textLight }}>{hasLedger ? fmtMoney(e.newOrder) : '-'}</Td>
+                      <Td align="center">{e.score != null ? <Badge color={e.score >= 80 ? T.success : e.score >= 70 ? T.warning : T.danger} size="sm">{e.score}</Badge> : <span style={{ color: T.textLight }}>미참여</span>}</Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ marginTop: S[3], fontSize: 12, color: T.textMute, lineHeight: 1.7 }}>
+            이들은 낮은 고정급 + 사업 참여 지분으로 보상받는 인력으로, 일반 정규직 KPI가 아닌 <strong>프로젝트 기여·수주 성과(기여점수)로 별도 평가</strong>합니다. 참여 사업이 없으면 기본급만 발생하며 그 비용은 공통비로 처리됩니다. 지분 성과급(변동분)은 지급 시 해당 사업의 관리자인건비로 반영됩니다.
+          </div>
+        </div>
+      )}
+
+      {/* 7. 원가·경비 구조 */}
+      <H n="7" icon={Layers}>원가·경비 구조</H>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: S[4] }}>
+        <div style={{ ...card(), padding: S[5] }}>
+          <SectionTitle>총원가 구성</SectionTitle>
+          <div style={{ height: 230, marginTop: S[2] }}>
+            {costMix.length > 0 && (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={costMix} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} innerRadius={45} paddingAngle={2}>
+                    {costMix.map((e, i) => <Cell key={i} fill={e.color} />)}
+                  </Pie>
+                  <Tooltip formatter={(v) => won(v)} contentStyle={{ fontSize: 12, fontFamily: FONT }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+        <div style={{ ...card(), padding: 0, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead><tr style={{ background: T.surfaceAlt }}><Th>구분</Th><Th align="right">금액</Th><Th align="right">총원가 대비</Th><Th align="right">매출 대비</Th></tr></thead>
+            <tbody>
+              {[['작업자 인건비', T0.worker], ['관리자 인건비', T0.mgr], ['사업경비(제경비)', T0.overhead], ['공통비(간접비)', pool]].map(([lb, v]) => (
+                <tr key={lb}><Td>{lb}</Td><Td align="right" mono>{won(v)}</Td><Td align="right" mono>{pct(v, totCostAll).toFixed(0)}%</Td><Td align="right" mono>{pct(v, T0.revenue).toFixed(0)}%</Td></tr>
+              ))}
+              <tr style={{ background: T.surfaceAlt }}><Td><strong>총원가 계</strong></Td><Td align="right" mono><strong>{won(totCostAll)}</strong></Td><Td align="right" mono><strong>100%</strong></Td><Td align="right" mono><strong>{pct(totCostAll, T0.revenue).toFixed(0)}%</strong></Td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <Note>{`총원가 ${won(totCostAll)}는 인건비 ${pct(T0.labor, totCostAll).toFixed(0)}%, 사업경비 ${pct(T0.overhead, totCostAll).toFixed(0)}%, 공통비 ${pct(pool, totCostAll).toFixed(0)}%로 구성됩니다. 공통비가 매출의 ${poolRev.toFixed(0)}%로 ${poolRev > 15 ? '부담이 크므로 본사운영비 점검이 필요' : '관리 가능한 수준'}합니다.`}</Note>
+
+      {/* 7. 프로젝트별 수익성 진단 */}
+      <H n="8" icon={Award}>프로젝트별 수익성 진단</H>
+      <div style={{ ...card(), padding: 0, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 900 }}>
+          <thead><tr style={{ background: T.surfaceAlt }}>
+            <Th>사업</Th><Th>본부</Th><Th align="right">매출</Th><Th align="right">인건비</Th><Th align="right">사업경비</Th><Th align="right">공헌이익</Th><Th align="right">배부공통비</Th><Th align="right">완전이익</Th><Th align="right">수익률</Th><Th align="center">등급</Th><Th align="center">진단</Th>
+          </tr></thead>
+          <tbody>
+            {byRev.map(r => {
+              const alloc = allocMap[r.id] || 0; const fp = r.m.profit - alloc;
+              return (
+                <tr key={r.id}>
+                  <Td><span title={r.full}>{r.name}</span></Td>
+                  <Td style={{ fontSize: 11, color: T.textMute }}>{shortName(r.dept)}</Td>
+                  <Td align="right" mono>{fmtMoney(r.m.revenue)}</Td>
+                  <Td align="right" mono>{fmtMoney(r.m.labor)}</Td>
+                  <Td align="right" mono>{fmtMoney(r.m.overhead)}</Td>
+                  <Td align="right" mono style={{ color: r.m.profit >= 0 ? T.ink : T.danger }}>{fmtMoney(r.m.profit)}</Td>
+                  <Td align="right" mono style={{ color: T.warning }}>{alloc ? '-' + fmtMoney(alloc) : '0'}</Td>
+                  <Td align="right" mono><strong style={{ color: fp >= 0 ? T.success : T.danger }}>{fmtMoney(fp)}</strong></Td>
+                  <Td align="right" mono style={{ color: r.m.rate == null ? T.textLight : r.m.rate >= 10 ? T.success : r.m.rate >= 0 ? T.warning : T.danger }}>{r.m.rate != null ? r.m.rate.toFixed(0) + '%' : '-'}</Td>
+                  <Td align="center">{r.m.grade ? <GradeBadge grade={r.m.grade} size="sm" /> : '-'}</Td>
+                  <Td align="center">{r.diag.status === 'alert' ? <Badge color={T.danger} size="sm">위험</Badge> : r.diag.status === 'warn' ? <Badge color={T.warning} size="sm">주의</Badge> : <Badge color={T.success} size="sm">양호</Badge>}</Td>
+                </tr>
+              );
+            })}
+            <tr style={{ background: T.surfaceAlt }}>
+              <Td><strong>합계</strong></Td><Td></Td>
+              <Td align="right" mono><strong>{fmtMoney(T0.revenue)}</strong></Td><Td align="right" mono><strong>{fmtMoney(T0.labor)}</strong></Td>
+              <Td align="right" mono><strong>{fmtMoney(T0.overhead)}</strong></Td><Td align="right" mono><strong>{fmtMoney(contrib)}</strong></Td>
+              <Td align="right" mono><strong>-{fmtMoney(pool)}</strong></Td><Td align="right" mono><strong style={{ color: full >= 0 ? T.success : T.danger }}>{fmtMoney(full)}</strong></Td>
+              <Td align="right" mono><strong>{marginFull.toFixed(0)}%</strong></Td><Td></Td><Td></Td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* 8. 위험요소 진단 */}
+      <H n="9" icon={ShieldAlert}>위험요소 진단</H>
+      {risks.length === 0 ? (
+        <div style={{ ...card(), padding: S[6], textAlign: 'center', color: T.success, fontWeight: 600 }}><CheckCircle2 size={20} style={{ verticalAlign: 'middle', marginRight: 6 }} />현재 특이 위험요소가 없습니다.</div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: S[3] }}>
+          {[...sev, ...wrn].map((r, i) => {
+            const c = r.level === '심각' ? T.danger : T.warning;
+            return (
+              <div key={i} style={{ ...card(), padding: S[4], borderLeft: `4px solid ${c}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  {r.level === '심각' ? <AlertTriangle size={16} color={c} /> : <AlertCircle size={16} color={c} />}
+                  <strong style={{ fontSize: 13.5, color: T.ink }}>{r.title}</strong><Badge color={c} size="sm">{r.level}</Badge>
+                </div>
+                <div style={{ fontSize: 12.5, color: T.text, marginBottom: 6 }}>{r.detail}</div>
+                <div style={{ fontSize: 12, color: T.textMute }}><ChevronRight size={12} style={{ verticalAlign: 'middle' }} /> {r.action}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 9. 종합 진단 및 경영 제언 */}
+      <H n="10" icon={FileBarChart}>종합 진단 및 경영 제언</H>
+      <div style={{ ...card(), padding: S[6], borderTop: `3px solid ${healthColor}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: S[4] }}>
+          <span style={{ fontSize: 13, color: T.textMute, fontWeight: 600 }}>경영상태 종합 판단</span><Badge color={healthColor}>{health}</Badge>
+        </div>
+        {assess.map((t, i) => (<p key={i} style={{ margin: '0 0 12px', fontSize: 13.5, lineHeight: 1.8, color: T.text }}>{t}</p>))}
+        <div style={{ marginTop: S[4], padding: S[4], background: T.surfaceAlt, borderRadius: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.brand, marginBottom: 10 }}>경영 제언 (Action Items)</div>
+          <ol style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {recs.map((r, i) => <li key={i} style={{ fontSize: 13, lineHeight: 1.6, color: T.text }}>{r}</li>)}
+          </ol>
+        </div>
+        <div style={{ marginTop: S[4], fontSize: 11, color: T.textLight, borderTop: `1px solid ${T.divider}`, paddingTop: 10 }}>
+          본 보고서는 프로젝트 수익성·사업관리 데이터를 기반으로 자동 산출되었습니다. 매출은 계약·수주 기준이며, 진행중 사업은 원가가 일부만 반영되어 수익률이 실제보다 높게 보일 수 있습니다. · 경영기획 {user?.name || ''} · {new Date().toLocaleDateString('ko-KR')}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectProfitView({ user, employees, projects, proposals, overheads, upsertProject, deleteProject, bulkUpsertProjects, bulkUpsertProposals, deleteProposal, upsertOverhead, deleteOverhead, bulkUpsertOverheads, bulkSetEmpLedger, currentYear, policy, setPolicy }) {
   const canEdit = user.role === 'admin' || user.deptScope === '경영지원부';
   const cfg = (policy && policy.diag) || {};
   const pmFloor = cfg.pmFloor ?? PM_MIN_CONTRIBUTION;
@@ -7883,6 +8439,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
           onApply={(rows) => { bulkUpsertProjects(rows); setSagwanOpen(false); }}
           onApplyProposals={(props) => bulkUpsertProposals(props)}
           onApplyOverheads={(ohs) => bulkUpsertOverheads(ohs)}
+          onApplyLedger={(l) => bulkSetEmpLedger && bulkSetEmpLedger(l)}
           onClose={() => setSagwanOpen(false)}
         />
       )}
@@ -8237,12 +8794,28 @@ function parseSagwanWorkbook(XLSX, arrayBuffer, yearDefault, pmFloor) {
     }
   }
 
+  // 6) 직원별경비수주 (있을 때만): 사원코드|성명|법인카드|신규수주|비고
+  const empLedger = [];
+  const wsE = wb.Sheets['직원별경비수주'] || wb.Sheets['직원별 경비수주'];
+  if (wsE) {
+    const rngE = XLSX.utils.decode_range(wsE['!ref']);
+    for (let r = 0; r <= rngE.e.r; r++) {
+      const code = _sgStr(wsE, XLSX, r, 0);
+      const name = _sgStr(wsE, XLSX, r, 1);
+      if ((!code && !name) || name === '성명' || code === '사원코드') continue;
+      const card = _sgNum(_sgCell(wsE, XLSX, r, 2)) || 0;
+      const newOrder = _sgNum(_sgCell(wsE, XLSX, r, 3)) || 0;
+      if (!card && !newOrder) continue;
+      empLedger.push({ empId: code || null, name, card: Math.round(card), newOrder: Math.round(newOrder), year: yearDefault || 2026 });
+    }
+  }
+
   const ohYear = yearDefault || 2026;
   const overheads = ohSum > 0 ? [{ id: 'OH:' + ohYear + ':excel', year: ohYear, category: '본사운영·공통경비(엑셀)', amount: Math.round(ohSum), monthly: ohMonthly.map(v => Math.round(v)), note: '사업관리 엑셀 업로드' }] : [];
-  return { projects: Object.values(projects), unmatched: Array.from(unmatched), proposals, overheads };
+  return { projects: Object.values(projects), unmatched: Array.from(unmatched), proposals, overheads, empLedger };
 }
 
-function SagwanUploadModal({ employees, currentYear, onApply, onApplyProposals, onApplyOverheads, onClose, pmFloor }) {
+function SagwanUploadModal({ employees, currentYear, onApply, onApplyProposals, onApplyOverheads, onApplyLedger, onClose, pmFloor }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [preview, setPreview] = useState(null); // { projects, unmatched }
@@ -8276,6 +8849,7 @@ function SagwanUploadModal({ employees, currentYear, onApply, onApplyProposals, 
     onApply(rows);
     if (onApplyProposals && preview.proposals && preview.proposals.length) onApplyProposals(preview.proposals);
     if (onApplyOverheads && preview.overheads && preview.overheads.length) onApplyOverheads(preview.overheads);
+    if (onApplyLedger && preview.empLedger && preview.empLedger.length) onApplyLedger(preview.empLedger);
   };
 
   const clean = preview ? preview.projects.filter(p => p._fl.length === 0).length : 0;
