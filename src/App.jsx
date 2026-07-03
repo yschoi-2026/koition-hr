@@ -2200,7 +2200,16 @@ function projectMetrics(p) {
   const directExpensePct = cost > 0 ? ((overhead + other) / cost * 100) : null; // 사업비 대비 제경비+직접경비 %
   const planCost = Number(p.planCost) || 0;     // 계획 원가(예산)
   const planExecPct = planCost > 0 ? (cost / planCost * 100) : null; // 계획 대비 집행률
-  return { revenue, labor, worker, mgr, overhead, other, cost, profit, rate, overheadPct, directExpensePct, planCost, planExecPct, grade: rateGrade(rate), score: rateToScore(rate) };
+  // 진행률(POC): 수기 progress(%) 우선 → 계획원가 기반 → 월별 최종 집행월/12
+  let progress = null;
+  if (p.status === 'completed') progress = 1;
+  else if (p.progress != null && p.progress !== '') progress = Math.min(1.5, Number(p.progress) / 100);
+  else if (planCost > 0) progress = Math.min(1.5, cost / planCost);
+  else if (Array.isArray(p.monthly)) { let lm = 0; for (let i = 1; i <= 12; i++) if ((Number(p.monthly[i]) || 0) > 0) lm = i; if (lm > 0) progress = lm / 12; }
+  const recognizedRevenue = (progress != null) ? Math.round(revenue * Math.min(progress, 1)) : revenue; // 진행기준 인식매출
+  const pocProfit = (progress != null) ? (recognizedRevenue - cost) : profit;                            // 진행기준 공헌이익
+  const pocRate = recognizedRevenue > 0 ? (pocProfit / recognizedRevenue * 100) : null;                  // 진행기준 수익률
+  return { revenue, labor, worker, mgr, overhead, other, cost, profit, rate, overheadPct, directExpensePct, planCost, planExecPct, progress, recognizedRevenue, pocProfit, pocRate, grade: rateGrade(rate), score: rateToScore(rate) };
 }
 
 // 수익률(%) → 점수(0~100) : Biz profit_rate 밴드 기준 통일
@@ -7671,16 +7680,26 @@ function MonthCloseView({ projects, employees, bulkUpsertProjects, bulkUpsertOve
       const W = {}, M = {}, E = {}, OH = new Array(13).fill(0), CARD = {};
       const add = (o, id, mo, v) => { if (!o[id]) o[id] = new Array(13).fill(0); o[id][mo] += v; };
       const unmatched = {};
+      const empNames = new Set((employees || []).map(e => String(e.name).trim()));
+      let hasW = false, hasM = false, hasE = false;
 
-      // 1) 계약직 → 작업자인건비
-      let hasW = false;
+      // 1) 작업자 파일: '통합본'(구양식) 또는 '급여현황'(신양식, 프로젝트명 포함) 자동 감지 · 정규직 명단으로 작업자/관리자 분류
       if (files.cw) {
-        hasW = true; const wb = await openWb(files.cw); const w = wb.Sheets['통합본'] || wb.Sheets[wb.SheetNames[0]];
-        const rng = XLSX.utils.decode_range(w['!ref']);
-        for (let r = 2; r <= rng.e.r; r++) { const code = S(w, r, 1); if (!code) continue; const mo = mnum(S(w, r, 0)); const g = Nc(w, r, 3); const pr = S(w, r, 17); const id = match(pr); if (id && mo) add(W, id, mo, g); else if (pr && !id) unmatched[pr] = (unmatched[pr] || 0) + g; }
+        const wb = await openWb(files.cw);
+        const t = wb.Sheets['통합본'];
+        if (t) {
+          const rng = XLSX.utils.decode_range(t['!ref']);
+          for (let r = 2; r <= rng.e.r; r++) { const code = S(t, r, 1); if (!code) continue; const mo = mnum(S(t, r, 0)); const g = Nc(t, r, 3); const nm = S(t, r, 2); const pr = S(t, r, 17); const id = match(pr); if (id && mo) { if (empNames.has(nm)) { add(M, id, mo, g); hasM = true; } else { add(W, id, mo, g); hasW = true; } } else if (pr && !id) unmatched[pr] = (unmatched[pr] || 0) + g; }
+        } else {
+          const w = wb.Sheets['급여현황'] || wb.Sheets[wb.SheetNames[0]];
+          const rng = XLSX.utils.decode_range(w['!ref']);
+          let hr = -1; for (let r = 0; r < 8 && hr < 0; r++) for (let c = 0; c <= rng.e.c; c++) if (S(w, r, c) === '성명') { hr = r; break; }
+          if (hr < 0) hr = 1; const col = {}; for (let c = 0; c <= rng.e.c; c++) { const h = S(w, hr, c); if (h) col[h] = c; }
+          const cP = col['프로젝트명'] ?? 4, cN = col['성명'] ?? 5, cG = col['지급총액'] ?? 6, cY = col['귀속연월-NO'] ?? col['귀속연월'] ?? 0;
+          for (let r = hr + 1; r <= rng.e.r; r++) { const nm = S(w, r, cN); if (!nm) continue; const mo = mnum(S(w, r, cY)); const g = Nc(w, r, cG); const pr = S(w, r, cP); const id = match(pr); if (id && mo) { if (empNames.has(nm)) { add(M, id, mo, g); hasM = true; } else { add(W, id, mo, g); hasW = true; } } else if (pr && !id) unmatched[pr] = (unmatched[pr] || 0) + g; }
+        }
       }
       // 2) 지출정리 → 사업경비 + 공통비 + 카드
-      let hasE = false;
       if (files.exp) {
         hasE = true; const wb = await openWb(files.exp); const ej = wb.Sheets['통합거래원장'] || wb.Sheets[wb.SheetNames[0]];
         const rng = XLSX.utils.decode_range(ej['!ref']); let hr = 0; for (let r = 0; r < 6; r++) if (S(ej, r, 0) === '월') { hr = r; break; }
@@ -7694,7 +7713,7 @@ function MonthCloseView({ projects, employees, bulkUpsertProjects, bulkUpsertOve
         }
       }
       // 3) 정규직 급여 + 배분표 → 관리자인건비
-      let hasM = false; const ratio = {};
+      const ratio = {};
       if (files.alloc && files.sal.length) {
         const aw = (await openWb(files.alloc)); const asheet = aw.Sheets['관리자배분표'] || aw.Sheets[aw.SheetNames[0]];
         const arng = XLSX.utils.decode_range(asheet['!ref']);
@@ -7766,9 +7785,9 @@ function MonthCloseView({ projects, employees, bulkUpsertProjects, bulkUpsertOve
         <p style={{ margin: '0 0 16px', fontSize: 13, color: T.textMute, lineHeight: 1.7 }}>
           계약직·정규직급여·지출 파일을 올리면 사업명·담당자를 분석해 <strong>프로젝트별 작업자인건비·관리자인건비·사업경비·공통비</strong>를 계산하고 프로젝트 수익성에 바로 반영합니다. 매출·프로젝트명은 기존 값을 유지합니다.
         </p>
-        <FileRow label="작업자 인건비" hint="계약직 통합본(사업명)" req val={files.cw} onPick={f => setFiles(s => ({ ...s, cw: f }))} />
+        <FileRow label="작업자 인건비" hint="계약직 통합본 또는 급여현황(프로젝트명)" req val={files.cw} onPick={f => setFiles(s => ({ ...s, cw: f }))} />
         <FileRow label="지출 경비" hint="지출정리(통합거래원장)" req val={files.exp} onPick={f => setFiles(s => ({ ...s, exp: f }))} />
-        <FileRow label="직원 인건비" hint="정규직 급여(월별, 복수 선택)" val={files.sal} onPick={f => setFiles(s => ({ ...s, sal: f }))} multi />
+        <FileRow label="직원 인건비" hint="정규직 급여(사원별급여조회, 복수)" val={files.sal} onPick={f => setFiles(s => ({ ...s, sal: f }))} multi />
         <FileRow label="관리자 배분표" hint="정규직→사업 배분율(선택)" val={files.alloc} onPick={f => setFiles(s => ({ ...s, alloc: f }))} />
         <div style={{ display: 'flex', gap: S[3], marginTop: S[4], alignItems: 'center' }}>
           <Button icon={BarChart3} onClick={analyze} disabled={busy}>{busy ? '분석 중…' : '분석'}</Button>
@@ -8045,6 +8064,20 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         <KPI icon={ShieldAlert} label="위험요소" value={`${sev.length}·${wrn.length}`} unit="건" sub="심각 · 주의" color={sev.length ? T.danger : wrn.length ? T.warning : T.success} />
       </div>
       <Note>{`${refLabel} 누적 공헌이익률 ${marginContrib.toFixed(1)}%, 완전영업이익률 ${marginFull.toFixed(1)}%. 수익 사업 ${profitable}건·손실 사업 ${lossmaking}건이며, ${laborRev >= 70 ? '인건비 비중이 높아 가동률 관리가 이익의 관건' : '원가 구조는 안정적'}입니다.${revAch != null ? ` 연간 매출목표 달성률은 ${revAch.toFixed(0)}%(진도기준 ${(activeMonths / 12 * 100).toFixed(0)}%)입니다.` : ''}`}</Note>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: S[3], marginTop: S[3] }}>
+        {(() => {
+          const done = (yprojects || []).filter(p => p.status === 'completed').map(projectMetrics);
+          const wip = (yprojects || []).filter(p => p.status !== 'completed').map(projectMetrics);
+          const dRev = done.reduce((a, m) => a + m.revenue, 0), dPro = done.reduce((a, m) => a + m.profit, 0);
+          const wRec = wip.reduce((a, m) => a + (m.recognizedRevenue || 0), 0), wPoc = wip.reduce((a, m) => a + (m.pocProfit || 0), 0);
+          const dRate = dRev > 0 ? dPro / dRev * 100 : null, wRate = wRec > 0 ? wPoc / wRec * 100 : null;
+          return (<>
+            <KPI icon={CheckCircle2} label={`완료(정산확정) ${done.length}건`} value={dRate != null ? dRate.toFixed(1) : '—'} unit="%" color={T.success} sub={done.length ? `확정 매출 ${fmtMoney(dRev)} · 공헌이익 ${fmtMoney(dPro)}` : '정산 완료 사업 없음'} />
+            <KPI icon={Activity} label={`진행중(예상) ${wip.length}건`} value={wRate != null ? wRate.toFixed(1) : '—'} unit="%" color={T.warning} sub={`진행기준 추정 · 인식매출 ${fmtMoney(wRec)}`} />
+          </>);
+        })()}
+      </div>
+      <Note>{`수익률은 두 가지로 봅니다. 완료(정산확정) 사업은 매출·원가가 확정된 실적 수익률이고, 진행중 사업은 진행률만큼만 매출을 인식한 예상 수익률입니다. 진행중 사업의 수치는 확정이 아니며 사업 종료 시 변동될 수 있습니다.`}</Note>
 
       {/* 2. 매출·수주 분석 */}
       <H n="2" icon={TrendingUp}>매출·수주 분석</H>
@@ -8280,7 +8313,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
       <div style={{ ...card(), padding: 0, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 900 }}>
           <thead><tr style={{ background: T.surfaceAlt }}>
-            <Th>사업</Th><Th>본부</Th><Th align="right">매출</Th><Th align="right">인건비</Th><Th align="right">사업경비</Th><Th align="right">공헌이익</Th><Th align="right">배부공통비</Th><Th align="right">완전이익</Th><Th align="right">수익률</Th><Th align="center">등급</Th><Th align="center">진단</Th>
+            <Th>사업</Th><Th>본부</Th><Th align="right">매출</Th><Th align="right">인건비</Th><Th align="right">사업경비</Th><Th align="right">공헌이익</Th><Th align="right">배부공통비</Th><Th align="right">완전이익</Th><Th align="center">진행률</Th><Th align="right">수익률(계약)</Th><Th align="right">수익률(진행)</Th><Th align="center">등급</Th><Th align="center">진단</Th>
           </tr></thead>
           <tbody>
             {byRev.map(r => {
@@ -8295,7 +8328,9 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                   <Td align="right" mono style={{ color: r.m.profit >= 0 ? T.ink : T.danger }}>{fmtMoney(r.m.profit)}</Td>
                   <Td align="right" mono style={{ color: T.warning }}>{alloc ? '-' + fmtMoney(alloc) : '0'}</Td>
                   <Td align="right" mono><strong style={{ color: fp >= 0 ? T.success : T.danger }}>{fmtMoney(fp)}</strong></Td>
+                  <Td align="center" style={{ fontSize: 11, color: T.textMute }}>{r.m.progress != null ? Math.round(Math.min(r.m.progress, 1) * 100) + '%' : '-'}</Td>
                   <Td align="right" mono style={{ color: r.m.rate == null ? T.textLight : r.m.rate >= 10 ? T.success : r.m.rate >= 0 ? T.warning : T.danger }}>{r.m.rate != null ? r.m.rate.toFixed(0) + '%' : '-'}</Td>
+                  <Td align="right" mono style={{ color: r.m.pocRate == null ? T.textLight : r.m.pocRate >= 10 ? T.success : r.m.pocRate >= 0 ? T.warning : T.danger }}><strong>{r.m.pocRate != null ? r.m.pocRate.toFixed(0) + '%' : '-'}</strong></Td>
                   <Td align="center">{r.m.grade ? <GradeBadge grade={r.m.grade} size="sm" /> : '-'}</Td>
                   <Td align="center">{r.diag.status === 'alert' ? <Badge color={T.danger} size="sm">위험</Badge> : r.diag.status === 'warn' ? <Badge color={T.warning} size="sm">주의</Badge> : <Badge color={T.success} size="sm">양호</Badge>}</Td>
                 </tr>
@@ -8306,11 +8341,15 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               <Td align="right" mono><strong>{fmtMoney(T0.revenue)}</strong></Td><Td align="right" mono><strong>{fmtMoney(T0.labor)}</strong></Td>
               <Td align="right" mono><strong>{fmtMoney(T0.overhead)}</strong></Td><Td align="right" mono><strong>{fmtMoney(contrib)}</strong></Td>
               <Td align="right" mono><strong>-{fmtMoney(pool)}</strong></Td><Td align="right" mono><strong style={{ color: full >= 0 ? T.success : T.danger }}>{fmtMoney(full)}</strong></Td>
-              <Td align="right" mono><strong>{marginFull.toFixed(0)}%</strong></Td><Td></Td><Td></Td>
+              <Td></Td>
+              <Td align="right" mono><strong>{marginFull.toFixed(0)}%</strong></Td>
+              <Td align="right" mono><strong>{(() => { const rt = byRev.reduce((a, r) => a + (r.m.recognizedRevenue || 0), 0); const pp = byRev.reduce((a, r) => a + (r.m.pocProfit || 0), 0); return rt > 0 ? (pp / rt * 100).toFixed(0) + '%' : '-'; })()}</strong></Td>
+              <Td></Td><Td></Td>
             </tr>
           </tbody>
         </table>
       </div>
+      <Note>{`수익률(계약)은 연간 계약금액 전액을 매출로 본 값이라, 진행 초기 사업은 원가가 덜 쌓여 과대 계상됩니다. 수익률(진행)은 진행률만큼만 매출을 인식(인식매출=계약×진행률)해 원가와 기간을 맞춘 값으로, 실제 수익성에 더 가깝습니다. 계획원가가 없어 진행률은 월별 집행 최종월 기준(예: 5월까지 집행→5/12)으로 추정했으며, 사업별로 실제 진행률을 입력하면 정확해집니다. 음수 수익률 사업(계약금액 오류 추정)은 별도 정정이 필요합니다.`}</Note>
 
       {/* 8. 위험요소 진단 */}
       <H n="9" icon={ShieldAlert}>위험요소 진단</H>
@@ -8451,8 +8490,34 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
         <MetricCard icon={Briefcase} label="프로젝트 수" value={String(shown.length)} unit="건" />
         <MetricCard icon={TrendingUp} label="총 매출" value={fmtMoney(totals.revenue)} unit="원" />
         <MetricCard icon={Wallet} label="총 사업비" value={fmtMoney(totals.cost)} unit="원" sub="인건비+제경비+기타" />
-        <MetricCard icon={PieIcon} label="평균 수익률" value={totalRate != null ? totalRate.toFixed(1) : '-'} unit="%" color={totalRate != null ? T[rateGrade(totalRate)] : T.ink} />
+        <MetricCard icon={PieIcon} label="평균 수익률(계약)" value={totalRate != null ? totalRate.toFixed(1) : '-'} unit="%" color={totalRate != null ? T[rateGrade(totalRate)] : T.ink} sub={(() => { const rt = shown.reduce((a, p) => a + (projectMetrics(p).recognizedRevenue || 0), 0); const pp = shown.reduce((a, p) => a + (projectMetrics(p).pocProfit || 0), 0); return rt > 0 ? `진행기준 ${(pp / rt * 100).toFixed(1)}%` : null; })()} />
       </div>
+
+      {/* 완료/진행중 분리 요약 */}
+      {(() => {
+        const done = shown.filter(p => p.status === 'completed').map(projectMetrics);
+        const wip = shown.filter(p => p.status !== 'completed').map(projectMetrics);
+        const dRev = done.reduce((a, m) => a + m.revenue, 0), dPro = done.reduce((a, m) => a + m.profit, 0);
+        const dRate = dRev > 0 ? dPro / dRev * 100 : null;
+        const wRec = wip.reduce((a, m) => a + (m.recognizedRevenue || 0), 0), wPoc = wip.reduce((a, m) => a + (m.pocProfit || 0), 0);
+        const wRate = wRec > 0 ? wPoc / wRec * 100 : null;
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[4], marginBottom: S[6] }}>
+            <div style={{ ...card(), padding: S[5], borderLeft: `4px solid ${T.success}` }}>
+              <div style={{ fontSize: 12, color: T.textMute, fontWeight: 600, marginBottom: 4 }}>완료(정산확정) 사업 · {done.length}건</div>
+              <div style={{ fontSize: 26, fontWeight: 800, color: dRate != null ? T[rateGrade(dRate)] : T.textLight }}>{dRate != null ? dRate.toFixed(1) + '%' : '—'}</div>
+              <div style={{ fontSize: 12, color: T.textMute, marginTop: 4 }}>{done.length ? `확정 매출 ${fmtMoney(dRev)} · 공헌이익 ${fmtMoney(dPro)}` : '정산 완료된 사업이 아직 없습니다'}</div>
+              <div style={{ fontSize: 11.5, color: T.success, marginTop: 6, fontWeight: 600 }}>▹ 매출·원가 확정 — 실적 수익률</div>
+            </div>
+            <div style={{ ...card(), padding: S[5], borderLeft: `4px solid ${T.warning}` }}>
+              <div style={{ fontSize: 12, color: T.textMute, fontWeight: 600, marginBottom: 4 }}>진행중 사업(예상) · {wip.length}건</div>
+              <div style={{ fontSize: 26, fontWeight: 800, color: wRate != null ? T[rateGrade(wRate)] : T.textLight }}>{wRate != null ? wRate.toFixed(1) + '%' : '—'}</div>
+              <div style={{ fontSize: 12, color: T.textMute, marginTop: 4 }}>{wip.length ? `인식매출 ${fmtMoney(wRec)} · 진행기준 공헌이익 ${fmtMoney(wPoc)}` : '진행중 사업이 없습니다'}</div>
+              <div style={{ fontSize: 11.5, color: T.warning, marginTop: 6, fontWeight: 600 }}>▹ 진행률 기준 추정 — 확정 아님</div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 연도 필터 + 보기 전환 */}
       <div style={{ display: 'flex', gap: S[2], marginBottom: S[4], alignItems: 'center' }}>
@@ -8495,7 +8560,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
               <tr>
                 <Th>프로젝트</Th><Th>발주처</Th><Th>연도</Th>
                 <Th align="right">매출</Th><Th align="right">사업비</Th>
-                <Th align="right">영업이익</Th><Th align="right">수익률</Th>
+                <Th align="right">영업이익</Th><Th align="center">진행률</Th><Th align="right">수익률(계약)</Th><Th align="right">수익률(진행)</Th>
                 <Th align="center">등급</Th><Th>투입 인원</Th>
                 {canEdit && <Th align="center">관리</Th>}
               </tr>
@@ -8523,9 +8588,15 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
                     <Td align="right" mono>
                       <span style={{ color: m.profit >= 0 ? T.success : T.danger }}>{fmtMoney(m.profit)}</span>
                     </Td>
+                    <Td align="center" style={{ fontSize: 11, color: T.textMute }}>{m.progress != null ? Math.round(Math.min(m.progress, 1) * 100) + '%' : '-'}</Td>
                     <Td align="right" mono>
-                      <strong style={{ color: m.rate != null ? T[m.grade] : T.textLight }}>
+                      <span style={{ color: m.rate != null ? T[m.grade] : T.textLight }}>
                         {m.rate != null ? m.rate.toFixed(1) + '%' : '-'}
+                      </span>
+                    </Td>
+                    <Td align="right" mono>
+                      <strong style={{ color: m.pocRate == null ? T.textLight : m.pocRate >= 10 ? T.success : m.pocRate >= 0 ? T.warning : T.danger }}>
+                        {m.pocRate != null ? m.pocRate.toFixed(1) + '%' : '-'}
                       </strong>
                     </Td>
                     <Td align="center"><GradeBadge grade={m.grade} size="sm" /></Td>
