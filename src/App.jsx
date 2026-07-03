@@ -2253,6 +2253,42 @@ function calcContributionScore(empId, projects, year) {
   return { score, grade, breakdown };
 }
 
+// 수주(제안) 기여: 수주 확정된 제안에서 PM/참여인력에게 그 사업 수익률 점수를 크레딧 (PM 가중 1.0, 참여 0.6)
+function calcBidScore(empName, proposals, projects, year) {
+  const won = (proposals || []).filter(p => p.status === '수주' && p.wonProjectId);
+  let wsum = 0, ssum = 0; const breakdown = [];
+  won.forEach(p => {
+    const isPM = p.pm && p.pm === empName;
+    const isPart = (p.participants || []).includes(empName);
+    if (!isPM && !isPart) return;
+    const proj = (projects || []).find(x => x.id === p.wonProjectId);
+    if (!proj || (year != null && Number(proj.year) !== Number(year))) return;
+    const mm = projectMetrics(proj);
+    if (mm.score == null) return;
+    const w = isPM ? 1.0 : 0.6;
+    wsum += w; ssum += mm.score * w;
+    breakdown.push({ proposal: p, project: proj, role: isPM ? 'PM' : '참여', metrics: mm });
+  });
+  if (wsum === 0) return null;
+  const score = Math.round(ssum / wsum);
+  return { score, breakdown };
+}
+
+// 인사평가용 종합 기여 점수 = 수행 70% + 수주 30% (한 축만 있으면 그 축 사용)
+const EVAL_W_EXEC = 0.7, EVAL_W_BID = 0.3;
+function calcEvalScore(empId, empName, projects, proposals, year) {
+  const ex = calcContributionScore(empId, projects, year);
+  const bid = calcBidScore(empName, proposals, projects, year);
+  const exS = ex ? ex.score : null, bidS = bid ? bid.score : null;
+  let score = null;
+  if (exS != null && bidS != null) score = Math.round(exS * EVAL_W_EXEC + bidS * EVAL_W_BID);
+  else if (exS != null) score = exS;
+  else if (bidS != null) score = bidS;
+  if (score == null) return null;
+  const grade = score >= 90 ? 'S' : score >= 80 ? 'A' : score >= 70 ? 'B' : score >= 60 ? 'C' : 'D';
+  return { score, grade, exec: exS, bid: bidS, hasBid: bidS != null, hasExec: exS != null };
+}
+
 // 초기 시드 데이터 (예시 - 실제 데이터로 교체/업로드)
 const INITIAL_PROJECTS = [
   {
@@ -7938,7 +7974,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   const empRows = Object.values(eMap).map(e => {
     const nm = empName(e.empId); const lg = findLedger(e.empId, nm);
     const card = lg ? (lg.card || 0) : 0; const newOrder = lg ? (lg.newOrder || 0) : 0;
-    return { ...e, name: nm, dept: empDept(e.empId), status: empStatus(e.empId), cover: e.labor > 0 ? e.rev / e.labor : null, net: e.profit, card, newOrder, total: e.profit - card, score: (calcContributionScore(e.empId, yprojects, yr) || {}).score ?? null };
+    const ev = calcEvalScore(e.empId, nm, yprojects, proposals, yr) || {};
+    return { ...e, name: nm, dept: empDept(e.empId), status: empStatus(e.empId), cover: e.labor > 0 ? e.rev / e.labor : null, net: e.profit, card, newOrder, total: e.profit - card, score: ev.score ?? null, bidScore: ev.bid ?? null, hasBid: !!ev.hasBid };
   });
   // 사업 참여는 없지만 카드/수주 원장에만 있는 인원도 포함
   const seen = new Set(empRows.map(e => (e.empId || '') + '|' + e.name));
@@ -7948,6 +7985,17 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
     if (l.empId && seen.has(key)) return;
     if (byName) return;
     empRows.push({ empId: l.empId, name: l.name, dept: '', status: empStatus(l.empId), cnt: 0, labor: 0, rev: 0, profit: 0, pm: false, cover: null, net: 0, card: l.card || 0, newOrder: l.newOrder || 0, total: -(l.card || 0), score: null });
+  });
+  // 수주(제안) 기여만 있는 인력도 포함 (수주 확정 제안의 PM·참여인력)
+  const wonProps = (proposals || []).filter(p => p.status === '수주' && p.wonProjectId);
+  const bidPeople = new Set();
+  wonProps.forEach(p => { if (p.pm) bidPeople.add(p.pm); (p.participants || []).forEach(n => bidPeople.add(n)); });
+  bidPeople.forEach(nm => {
+    if (empRows.some(e => e.name === nm)) return;
+    const emp = (employees || []).find(e => String(e.name).trim() === nm);
+    const ev = calcEvalScore(emp ? emp.id : null, nm, yprojects, proposals, yr) || {};
+    if (ev.score == null) return;
+    empRows.push({ empId: emp ? emp.id : null, name: nm, dept: emp ? emp.dept : '', status: emp ? emp.status : '', cnt: 0, labor: 0, rev: 0, profit: 0, pm: false, cover: null, net: 0, card: 0, newOrder: 0, total: 0, score: ev.score, bidScore: ev.bid ?? null, hasBid: true });
   });
   empRows.sort((a, b) => a.total - b.total);
   const negEmp = empRows.filter(e => e.total < 0).length;
@@ -8232,14 +8280,14 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 <Td align="right" mono style={{ color: hasLedger ? (e.newOrder > 0 ? T.success : T.danger) : T.textLight }}>{hasLedger ? fmtMoney(e.newOrder) : '-'}</Td>
                 <Td align="right" mono style={{ color: e.card > 0 ? T.warning : T.textLight }}>{hasLedger ? fmtMoney(e.card) : '-'}</Td>
                 <Td align="right" mono><strong style={{ color: e.total >= 0 ? T.success : T.danger }}>{fmtMoney(e.total)}</strong></Td>
-                <Td align="center">{e.score != null ? <Badge color={e.score >= 80 ? T.success : e.score >= 70 ? T.warning : T.danger} size="sm">{e.score}</Badge> : '-'}</Td>
+                <Td align="center">{e.score != null ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><Badge color={e.score >= 80 ? T.success : e.score >= 70 ? T.warning : T.danger} size="sm">{e.score}</Badge>{e.hasBid && <span title={'수주 기여 포함' + (e.bidScore != null ? ' (수주점수 ' + e.bidScore + ')' : '')} style={{ fontSize: 9, color: T.brand, fontWeight: 700 }}>수주</span>}</span> : '-'}</Td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       <Note>{hasLedger
-        ? `창출매출·순기여(사업)는 사업 참여·기여도 기준, 신규수주·법인카드는 업로드된 직원별 원장 기준입니다. ‘종합(순기여−카드)’이 음수인 인원 ${negEmp}명 — 사업 기여보다 개인 경비가 큰 경우입니다. 신규수주가 0인데 법인카드 지출이 있는 직원은 영업·사업개발 성과 점검 대상입니다(예: 사업 담당은 있으나 신규 수주가 없는 경우).`
+        ? `창출매출·순기여(사업)는 사업 참여·기여도 기준, 신규수주·법인카드는 업로드된 직원별 원장 기준입니다. ‘종합(순기여−카드)’이 음수인 인원 ${negEmp}명 — 사업 기여보다 개인 경비가 큰 경우입니다. 신규수주가 0인데 법인카드 지출이 있는 직원은 영업·사업개발 성과 점검 대상입니다(예: 사업 담당은 있으나 신규 수주가 없는 경우). ▹ 기여점수는 인사평가용 종합점수로, 수행 기여 70% + 수주(제안) 기여 30%로 산출됩니다(‘수주’ 표시=수주 확정 제안 참여). 수행 참여 없이 제안만 한 인력도 수주 기여로 평가에 포함됩니다.`
         : `사업 참여(인력배분·기여도) 기준 순기여입니다. 순기여가 음수인 인원 ${negEmp}명. ⚠ 신규수주·법인카드 열이 ‘-’인 것은 업로드 파일에 「직원별경비수주」 시트가 없기 때문입니다 — 이 시트(사원코드·성명·법인카드·신규수주)를 넣으면 개인별 카드지출·신규수주까지 자동 반영되어, 신규수주 0·카드지출 발생 같은 케이스가 종합순기여로 드러납니다.`}</Note>
 
       {perfRows.length > 0 && (
@@ -9023,6 +9071,7 @@ function parseSagwanWorkbook(XLSX, arrayBuffer, yearDefault, pmFloor) {
         budget: Math.round(budget || 0),
         bidDate: _sgYM(_sgCell(wsP, XLSX, r, 5)),
         pm: _sgTitle(_sgStr(wsP, XLSX, r, 9)),
+        participants: _sgStr(wsP, XLSX, r, 8).split(/[,\s/·]+/).map(s => _sgTitle(s.trim())).filter(Boolean),
         consortium: _sgStr(wsP, XLSX, r, 7),
         note: _sgStr(wsP, XLSX, r, 10),
         status: won ? '수주' : '제안',
