@@ -2676,6 +2676,7 @@ export default function App() {
     { id: 'evaluation', label: '평가 입력', icon: FileText, roles: ['admin', 'manager', 'evaluator'] },
     { id: 'projects', label: '프로젝트 수익성', icon: Briefcase, roles: ['admin', 'manager'] },
     { id: 'report', label: '경영보고서', icon: FileBarChart, roles: ['admin', 'manager'] },
+    { id: 'monthclose', label: '월마감 변환', icon: Upload, roles: ['admin', 'manager'] },
     { id: 'results', label: '평가 결과', icon: Award, roles: ['admin', 'manager'] },
     { id: 'salary', label: '급여 산정', icon: Wallet, roles: ['admin'] },
     { id: 'analytics', label: '통계 분석', icon: PieIcon, roles: ['admin', 'manager'] },
@@ -2721,6 +2722,7 @@ export default function App() {
             {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} projects={projects} />}
             {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} />}
             {tab === 'report' && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} currentYear={currentYear} policy={policy} />}
+            {tab === 'monthclose' && <MonthCloseView projects={projects} employees={employees} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} />}
             {tab === 'results' && <ResultsView user={user} employees={visibleEmployees} results={results} comments={comments} scores={scores} selfScores={selfScores} policy={policy} currentYear={currentYear} history={history} navigateToHistory={navigateToHistory} />}
             {tab === 'salary' && <SalaryView employees={employees} results={results} stats={stats} />}
             {tab === 'analytics' && <AnalyticsView employees={visibleEmployees} results={results} policy={policy} stats={stats} />}
@@ -7642,6 +7644,170 @@ function ProjectAnalytics({ projects, employees, cfg, targets, allProjects }) {
 // ============================================================
 // 경영보고서 (월간 경영진단 보고서) — 경영기획 관점 종합 분석
 // ============================================================
+// ============================================================
+// 월마감 변환 — 계약직/정규직급여/지출 3파일 업로드 → 프로젝트 수익성 자동 반영
+// ============================================================
+function MonthCloseView({ projects, employees, bulkUpsertProjects, bulkUpsertOverheads, bulkSetEmpLedger, currentYear }) {
+  const [files, setFiles] = React.useState({ cw: null, exp: null, sal: [], alloc: null });
+  const [preview, setPreview] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState('');
+
+  const STOP = ['용역', '사업', '구축', '개발', '유지관리', '유지보수', '및', '운영', '전수조사', '보존처리', '연구', '관련'];
+  const nrm = (s) => { s = String(s || '').replace(/\[[^\]]*\]/g, '').replace(/\([^)]*\)/g, '').replace(/20\d\d년?도?/g, ''); STOP.forEach(w => s = s.split(w).join('')); return s.replace(/[^0-9A-Za-z가-힣]/g, ''); };
+  const projList = (projects || []).map(p => ({ id: p.id, name: p.name, pn: nrm(p.name) }));
+  const match = (name) => { const n = nrm(name); if (!n) return null; for (const p of projList) { if (p.pn && (p.pn.includes(n) || n.includes(p.pn))) return p.id; } return null; };
+  const mnum = (v) => { v = String(v || ''); let m = /\/(\d{1,2})/.exec(v); if (m) return +m[1]; m = /(\d{1,2})\s*월/.exec(v); if (m) return +m[1]; m = /(\d{1,2})/.exec(v); if (m) { const n = +m[1]; if (n >= 1 && n <= 12) return n; } return null; };
+  const readBuf = (file) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsArrayBuffer(file); });
+
+  async function analyze() {
+    setErr(''); setBusy(true); setPreview(null);
+    try {
+      if (!files.cw && !files.exp && files.sal.length === 0) throw new Error('최소 한 개 파일을 선택하세요');
+      const XLSX = await loadXLSXLib();
+      const openWb = async (f) => XLSX.read(await readBuf(f), { type: 'array', cellDates: true });
+      const S = (ws, r, c) => { const x = ws[XLSX.utils.encode_cell({ r, c })]; return x ? String(x.v).replace(/[\r\n\t]+/g, ' ').trim() : ''; };
+      const Nc = (ws, r, c) => { const x = ws[XLSX.utils.encode_cell({ r, c })]; if (!x || x.t === 'e') return 0; const v = x.v; if (typeof v === 'number') return v; const t = String(v).replace(/,/g, '').trim(); const n = Number(t); return isNaN(n) ? 0 : n; };
+      const W = {}, M = {}, E = {}, OH = new Array(13).fill(0), CARD = {};
+      const add = (o, id, mo, v) => { if (!o[id]) o[id] = new Array(13).fill(0); o[id][mo] += v; };
+      const unmatched = {};
+
+      // 1) 계약직 → 작업자인건비
+      let hasW = false;
+      if (files.cw) {
+        hasW = true; const wb = await openWb(files.cw); const w = wb.Sheets['통합본'] || wb.Sheets[wb.SheetNames[0]];
+        const rng = XLSX.utils.decode_range(w['!ref']);
+        for (let r = 2; r <= rng.e.r; r++) { const code = S(w, r, 1); if (!code) continue; const mo = mnum(S(w, r, 0)); const g = Nc(w, r, 3); const pr = S(w, r, 17); const id = match(pr); if (id && mo) add(W, id, mo, g); else if (pr && !id) unmatched[pr] = (unmatched[pr] || 0) + g; }
+      }
+      // 2) 지출정리 → 사업경비 + 공통비 + 카드
+      let hasE = false;
+      if (files.exp) {
+        hasE = true; const wb = await openWb(files.exp); const ej = wb.Sheets['통합거래원장'] || wb.Sheets[wb.SheetNames[0]];
+        const rng = XLSX.utils.decode_range(ej['!ref']); let hr = 0; for (let r = 0; r < 6; r++) if (S(ej, r, 0) === '월') { hr = r; break; }
+        for (let r = hr + 1; r <= rng.e.r; r++) {
+          const sec = S(ej, r, 1), amt = Nc(ej, r, 6), proj = S(ej, r, 8), dam = S(ej, r, 9), mo = mnum(S(ej, r, 0));
+          if (['매입(외주)', '지출결의서', '부동산', '카드사용'].includes(sec) && proj && mo) {
+            if (/본사운영|공통경비/.test(proj)) OH[mo] += amt;
+            else { const id = match(proj); if (id) add(E, id, mo, amt); else unmatched[proj] = (unmatched[proj] || 0) + amt; }
+          }
+          if (sec === '카드사용' && amt) { const m2 = /\(([^)]+)\)/.exec(dam); let who = (m2 ? m2[1] : dam).replace(/^(무기명|기명)\s*/, '').trim(); if (who) CARD[who] = (CARD[who] || 0) + amt; }
+        }
+      }
+      // 3) 정규직 급여 + 배분표 → 관리자인건비
+      let hasM = false; const ratio = {};
+      if (files.alloc && files.sal.length) {
+        const aw = (await openWb(files.alloc)); const asheet = aw.Sheets['관리자배분표'] || aw.Sheets[aw.SheetNames[0]];
+        const arng = XLSX.utils.decode_range(asheet['!ref']);
+        for (let r = 2; r <= arng.e.r; r++) { const no = S(asheet, r, 0), who = S(asheet, r, 2), pct = Nc(asheet, r, 3); if (no && who && pct) { ratio[who] = ratio[who] || {}; ratio[who][no] = pct / 100; } }
+        for (const f of files.sal) {
+          const wb = await openWb(f); const ws = wb.Sheets[wb.SheetNames[0]]; const rng = XLSX.utils.decode_range(ws['!ref']);
+          let hr = 1; for (let r = 0; r < 6; r++) { for (let c = 0; c <= rng.e.c; c++) if (S(ws, r, c) === '사원코드') { hr = r; break; } if (S(ws, hr, 0) === '사원코드' || hr !== 1) break; }
+          const col = {}; for (let c = 0; c <= rng.e.c; c++) { const h = S(ws, hr, c); if (h) col[h] = c; }
+          for (let r = hr + 1; r <= rng.e.r; r++) {
+            if (S(ws, r, col['급여구분'] ?? 1) !== '급여') continue;
+            const nm = S(ws, r, col['사원명'] ?? 3); const gross = Nc(ws, r, col['지급총액'] ?? 4); const mo = mnum(S(ws, r, col['귀속연월'] ?? 0));
+            if (!nm || !mo || !ratio[nm]) continue;
+            hasM = true; for (const [no, fr] of Object.entries(ratio[nm])) add(M, no, mo, gross * fr);
+          }
+        }
+      }
+
+      const ids = new Set([...Object.keys(W), ...Object.keys(M), ...Object.keys(E)]);
+      const sum = (o, id) => (o[id] || []).reduce((a, b) => a + b, 0);
+      const rows = [...ids].map(id => ({ id, name: (projList.find(p => p.id === id) || {}).name || id, w: sum(W, id), m: sum(M, id), e: sum(E, id) })).sort((a, b) => (b.w + b.m + b.e) - (a.w + a.m + a.e));
+      setPreview({ rows, W, M, E, OH, CARD, hasW, hasM, hasE, ohTotal: OH.reduce((a, b) => a + b, 0), unmatched: Object.entries(unmatched).filter(([k, v]) => v > 100000).sort((a, b) => b[1] - a[1]), cardCount: Object.keys(CARD).length });
+    } catch (e) { setErr(e.message || String(e)); }
+    setBusy(false);
+  }
+
+  function apply() {
+    if (!preview) return;
+    const { W, M, E, OH, CARD, hasW, hasM, hasE } = preview;
+    const sum = (o, id) => (o[id] || []).reduce((a, b) => a + b, 0);
+    const ids = new Set([...Object.keys(W), ...Object.keys(M), ...Object.keys(E)]);
+    const updated = [];
+    (projects || []).forEach(p => {
+      if (!ids.has(p.id)) return;
+      const np = { ...p };
+      if (hasW) np.workerLabor = Math.round(sum(W, p.id));
+      if (hasM) np.mgrLabor = Math.round(sum(M, p.id));
+      if (hasE) np.overhead = Math.round(sum(E, p.id));
+      np.laborCost = Math.round((np.workerLabor || 0) + (np.mgrLabor || 0));
+      const mon = new Array(13).fill(0);
+      for (let i = 0; i < 13; i++) mon[i] = Math.round((W[p.id]?.[i] || 0) + (M[p.id]?.[i] || 0) + (E[p.id]?.[i] || 0));
+      np.monthly = mon;
+      updated.push(np);
+    });
+    if (updated.length) bulkUpsertProjects(updated);
+    if (hasE && preview.ohTotal > 0) bulkUpsertOverheads([{ id: 'OH:' + currentYear + ':monthclose', year: currentYear, category: '본사운영·공통경비(월마감)', amount: Math.round(preview.ohTotal), monthly: OH.map(v => Math.round(v)), note: '월마감 변환' }]);
+    const ledger = Object.entries(CARD).map(([name, card]) => ({ name, empId: (employees || []).find(e => e.name === name)?.id || null, card: Math.round(card), newOrder: 0, year: currentYear }));
+    if (ledger.length) bulkSetEmpLedger(ledger);
+    setPreview(null); setFiles({ cw: null, exp: null, sal: [], alloc: null });
+  }
+
+  const won = (n) => fmtMoney(n) + '원';
+  const FileRow = ({ label, hint, req, val, onPick, multi }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: S[3], padding: `10px 0`, borderBottom: `1px solid ${T.divider}` }}>
+      <div style={{ width: 150, flexShrink: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{label} {req && <span style={{ color: T.danger }}>*</span>}</div>
+        <div style={{ fontSize: 11, color: T.textMute }}>{hint}</div>
+      </div>
+      <input type="file" accept=".xlsx" multiple={multi} onChange={e => onPick(multi ? Array.from(e.target.files) : e.target.files[0])} style={{ fontSize: 12, flex: 1 }} />
+      <div style={{ fontSize: 12, color: val ? T.success : T.textLight, width: 90, textAlign: 'right' }}>{multi ? (val && val.length ? val.length + '개' : '미선택') : (val ? '선택됨' : '미선택')}</div>
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 940 }}>
+      <div style={{ ...card(), padding: S[6], marginBottom: S[4] }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <Upload size={20} color={T.brand} /><h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: T.ink }}>월마감 변환</h2>
+        </div>
+        <p style={{ margin: '0 0 16px', fontSize: 13, color: T.textMute, lineHeight: 1.7 }}>
+          계약직·정규직급여·지출 파일을 올리면 사업명·담당자를 분석해 <strong>프로젝트별 작업자인건비·관리자인건비·사업경비·공통비</strong>를 계산하고 프로젝트 수익성에 바로 반영합니다. 매출·프로젝트명은 기존 값을 유지합니다.
+        </p>
+        <FileRow label="작업자 인건비" hint="계약직 통합본(사업명)" req val={files.cw} onPick={f => setFiles(s => ({ ...s, cw: f }))} />
+        <FileRow label="지출 경비" hint="지출정리(통합거래원장)" req val={files.exp} onPick={f => setFiles(s => ({ ...s, exp: f }))} />
+        <FileRow label="직원 인건비" hint="정규직 급여(월별, 복수 선택)" val={files.sal} onPick={f => setFiles(s => ({ ...s, sal: f }))} multi />
+        <FileRow label="관리자 배분표" hint="정규직→사업 배분율(선택)" val={files.alloc} onPick={f => setFiles(s => ({ ...s, alloc: f }))} />
+        <div style={{ display: 'flex', gap: S[3], marginTop: S[4], alignItems: 'center' }}>
+          <Button icon={BarChart3} onClick={analyze} disabled={busy}>{busy ? '분석 중…' : '분석'}</Button>
+          {preview && <Button variant="primary" icon={CheckCircle2} onClick={apply}>프로젝트 수익성에 반영</Button>}
+          {err && <span style={{ color: T.danger, fontSize: 12.5 }}>{err}</span>}
+        </div>
+        <div style={{ marginTop: S[3], fontSize: 11, color: T.textLight }}>정규직 관리자인건비는 「직원 인건비 + 관리자 배분표」를 함께 올릴 때 계산됩니다. 관리자 배분표가 없으면 작업자·사업경비·공통비만 반영됩니다.</div>
+      </div>
+
+      {preview && (
+        <div style={{ ...card(), padding: S[5] }}>
+          <div style={{ display: 'flex', gap: S[4], flexWrap: 'wrap', marginBottom: S[4] }}>
+            <div><div style={{ fontSize: 11, color: T.textMute }}>매칭 사업</div><div style={{ fontSize: 20, fontWeight: 800, color: T.brand }}>{preview.rows.length}개</div></div>
+            <div><div style={{ fontSize: 11, color: T.textMute }}>공통비(본사운영)</div><div style={{ fontSize: 20, fontWeight: 800 }}>{fmtMoney(preview.ohTotal)}</div></div>
+            <div><div style={{ fontSize: 11, color: T.textMute }}>직원 카드</div><div style={{ fontSize: 20, fontWeight: 800 }}>{preview.cardCount}명</div></div>
+          </div>
+          <div style={{ overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 560 }}>
+              <thead><tr style={{ background: T.surfaceAlt }}><Th>사업</Th><Th align="right">작업자인건비</Th><Th align="right">관리자인건비</Th><Th align="right">사업경비</Th></tr></thead>
+              <tbody>
+                {preview.rows.map(r => (
+                  <tr key={r.id}><Td>{r.name}</Td><Td align="right" mono>{fmtMoney(r.w)}</Td><Td align="right" mono>{preview.hasM ? fmtMoney(r.m) : '-'}</Td><Td align="right" mono>{fmtMoney(r.e)}</Td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {preview.unmatched.length > 0 && (
+            <div style={{ marginTop: S[4], padding: S[3], background: 'rgba(217,119,6,0.06)', borderRadius: 8, fontSize: 12, color: T.text }}>
+              <strong style={{ color: T.warning }}>미매칭(사업진행에 없어 제외):</strong> {preview.unmatched.map(([k, v]) => `${k.slice(0, 16)} ${fmtMoney(v)}`).join(' · ')}
+              <div style={{ color: T.textMute, marginTop: 4 }}>새 사업이면 프로젝트를 먼저 등록하세요.</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function ManagementReportView({ user, projects, proposals, overheads, employees, empLedger, currentYear, policy }) {
   const yr = currentYear;
   const cfg = (policy && policy.diag) || {};
