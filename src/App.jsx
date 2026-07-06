@@ -1272,6 +1272,7 @@ const INITIAL_POLICY = {
   perf_kpi: 35, perf_profit: 30, perf_delivery: 20, perf_customer: 15,
   // 프로젝트 기여 산정 계수 (기여점수 산출 규칙 — 제도 공식화)
   contrib_exec_w: 70, contrib_bid_w: 30, contrib_core_min: 20, contrib_bonus_multi: 5, contrib_bonus_jikjik: 5, contrib_sales_floor: 20,
+  contrib_bid_pm_w: 100, contrib_bid_part_w: 60, contrib_bid_supp_w: 30,
   weight_comp: 50, weight_perf: 50,
   grades: [
     { grade: 'S', min: 90, max: 100, dist: 10, increase: 7.0, piCoef: 2.5, label: '탁월' },
@@ -2277,15 +2278,17 @@ function calcBidScore(empName, proposals, projects, year) {
   won.forEach(p => {
     const isPM = p.pm && p.pm === empName;
     const isPart = (p.participants || []).includes(empName);
-    if (!isPM && !isPart) return;
+    const isSupp = (p.support || []).includes(empName);   // 서류제출·관리 지원 인력
+    if (!isPM && !isPart && !isSupp) return;
     const proj = (projects || []).find(x => x.id === p.wonProjectId);
     if (!proj || isEtcProject(proj) || (year != null && Number(proj.year) !== Number(year))) return;
     const mm = projectMetrics(proj);
     const ps = evalProjectScore(proj, mm);
     if (ps == null) return;
-    const w = isPM ? 1.0 : 0.6;
+    const w = (isPM ? EVAL_CFG.bidPmW : isPart ? EVAL_CFG.bidPartW : EVAL_CFG.bidSuppW) / 100;
+    if (w <= 0) return;
     wsum += w; ssum += ps * w;
-    breakdown.push({ proposal: p, project: proj, role: isPM ? 'PM' : '참여', metrics: mm });
+    breakdown.push({ proposal: p, project: proj, role: isPM ? 'PM' : isPart ? '참여' : '지원', metrics: mm });
   });
   if (wsum === 0) return null;
   const score = Math.round(ssum / wsum);
@@ -2315,7 +2318,7 @@ const SALES_TRACK = {
 function isSalesTrack(name) { return name != null && Object.prototype.hasOwnProperty.call(SALES_TRACK, name); }
 
 // 인사평가용 종합 기여 점수 = 수행/수주 가중합 + 겸직·다축 보너스 (계수는 정책설정에서 조정 → EVAL_CFG로 동기화)
-const EVAL_CFG = { execW: 70, bidW: 30, coreMin: 20, bonusMulti: 5, bonusJikjik: 5, salesFloor: 20 };
+const EVAL_CFG = { execW: 70, bidW: 30, coreMin: 20, bonusMulti: 5, bonusJikjik: 5, salesFloor: 20, bidPmW: 100, bidPartW: 60, bidSuppW: 30 };
 function calcEvalScore(empId, empName, projects, proposals, year, emp) {
   const ex = calcContributionScore(empId, projects, year);
   const bid = calcBidScore(empName, proposals, projects, year);
@@ -2754,6 +2757,9 @@ function App() {
     EVAL_CFG.bonusMulti = Number(policy.contrib_bonus_multi ?? 5);
     EVAL_CFG.bonusJikjik = Number(policy.contrib_bonus_jikjik ?? 5);
     EVAL_CFG.salesFloor = Number(policy.contrib_sales_floor ?? 20);
+    EVAL_CFG.bidPmW = Number(policy.contrib_bid_pm_w ?? 100);
+    EVAL_CFG.bidPartW = Number(policy.contrib_bid_part_w ?? 60);
+    EVAL_CFG.bidSuppW = Number(policy.contrib_bid_supp_w ?? 30);
   }, [policy]);
 
   const updateComment = (id, field, value) => {
@@ -2843,6 +2849,40 @@ function App() {
     });
   };
   const deleteProposal = (id) => setProposals(prev => prev.filter(x => x.id !== id));
+  // 수주 확정: 제안 → 신규 프로젝트 생성 + 수주 인력 보상(직원별 원장 신규수주 + 수주 기여점수 자동)
+  const winProposal = (proposalId) => {
+    const p = (proposals || []).find(x => x.id === proposalId);
+    if (!p) return;
+    if (p.status === '수주' && p.wonProjectId) { alert('이미 수주 확정된 제안입니다.'); return; }
+    if (!window.confirm(`[${p.name}]\n수주 확정 처리할까요?\n\n· 신규 프로젝트가 생성됩니다 (계약금액 = 사업예산 ${fmtMoney(p.budget)}원)\n· PM·제안참여인력에게 수주 기여점수가 자동 반영됩니다\n· PM의 신규수주 실적(직원별 원장)에 기록됩니다`)) return;
+    // 새 프로젝트 ID: 2026-0NN 다음 번호
+    const yr = currentYear || new Date().getFullYear();
+    const nums = (projects || []).map(x => { const m = String(x.id || '').match(/(\d{4})-(\d{3})/); return m ? Number(m[2]) : 0; });
+    const next = (nums.length ? Math.max(...nums) : 0) + 1;
+    const newId = `${yr}-${String(next).padStart(3, '0')}`;
+    // PM 사번 매칭
+    const pmEmp = (employees || []).find(e => String(e.name).trim() === String(p.pm || '').trim());
+    const newProject = {
+      id: newId, name: p.name, client: p.client || '', year: yr,
+      status: 'ongoing', progress: 0,
+      revenue: Number(p.budget) || 0, laborCost: 0, workerLabor: 0, mgrLabor: 0, overhead: 0, otherCost: 0,
+      members: pmEmp ? [{ empId: pmEmp.id, role: 'PM', contribution: 0 }] : [],
+      note: `제안 수주 확정 (${new Date().toISOString().slice(0, 10)}) — 인건비·경비는 월마감/사업관리 업로드로 반영`,
+    };
+    setProjects(prev => [...(prev || []), newProject]);
+    setProposals(prev => (prev || []).map(x => x.id === proposalId ? { ...x, status: '수주', wonProjectId: newId } : x));
+    // PM 신규수주 실적 기록 (직원별 원장)
+    if (pmEmp) {
+      setEmpLedger(prev => {
+        const list = [...(prev || [])];
+        const idx = list.findIndex(l => (l.empId && l.empId === pmEmp.id) || l.name === pmEmp.name);
+        if (idx >= 0) list[idx] = { ...list[idx], newOrder: (Number(list[idx].newOrder) || 0) + (Number(p.budget) || 0) };
+        else list.push({ empId: pmEmp.id, name: pmEmp.name, card: 0, newOrder: Number(p.budget) || 0, year: yr });
+        return list;
+      });
+    }
+    showToast(`수주 확정: ${newId} 프로젝트 생성${pmEmp ? ` · ${pmEmp.name} 신규수주 ${fmtMoney(p.budget)}원 기록` : ' (PM 미매칭 — 원장 기록 생략)'}`);
+  };
 
   const bulkSetEmpLedger = (rows) => { if (rows && rows.length) setEmpLedger(rows); };
   const upsertOverhead = (item) => setOverheads(prev => {
@@ -2961,7 +3001,7 @@ function App() {
             }} />}
             {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} finalizeEval={finalizeEval} projects={projects} proposals={proposals} peerEvals={peerEvals} />}
             {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} />}
-            {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} currentYear={currentYear} policy={policy} />}
+            {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} />}
             {tab === 'loans' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <LoansView loans={loans} setLoans={setLoans} employees={employees} />}
             {tab === 'receivables' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ReceivablesView receivables={receivables} setReceivables={setReceivables} projects={projects} />}
             {tab === 'monthclose' && <MonthCloseView projects={projects} employees={employees} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} />}
@@ -7861,7 +7901,7 @@ function OverheadView({ projects, overheads, currentYear, yearFilter, policy, se
 }
 
 // 수주 파이프라인 (사업제안현황 연동)
-function ProjectPipeline({ proposals, canEdit, deleteProposal }) {
+function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal }) {
   if (!proposals || proposals.length === 0) {
     return <EmptyState icon={TrendingUp} title="제안 데이터가 없습니다" desc="사업관리 엑셀(사업제안현황 시트)을 업로드하면 수주 파이프라인이 표시됩니다" />;
   }
@@ -7897,7 +7937,7 @@ function ProjectPipeline({ proposals, canEdit, deleteProposal }) {
             </Bar>
           </BarChart>
         </ResponsiveContainer>
-        <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2] }}>수주 여부는 제안 사업명이 사업진행현황(수주 프로젝트)과 일치하면 '수주'로 자동 판정됩니다.</div>
+        <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2] }}>수주 여부는 사업명 자동 매칭 또는 [수주 확정] 버튼으로 처리됩니다. 수주 확정 시 신규 프로젝트가 생성되고, PM·제안참여인력에게 수주 기여점수(인사평가)와 PM 신규수주 실적(직원별 원장)이 자동 반영됩니다.</div>
       </div>
 
       <div style={{ ...card(), padding: S[6] }}>
@@ -7920,7 +7960,14 @@ function ProjectPipeline({ proposals, canEdit, deleteProposal }) {
                   <Td>{p.bidDate}</Td>
                   <Td>{p.pm}</Td>
                   <Td align="center"><Badge color={p.status === '수주' ? T.success : T.textMute} variant={p.status === '수주' ? 'solid' : 'outline'} size="sm">{p.status}</Badge></Td>
-                  {canEdit && <Td align="center"><button onClick={() => deleteProposal(p.id)} style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}><Trash2 size={14} /></button></Td>}
+                  {canEdit && <Td align="center">
+                    <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                      {p.status !== '수주' && winProposal && (
+                        <Button size="sm" variant="secondary" icon={Award} onClick={() => winProposal(p.id)}>수주 확정</Button>
+                      )}
+                      <button onClick={() => { if (window.confirm('이 제안을 삭제할까요?')) deleteProposal(p.id); }} style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }} title="삭제"><Trash2 size={14} /></button>
+                    </span>
+                  </Td>}
                 </tr>
               ))}
             </tbody>
@@ -8489,7 +8536,23 @@ function MonthCloseView({ projects, employees, bulkUpsertProjects, bulkUpsertOve
 }
 
 
-function ManagementReportView({ user, projects, proposals, overheads, employees, empLedger, currentYear, policy }) {
+function ManagementReportView({ user, projects, proposals, overheads, employees, empLedger, setEmpLedger, currentYear, policy }) {
+  const canEditLedger = !!setEmpLedger && user.role === 'admin';
+  const [ledgerForm, setLedgerForm] = React.useState(null); // {name, empId, card, newOrder}
+  const removeLedger = (row) => {
+    if (!window.confirm(`[${row.name}] 항목을 직원별 원장에서 삭제할까요?\n(사업 참여 데이터는 유지되며, 신규수주·카드 기록만 제거됩니다)`)) return;
+    setEmpLedger(prev => (prev || []).filter(l => !((row.empId && l.empId === row.empId) || l.name === row.name)));
+  };
+  const saveLedger = () => {
+    if (!ledgerForm || !ledgerForm.name) { alert('이름을 입력/선택하세요'); return; }
+    const emp = (employees || []).find(e => e.name === ledgerForm.name);
+    const rec = { empId: emp ? emp.id : (ledgerForm.empId || null), name: ledgerForm.name, card: Number(ledgerForm.card) || 0, newOrder: Number(ledgerForm.newOrder) || 0, year: yr };
+    setEmpLedger(prev => {
+      const list = (prev || []).filter(l => !((rec.empId && l.empId === rec.empId) || l.name === rec.name));
+      return [...list, rec];
+    });
+    setLedgerForm(null);
+  };
   const yr = currentYear;
   const cfg = (policy && policy.diag) || {};
   const targets = (policy && policy.targets) || { revenue: 0, profit: 0 };
@@ -8920,10 +8983,39 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
 
       {/* 6. 직원별 순기여 */}
       <H n="6" icon={UserCheck}>직원별 순기여 (사업 참여 기준)</H>
+      {canEditLedger && (
+        <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: S[2] }}>
+          <Button size="sm" variant="outline" icon={Plus} onClick={() => setLedgerForm({ name: '', empId: null, card: 0, newOrder: 0 })}>원장 항목 추가/입력</Button>
+        </div>
+      )}
+      {ledgerForm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setLedgerForm(null)}>
+          <div style={{ ...card(), padding: S[5], width: 400, maxWidth: '100%' }} onClick={ev => ev.stopPropagation()}>
+            <SectionTitle>직원별 원장 입력/수정</SectionTitle>
+            <div style={{ display: 'grid', gap: S[3], marginTop: S[3] }}>
+              <input list="ledger-emp" placeholder="직원 이름 (목록 선택 또는 입력)" value={ledgerForm.name} onChange={ev => setLedgerForm(f => ({ ...f, name: ev.target.value }))} style={{ padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5 }} />
+              <datalist id="ledger-emp">{(employees || []).map(e => <option key={e.id} value={e.name} />)}</datalist>
+              <div>
+                <div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>신규수주(원)</div>
+                <input type="number" value={ledgerForm.newOrder} onChange={ev => setLedgerForm(f => ({ ...f, newOrder: ev.target.value }))} style={{ width: '100%', padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>법인카드 지출(원)</div>
+                <input type="number" value={ledgerForm.card} onChange={ev => setLedgerForm(f => ({ ...f, card: ev.target.value }))} style={{ width: '100%', padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ display: 'flex', gap: S[2], justifyContent: 'flex-end' }}>
+                <Button variant="ghost" onClick={() => setLedgerForm(null)}>취소</Button>
+                <Button variant="primary" onClick={saveLedger}>저장</Button>
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: T.textMute, marginTop: S[3], lineHeight: 1.6 }}>같은 이름이 있으면 덮어씁니다. 비직원 항목(부서명·차량 등 오분류)은 표의 휴지통으로 삭제하세요.</div>
+          </div>
+        </div>
+      )}
       <div style={{ ...card(), padding: 0, overflow: 'auto', marginBottom: S[3] }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 860 }}>
           <thead><tr style={{ background: T.surfaceAlt }}>
-            <Th>직원</Th><Th>본부</Th><Th align="center">참여</Th><Th align="right">배분인건비</Th><Th align="right">창출매출</Th><Th align="right">순기여(사업)</Th><Th align="right">신규수주</Th><Th align="right">법인카드</Th><Th align="right">종합(순기여−카드)</Th><Th align="center">점수</Th>
+            <Th>직원</Th><Th>본부</Th><Th align="center">참여</Th><Th align="right">배분인건비</Th><Th align="right">창출매출</Th><Th align="right">순기여(사업)</Th><Th align="right">신규수주</Th><Th align="right">법인카드</Th><Th align="right">종합(순기여−카드)</Th><Th align="center">점수</Th>{canEditLedger && <Th align="center">관리</Th>}
           </tr></thead>
           <tbody>
             {empRows.length === 0 && <tr><td colSpan={10} style={{ textAlign: "center", color: T.textLight, padding: 20, fontSize: 12.5 }}>사업 참여(인력배분) 데이터가 없습니다</td></tr>}
@@ -8939,6 +9031,12 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 <Td align="right" mono style={{ color: e.card > 0 ? T.warning : T.textLight }}>{hasLedger ? fmtMoney(e.card) : '-'}</Td>
                 <Td align="right" mono><strong style={{ color: e.total >= 0 ? T.success : T.danger }}>{fmtMoney(e.total)}</strong></Td>
                 <Td align="center">{e.score != null ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><Badge color={e.score >= 80 ? T.success : e.score >= 70 ? T.warning : T.danger} size="sm">{e.score}</Badge>{e.track === 'support' && <span title={'비매출 지원트랙: 전사성과40+MBO60' + (e.mbo != null ? ' (MBO ' + e.mbo + ')' : ' · MBO 미입력')} style={{ fontSize: 9, color: '#7C3AED', fontWeight: 700 }}>지원</span>}{e.track === 'sales' && <span title={'영업 트랙: 수주 실적 기준' + (e.bidScore == null ? ' (수주 실적 없음 → 기본점수)' : '')} style={{ fontSize: 9, color: '#0369A1', fontWeight: 700 }}>영업</span>}{e.hasBid && e.track !== 'sales' && <span title={'수주 기여 포함' + (e.bidScore != null ? ' (수주점수 ' + e.bidScore + ')' : '')} style={{ fontSize: 9, color: T.brand, fontWeight: 700 }}>수주</span>}{e.evBonus > 0 && <span title={(e.jikjik ? '겸직' : '') + ' 다축 기여 보너스 +' + e.evBonus} style={{ fontSize: 9, color: T.success, fontWeight: 700 }}>+{e.evBonus}</span>}</span> : '-'}</Td>
+                {canEditLedger && <Td align="center">
+                  <span style={{ display: 'inline-flex', gap: 4 }}>
+                    <button title="원장 수정 (신규수주·카드)" onClick={() => setLedgerForm({ name: e.name, empId: e.empId, card: e.card || 0, newOrder: e.newOrder || 0 })} style={{ padding: 3, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}><Pencil size={13} /></button>
+                    {(e.card || e.newOrder || e.cnt === 0) ? <button title="원장에서 삭제 (비직원·오분류 정리)" onClick={() => removeLedger(e)} style={{ padding: 3, background: 'transparent', border: 'none', cursor: 'pointer', color: T.danger }}><Trash2 size={13} /></button> : null}
+                  </span>
+                </Td>}
               </tr>
             ))}
           </tbody>
@@ -9329,7 +9427,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
       </div>
 
       {view === 'pipeline' ? (
-        <ProjectPipeline proposals={proposals || []} canEdit={canEdit} deleteProposal={deleteProposal} />
+        <ProjectPipeline proposals={proposals || []} canEdit={canEdit} deleteProposal={deleteProposal} winProposal={winProposal} />
       ) : view === 'overhead' ? (
         <OverheadView projects={shown} overheads={overheads || []} currentYear={currentYear} yearFilter={yearFilter}
           policy={policy} setPolicy={setPolicy} canEdit={canEdit}
@@ -11493,8 +11591,11 @@ function PolicyView({ policy, setPolicy }) {
           <PolicyInput label="다축 기여 보너스(점)" value={policy.contrib_bonus_multi} onChange={v => up('contrib_bonus_multi', v)} />
           <PolicyInput label="겸직 보너스(점)" value={policy.contrib_bonus_jikjik} onChange={v => up('contrib_bonus_jikjik', v)} />
           <PolicyInput label="영업 기본점수(수주 0)" value={policy.contrib_sales_floor} onChange={v => up('contrib_sales_floor', v)} />
+          <PolicyInput label="수주 역할가중 — PM(%)" value={policy.contrib_bid_pm_w} onChange={v => up('contrib_bid_pm_w', v)} />
+          <PolicyInput label="수주 역할가중 — 제안참여(%)" value={policy.contrib_bid_part_w} onChange={v => up('contrib_bid_part_w', v)} />
+          <PolicyInput label="수주 역할가중 — 서류·지원(%)" value={policy.contrib_bid_supp_w} onChange={v => up('contrib_bid_supp_w', v)} />
           <div style={{ gridColumn: '1 / -1', fontSize: 11.5, color: T.textMute, lineHeight: 1.6 }}>
-            기여점수 = 수행점수×수행가중 + 수주점수×수주가중 (합 100 권장) + 보너스(100점 상한). 참여율이 최소 참여율 미만이면 수행 기여로 인정하지 않고 수주 기여로만 평가합니다. 완료 사업은 확정 수익률, 진행중 사업은 진행기준 수익률로 산정됩니다. 변경 시 전 직원 기여점수에 즉시 반영되므로 평가 기간 중 변경은 지양하세요.
+            기여점수 = 수행점수×수행가중 + 수주점수×수주가중 (합 100 권장) + 보너스(100점 상한). 참여율이 최소 참여율 미만이면 수행 기여로 인정하지 않고 수주 기여로만 평가합니다. 수주 역할가중: 수주 확정 제안에서 PM·제안참여·서류지원 인력이 받는 수주 점수의 비율(예: PM 100% / 참여 60% / 지원 30%). 서류·지원 인력은 제안현황의 제안참여인력 칸에 이름을 넣으면 참여 가중, 별도 지원 명단이 있으면 지원 가중이 적용됩니다. 완료 사업은 확정 수익률, 진행중 사업은 진행기준 수익률로 산정됩니다. 변경 시 전 직원 기여점수에 즉시 반영되므로 평가 기간 중 변경은 지양하세요.
           </div>
         </PolicySection>
         <PolicySection title="종합 가중치" sumK={['weight_comp', 'weight_perf']} policy={policy}>
