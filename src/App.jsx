@@ -10365,19 +10365,47 @@ function EvaluationView({ user, employees, scores, updateScore, selfScores, comm
               ].map(it => (
                 <div key={it.key}>
                   <ScoreRow {...it} value={empScores[it.key]} selfValue={empSelf[it.key]} onChange={v => updateScore(current.id, it.key, v)} />
-                  {it.key === 'perf_profit' && (
-                    <div style={{ 
-                      margin: `${S[2]}px 0 ${S[3]}px`, padding: `${S[2]}px ${S[3]}px`,
-                      background: '#EEF3FA', borderLeft: `3px solid ${T.brand}`, borderRadius: 4,
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: S[3]
-                    }}>
-                      <div style={{ fontSize: 11, color: T.text, lineHeight: 1.5, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Briefcase size={13} style={{ color: T.brand, flexShrink: 0 }} />
-                        프로젝트 수익성 데이터에서 기여도 점수를 자동 산정합니다 (개인 정량평가 대체)
+                  {it.key === 'perf_profit' && (() => {
+                    const nm0 = String(current.name || '').trim();
+                    const track0 = isSupportTrack(nm0) ? 'support' : isSalesTrack(nm0) ? 'sales' : 'project';
+                    let auto = null, detail = '';
+                    if (track0 === 'sales') {
+                      const b0 = calcBidScore(nm0, proposals, projects, currentYear);
+                      auto = b0 ? b0.score : EVAL_CFG.salesFloor;
+                      detail = b0 ? '영업 트랙 · 수주 실적 기준' : `영업 트랙 · 수주 실적 없음(기본 ${EVAL_CFG.salesFloor}점)`;
+                    } else if (track0 === 'support') {
+                      detail = '지원 트랙 — 전사성과+MBO로 별도 평가(자동 산정 미적용)';
+                    } else {
+                      const ev0 = calcEvalScore(current.id, nm0, projects, proposals, currentYear, current);
+                      if (ev0) {
+                        auto = ev0.score;
+                        detail = `수행 ${ev0.exec ?? '-'}${ev0.bid != null ? ` + 수주 ${ev0.bid}` : ''}${ev0.bonus ? ` + 보너스 ${ev0.bonus}(${[ev0.multi ? '다축' : null, ev0.jikjik ? '겸직' : null].filter(Boolean).join('·')})` : ''}`;
+                      } else {
+                        detail = '산정 불가 — 참여 사업(기여도 20%↑) 또는 수주 확정 제안 데이터가 없습니다';
+                      }
+                    }
+                    const applied = empScores[it.key] != null && Number(empScores[it.key]) === auto;
+                    return (
+                      <div style={{ 
+                        margin: `${S[2]}px 0 ${S[3]}px`, padding: `${S[2]}px ${S[3]}px`,
+                        background: '#EEF3FA', borderLeft: `3px solid ${T.brand}`, borderRadius: 4,
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: S[3], flexWrap: 'wrap'
+                      }}>
+                        <div style={{ fontSize: 11, color: T.text, lineHeight: 1.5, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <Briefcase size={13} style={{ color: T.brand, flexShrink: 0 }} />
+                          {auto != null ? (
+                            <span>시스템 자동 산정: <strong style={{ fontSize: 14, color: T.brand }}>{auto}점</strong> <span style={{ color: T.textMute }}>({detail})</span>{applied && <span style={{ color: T.success, fontWeight: 700 }}> ✓ 적용됨</span>}</span>
+                          ) : (
+                            <span style={{ color: T.textMute }}>{detail}</span>
+                          )}
+                        </div>
+                        <span style={{ display: 'inline-flex', gap: 6 }}>
+                          {auto != null && !applied && <Button variant="primary" size="sm" icon={CheckCircle2} onClick={() => updateScore(current.id, 'perf_profit', auto)}>이 점수 적용</Button>}
+                          <Button variant="secondary" size="sm" icon={Calculator} onClick={() => setContribCalcOpen(true)}>상세 근거</Button>
+                        </span>
                       </div>
-                      <Button variant="secondary" size="sm" icon={Calculator} onClick={() => setContribCalcOpen(true)}>기여도 자동 산정</Button>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               ))}
             </div>
