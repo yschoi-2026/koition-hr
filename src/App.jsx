@@ -2276,9 +2276,11 @@ function calcBidScore(empName, proposals, projects, year) {
   const won = (proposals || []).filter(p => p.status === '수주' && p.wonProjectId);
   let wsum = 0, ssum = 0; const breakdown = [];
   won.forEach(p => {
+    const parts = (p.participants && p.participants.length) ? p.participants : DEFAULT_BID_PARTICIPANTS;
+    const supps = (p.support && p.support.length) ? p.support : DEFAULT_BID_SUPPORT;
     const isPM = p.pm && p.pm === empName;
-    const isPart = (p.participants || []).includes(empName);
-    const isSupp = (p.support || []).includes(empName);   // 서류제출·관리 지원 인력
+    const isPart = parts.includes(empName);
+    const isSupp = supps.includes(empName);   // 서류제출·관리 지원 인력
     if (!isPM && !isPart && !isSupp) return;
     const proj = (projects || []).find(x => x.id === p.wonProjectId);
     if (!proj || isEtcProject(proj) || (year != null && Number(proj.year) !== Number(year))) return;
@@ -2309,11 +2311,17 @@ function calcSupportScore(name, companyScore) {
   return { score: Math.round(cs * 0.4 + mbo * 0.6), mbo, company: cs };
 }
 
+// ── 회사 표준 제안팀 (제안별 인력 입력이 없으면 이 명단을 기본 적용) ──
+const DEFAULT_BID_PARTICIPANTS = ['정일영', '최영숙', '이원규'];   // 주요 제안(작성) 인력
+const DEFAULT_BID_SUPPORT = ['신수호', '심도현'];                 // 제안서류 제출·관리 인력
+
 // ── 영업(수주) 트랙 ──
 // 여기에 넣은 인원(영업·사업개발)은 수행 기여가 아니라 [수주(제안) 실적]으로 평가.
 // 담당 사업이 있어도 그건 수행이 아니므로 수행 점수를 만들지 않음. 수주 실적이 없으면 기본점수(SALES_FLOOR).
 const SALES_TRACK = {
   '오창민': null,
+  '정일영': null,   // 각자대표 — 영업 총괄
+  '최재교': null,   // 각자대표 — 영업 총괄
 };
 function isSalesTrack(name) { return name != null && Object.prototype.hasOwnProperty.call(SALES_TRACK, name); }
 
@@ -2700,6 +2708,21 @@ function App() {
     }, 1000);
     return () => clearTimeout(t);
   }, [employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, history]);
+
+  // 기존 수주 사업 소급: 2026년 등록 사업은 전부 제안팀 수주 성과 → 수주 확정 제안 자동 생성(중복 방지·기타 제외)
+  useEffect(() => {
+    if (!dataLoadedRef.current) return;
+    const linked = new Set((proposals || []).filter(p => p.wonProjectId).map(p => p.wonProjectId));
+    const missing = (projects || []).filter(p => Number(p.year) === 2026 && !isEtcProject(p) && p.id && !linked.has(p.id));
+    if (missing.length === 0) return;
+    setProposals(prev => ([...(prev || []), ...missing.map(p => ({
+      id: 'P:auto:' + p.id, name: p.name, client: p.client || '',
+      budget: Number(p.revenue) || 0, bidDate: '',
+      pm: '', participants: [], support: [],   // 비워두면 표준 제안팀(참여: 정일영·최영숙·이원규 / 지원: 신수호·심도현) 자동 적용
+      status: '수주', wonProjectId: p.id,
+      note: '기존 수주사업 자동 등록 — 제안팀 수주기여 반영 (인력 편집 가능)',
+    }))]));
+  }, [projects, proposals]);
   const markBackup = () => { try { localStorage.setItem('koition_hr_last_backup', String(Date.now())); } catch(e){} };
   const [backupDue, setBackupDue] = useState(false);
   useEffect(() => {
@@ -8001,15 +8024,15 @@ function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal, upda
               <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>사업 PM (가중 {EVAL_CFG.bidPmW}%)</div>
                 <input value={edit.pm} onChange={ev => setEdit(f => ({ ...f, pm: ev.target.value }))} placeholder="예) 오창민" style={{ width: '100%', padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box' }} /></div>
               <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>제안참여 인력 (가중 {EVAL_CFG.bidPartW}% · 쉼표로 구분)</div>
-                <input value={edit.participants} onChange={ev => setEdit(f => ({ ...f, participants: ev.target.value }))} placeholder="예) 최영숙, 이원규" style={{ width: '100%', padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box' }} /></div>
+                <input value={edit.participants} onChange={ev => setEdit(f => ({ ...f, participants: ev.target.value }))} placeholder="미입력 시 기본: 정일영, 최영숙, 이원규" style={{ width: '100%', padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box' }} /></div>
               <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>서류제출·관리 지원 인력 (가중 {EVAL_CFG.bidSuppW}% · 쉼표로 구분)</div>
-                <input value={edit.support} onChange={ev => setEdit(f => ({ ...f, support: ev.target.value }))} placeholder="예) 오누리" style={{ width: '100%', padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box' }} /></div>
+                <input value={edit.support} onChange={ev => setEdit(f => ({ ...f, support: ev.target.value }))} placeholder="미입력 시 기본: 신수호, 심도현" style={{ width: '100%', padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box' }} /></div>
               <div style={{ display: 'flex', gap: S[2], justifyContent: 'flex-end' }}>
                 <Button variant="ghost" onClick={() => setEdit(null)}>취소</Button>
                 <Button variant="primary" onClick={() => { const sp = t => String(t || '').split(/[,\s]+/).map(x => x.trim()).filter(Boolean); updateProposal(edit.id, { pm: edit.pm.trim(), participants: sp(edit.participants), support: sp(edit.support) }); setEdit(null); }}>저장</Button>
               </div>
             </div>
-            <div style={{ fontSize: 11, color: T.textMute, marginTop: S[3], lineHeight: 1.6 }}>이 제안이 수주 확정되면 위 인력에게 역할 가중대로 수주 기여점수가 반영됩니다(정규직 명단과 이름 일치 필요). 가중치는 정책설정에서 조정.</div>
+            <div style={{ fontSize: 11, color: T.textMute, marginTop: S[3], lineHeight: 1.6 }}>이 제안이 수주 확정되면 위 인력에게 역할 가중대로 수주 기여점수가 반영됩니다. 참여·지원을 비워두면 회사 표준 제안팀(참여: 정일영·최영숙·이원규 / 지원: 신수호·심도현)이 자동 적용됩니다. 가중치는 정책설정에서 조정.</div>
           </div>
         </div>
       )}
