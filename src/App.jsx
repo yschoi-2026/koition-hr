@@ -847,8 +847,8 @@ function CardStat({ label, value, highlight }) {
 // ============================================================
 const INITIAL_USERS = [
   { username: 'admin', password: 'gsH$w77p', role: 'admin', name: '인사담당자', empId: null, deptScope: '전체' },
-  { username: 'jiy', password: 'S#8pg6zy', role: 'manager', name: '정일영', empId: 'K-140401', deptScope: '경영기획본부' },
-  { username: 'cjk', password: '4xb#2krK', role: 'manager', name: '최재교', empId: 'K-140402', deptScope: '공공사업본부' },
+  { username: 'jiy', password: 'S#8pg6zy', role: 'manager', name: '정일영', empId: 'K-140401', deptScope: '전체' },
+  { username: 'cjk', password: '4xb#2krK', role: 'manager', name: '최재교', empId: 'K-140402', deptScope: '전체' },
   { username: 'sys', password: 'mU&6z2as', role: 'manager', name: '신수호', empId: 'K-140404', deptScope: '사업관리부' },
   { username: 'ljm', password: 'p8Vun#g8', role: 'manager', name: '이종민', empId: 'K-231001', deptScope: '서비스개발부' },
   { username: 'cys', password: 'uj!5n3Rs', role: 'admin', name: '최영숙', empId: 'K-140403', deptScope: '전체' },
@@ -2830,10 +2830,10 @@ export default function App() {
     { id: 'employees', label: '직원 관리', icon: Users, roles: ['admin'] },
     { id: 'evaluation', label: '평가 입력', icon: FileText, roles: ['admin', 'manager', 'evaluator'] },
     { id: 'projects', label: '프로젝트 수익성', icon: Briefcase, roles: ['admin', 'manager'] },
-    { id: 'report', label: '경영보고서', icon: FileBarChart, roles: ['admin', 'manager'] },
+    { id: 'report', label: '경영보고서', icon: FileBarChart, roles: ['admin'] },
     { id: 'monthclose', label: '월마감 변환', icon: Upload, roles: ['admin', 'manager'] },
     { id: 'loans', label: '대여금 관리', icon: Wallet, roles: ['admin'] },
-    { id: 'receivables', label: '수금 관리', icon: Calendar, roles: ['admin', 'manager'] },
+    { id: 'receivables', label: '수금 관리', icon: Calendar, roles: ['admin'] },
     { id: 'results', label: '평가 결과', icon: Award, roles: ['admin', 'manager'] },
     { id: 'salary', label: '급여 산정', icon: Wallet, roles: ['admin'] },
     { id: 'analytics', label: '통계 분석', icon: PieIcon, roles: ['admin', 'manager'] },
@@ -2842,9 +2842,12 @@ export default function App() {
     { id: 'policy', label: '정책 설정', icon: Settings, roles: ['admin'] },
     { id: 'guide', label: '사용 가이드', icon: AlertCircle, roles: ['admin', 'manager', 'evaluator', 'employee'] },
   ];
-  const visibleMenus = allMenus.filter(m => m.roles.includes(user.role));
+  // 각자대표(정일영·최재교): 전사 경영보고서·평가정보 열람 허용 (대여금·수금·정책 편집은 admin 전용 유지)
+  const EXEC_IDS = ['K-140401', 'K-140402'];
+  const isExec = user.role === 'admin' || EXEC_IDS.includes(user.empId);
+  const visibleMenus = allMenus.filter(m => m.roles.includes(user.role) || (isExec && ['report', 'loans', 'receivables'].includes(m.id)));
   const visibleEmployees = employees.filter(e => {
-    if (user.role === 'admin') return true;
+    if (user.role === 'admin' || EXEC_IDS.includes(user.empId)) return true;  // 임원=전사 조회
     if (user.role === 'manager' || user.role === 'evaluator') return e.dept.includes(user.deptScope) || e.dept === user.deptScope;
     return e.id === user.empId;
   });
@@ -2899,9 +2902,9 @@ export default function App() {
             }} />}
             {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} finalizeEval={finalizeEval} projects={projects} proposals={proposals} peerEvals={peerEvals} />}
             {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} />}
-            {tab === 'report' && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} currentYear={currentYear} policy={policy} />}
-            {tab === 'loans' && <LoansView loans={loans} setLoans={setLoans} employees={employees} />}
-            {tab === 'receivables' && <ReceivablesView receivables={receivables} setReceivables={setReceivables} projects={projects} />}
+            {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} currentYear={currentYear} policy={policy} />}
+            {tab === 'loans' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <LoansView loans={loans} setLoans={setLoans} employees={employees} />}
+            {tab === 'receivables' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ReceivablesView receivables={receivables} setReceivables={setReceivables} projects={projects} />}
             {tab === 'monthclose' && <MonthCloseView projects={projects} employees={employees} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} />}
             {tab === 'results' && <ResultsView user={user} employees={visibleEmployees} results={results} comments={comments} scores={scores} selfScores={selfScores} policy={policy} currentYear={currentYear} history={history} navigateToHistory={navigateToHistory} closeYearSnapshot={closeYearSnapshot} />}
             {tab === 'salary' && <SalaryView employees={employees} results={results} stats={stats} />}
@@ -12640,7 +12643,7 @@ ${canIncludeSalary ? `
 const MANUAL_CONTENT = {
   title: '코이션 인사평가·보상 관리 시스템 매뉴얼',
   subtitle: 'KOITION HR Evaluation & Compensation System User Guide',
-  version: 'v7.0',
+  version: 'v39',
   company: '주식회사 코이션 · KOITION CO., LTD.',
   
   sections: [
@@ -13262,6 +13265,111 @@ const MANUAL_CONTENT = {
             '회사 정보: 주식회사 코이션 · 강원도 정선군 사북읍',
           ],
         },
+      ],
+    },
+    {
+      id: 'eval-guide-detail',
+      title: '평가 상세 가이드 (직원용) — 처음이라도 쉽게',
+      audience: 'all',
+      blocks: [
+        { type: 'paragraph', text: '내 점수가 어떻게 만들어지는지, 무엇을 준비해야 하는지 예시와 함께 설명합니다. 처음 평가받는 분은 이 순서대로 따라오시면 됩니다.' },
+        { type: 'subtitle', text: '① 평가는 3가지로 구성됩니다' },
+        { type: 'table', headers: ['구성', '내용', '누가 매기나'], rows: [
+          ['역량평가', '직무 전문성·문제해결·자기계발·협업 (4항목)', '자기평가 + 평가자'],
+          ['업적평가', 'KPI 달성도·프로젝트 기여도·납기·고객만족 (4항목)', '자기평가 + 평가자 (기여도는 시스템 자동)'],
+          ['목표(MBO)', '연초에 세운 개인 목표의 달성도', '본인 자술 → 평가자 확정'],
+        ] },
+        { type: 'subtitle', text: '② 직무 트랙에 따라 기여도 기준이 다릅니다' },
+        { type: 'table', headers: ['트랙', '대상', '어떻게 평가되나'], rows: [
+          ['매출조직', 'PM·수행 인력', '수행 기여 70% + 수주 기여 30% (+겸직·다축 보너스)'],
+          ['영업', '영업·사업개발', '수주(제안→계약) 실적. 수주 없으면 기본 20점'],
+          ['지원', '경영지원 등 비매출', '전사 성과 40% + 개인 MBO 60% (프로젝트 수익률 미적용)'],
+        ] },
+        { type: 'callout', variant: 'info', title: '💡 예시로 이해하기', text: '홍길동(PM)이 A사업(수익률 20%→85점)에 60%, B사업(15%→75점)에 40% 참여했다면 수행점수 = 85×0.6 + 75×0.4 = 81점. 여기에 제안에도 참여해 수주로 확정됐다면 수주점수가 30% 반영되고, 겸직이면 보너스가 더해집니다.' },
+        { type: 'subtitle', text: '③ 참여율이 낮으면 수행 기여로 안 잡힙니다' },
+        { type: 'paragraph', text: '한 사업에 20% 미만으로 참여(예: 제안서지원 5%)한 경우는 "수행"이 아니라 "수주·지원"으로 봅니다. 이런 참여는 수행 점수를 만들지 않고, 그 제안이 수주로 확정되면 수주 기여로 반영됩니다. 즉 5%만 참여했는데 100점을 받는 일은 없습니다.' },
+        { type: 'subtitle', text: '④ 수익률 왜곡은 자동 보정됩니다' },
+        { type: 'paragraph', text: '완료된 사업은 확정 수익률로, 진행중 사업은 진행률 기준 수익률로 계산합니다. 초기 사업의 계약금액 전액이 매출로 잡혀 점수가 부풀려지는 문제를 막습니다. 통제 밖 요인(발주 지연 등)이 있으면 평가 면담에서 소명할 수 있습니다.' },
+        { type: 'subtitle', text: '⑤ 연간 목표(MBO) 작성 요령' },
+        { type: 'list', items: [
+          '목표는 3~5개, 가중치 합계 100% (한 목표에 40% 초과 배정은 지양)',
+          '숫자로 판정 가능하게: "열심히 한다"(X) → "신규 제안 4건 제출"(O)',
+          '측정 방법을 함께 적기: 어느 데이터로 판정하는지 (경영보고서·제안현황·지출정리 등)',
+          '통제 밖 요인이 큰 목표는 과정지표 병행 (예: 수주액 대신 제안 제출 건수)',
+        ] },
+        { type: 'callout', variant: 'success', title: '✅ 좋은 목표 예시 (직무별)', text: 'PM: 담당 사업 공헌이익률 15%↑(40%)·납기 100%(30%)·제안 참여 2건(20%)·표준화 1건(10%) / 영업: 신규 수주 3억(40%)·제안 8건 수주율 25%(30%)·신규 발주처 2곳(20%)·카드 태깅 100%(10%) / 경영지원: 결산 D+5 12회(30%)·급여 오류 0건(25%)·판관비 3% 절감(25%)·계약갱신 지연 0건(20%)' },
+        { type: 'callout', variant: 'danger', title: '⚠ 피해야 할 목표', text: '"업무에 최선을 다한다"(측정 불가) · "회사 매출 100억"(개인 통제 불가) · "보고서 잘 쓰기"(기준 없음) · 한 목표에 가중치 100% · 12월에 몰아서 달성 가능한 목표' },
+        { type: 'subtitle', text: '⑥ 동료평가 작성' },
+        { type: 'list', items: [
+          '같은 프로젝트를 함께한 동료만 평가하세요 (최대 3명)',
+          '3개 항목(협업·소통 / 책임감 / 전문성 기여)을 1~5점으로',
+          '"계속했으면 하는 것" "바꿨으면 하는 것"을 반드시 서술 — 점수보다 이 서술이 중요합니다',
+          '작성 내용은 평가자만 열람하며, 동료에게는 누가 썼는지 비공개로 요약만 전달됩니다',
+        ] },
+        { type: 'subtitle', text: '⑦ 나의 진행 순서 (연간)' },
+        { type: 'table', headers: ['시기', '할 일'], rows: [
+          ['1월 초', "연간 목표(MBO) 작성 → 평가자와 협의·확정"],
+          ['7월 초', '반기 중간리뷰 — 목표 진척 점검(점수 없음)'],
+          ['12월 1~10일', '자기평가 제출 + 동료평가 작성 (내 평가 메뉴)'],
+          ['12월 중', '평가자 1차 → 관리자 2차 검토·확정 → 결과 통보'],
+          ['확정 후 3일', '이의신청 — 내 평가의 산출 근거 확인 후 경영지원부에 서면 제출'],
+        ] },
+        { type: 'callout', variant: 'info', title: '🔎 내 점수 근거 보기', text: "'내 평가' 화면에 수행·수주 점수, 가중치, 보너스가 어떻게 합산됐는지 그대로 표시됩니다. 산정 규칙 자체는 관리자가 정책설정에 공개합니다." },
+        { type: 'callout', variant: 'success', title: '🤝 낮은 점수를 받아도', text: '바로 불이익이 아니라 개선 기회(면담 → 3개월 개선목표 → 월 점검 → 재평가)를 먼저 부여합니다.' },
+      ],
+    },
+    {
+      id: 'admin-ops-manual',
+      title: '[관리자] 평가제도 운영·조직변경 매뉴얼',
+      audience: 'admin',
+      blocks: [
+        { type: 'paragraph', text: '경영·인사 최고담당자가 평가 기준을 수정·보완·삭제하고, 조직·구성원 변경에 대응하는 방법입니다. 이 섹션은 관리자에게만 보입니다.' },
+        { type: 'subtitle', text: '1. 이 가이드 자체를 수정/추가/삭제하기' },
+        { type: 'list', items: [
+          '이 화면 우측 상단의 [편집] 버튼으로 편집 모드 진입 (admin 전용)',
+          '문단·목록·표·콜아웃 블록을 추가·수정·삭제하고, 섹션도 추가/삭제 가능',
+          '각 섹션의 공개 대상(audience)을 전체/평가자/관리자로 지정 — 관리자 전용 지침은 admin으로',
+          '[저장]하면 즉시 반영, [초기화]로 기본 매뉴얼 복원. 저장 내용은 JSON 백업에 포함',
+        ] },
+        { type: 'subtitle', text: '2. 평가 산정 기준(계수) 수정' },
+        { type: 'paragraph', text: '정책 설정 메뉴 → "프로젝트 기여 산정 기준"에서 아래를 직접 조정합니다. 변경 즉시 전 직원 점수에 반영되므로 평가 기간(12월) 중에는 변경하지 마세요.' },
+        { type: 'table', headers: ['항목', '기본값', '의미'], rows: [
+          ['수행 기여 가중', '70%', '프로젝트 수행 점수의 비중'],
+          ['수주 기여 가중', '30%', '제안·수주 점수의 비중'],
+          ['수행 인정 최소 참여율', '20%', '미만이면 수행 아님 → 수주 기여로만'],
+          ['다축 기여 보너스', '5점', '수행+수주 둘 다 기여 시'],
+          ['겸직 보너스', '5점', '경영·관리 겸직자'],
+          ['영업 기본점수', '20점', '수주 실적 없는 영업'],
+        ] },
+        { type: 'subtitle', text: '3. 평가 트랙(매출/영업/지원) 지정·변경' },
+        { type: 'list', items: [
+          '기본은 매출조직(수행+수주). 영업·지원 트랙은 코드의 명단(SALES_TRACK / SUPPORT_TRACK)으로 지정합니다',
+          '현재: 영업 트랙 = 오창민 / 지원 트랙 = 오누리(MBO 미입력=전사성과 적용)',
+          '트랙 대상이 바뀌면(예: 새 영업 채용, 지원인력 변경) 시스템 관리자(서비스개발부)에게 명단 수정을 요청하세요',
+          '지원 트랙의 MBO 점수는 관리자가 평가 시 산정해 명단에 반영합니다',
+        ] },
+        { type: 'subtitle', text: '4. 구성원 변경 대응' },
+        { type: 'table', headers: ['상황', '조치'], rows: [
+          ['신규 입사', '직원 등록(사번·부서·직무군·평가대상 여부). 입사 3개월 미만은 MBO 미입력(전사성과/수습 기준)으로 두고 다음 사이클부터 정식 평가'],
+          ['퇴사', "평가대상에서 제외(status 변경). 대여금 있으면 퇴직금 상계 정산, 진행 사업의 기여도는 참여기간까지만 인정"],
+          ['부서 이동', '부서·평가 트랙 재지정. 이동 전/후 사업 기여는 각 참여율로 자동 반영됨'],
+          ['직무 전환(수행→영업 등)', '평가 트랙 변경 요청. 전환 시점 기준으로 이후 평가 기준 적용'],
+          ['승진', '직위·직급 변경. 역량 기준(RUBRICS)은 직급에 맞게 상향 적용'],
+        ] },
+        { type: 'subtitle', text: '5. 조직(부서·본부) 변경' },
+        { type: 'list', items: [
+          '부서 신설·통합 시: 소속 직원의 부서명을 일괄 갱신하고, 평가자(1차/2차) 라인을 재설정',
+          '비매출 조직이 신설되면 그 인원을 지원 트랙 명단에 추가(전사성과+MBO 기준)',
+          '겸직 발령 시: 직원 정보의 비고에 "겸직" 또는 복수 본부(부서명에 / 포함)로 표기하면 겸직 보너스가 자동 인식됨',
+          '조직 개편은 평가 기간을 피해 연초(1월) 또는 반기(7월) 시점에 반영 권장',
+        ] },
+        { type: 'callout', variant: 'warning', title: '⚠ 변경 전 필수', text: '조직·구성원·기준을 변경하기 전에 반드시 [내보내기]로 JSON 백업을 먼저 받으세요. 데이터는 이 브라우저에 저장되므로 되돌리기가 어렵습니다. 큰 변경은 연초/반기에, 평가 확정 기간(12월)에는 지양합니다.' },
+        { type: 'subtitle', text: '6. 연말 확정 & 이력 보관' },
+        { type: 'list', items: [
+          '평가 확정 후 "평가 결과" 화면에서 [연말 확정 스냅샷 저장] — 점수·등급·정책·목표·동료평가가 연도 이력으로 고정',
+          '스냅샷 저장 후 반드시 JSON 내보내기로 백업 (이의신청·감사·차년도 비교 근거)',
+          '저성과자(60점 미만·D등급)는 결과 화면의 PIP 대상에 자동 표기 — 개선 절차를 문서로 진행',
+        ] },
       ],
     },
   ],
