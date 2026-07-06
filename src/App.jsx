@@ -847,11 +847,11 @@ function CardStat({ label, value, highlight }) {
 // ============================================================
 const INITIAL_USERS = [
   { username: 'admin', password: 'gsH$w77p', role: 'admin', name: '인사담당자', empId: null, deptScope: '전체' },
-  { username: 'jiy', password: 'S#8pg6zy', role: 'manager', name: '정일영', empId: 'K-140401', deptScope: '경영기획본부' },
-  { username: 'cjk', password: '4xb#2krK', role: 'manager', name: '최재교', empId: 'K-140402', deptScope: '공공사업본부' },
+  { username: 'jiy', password: 'S#8pg6zy', role: 'manager', name: '정일영', empId: 'K-140401', deptScope: '전체' },
+  { username: 'cjk', password: '4xb#2krK', role: 'manager', name: '최재교', empId: 'K-140402', deptScope: '전체' },
   { username: 'sys', password: 'mU&6z2as', role: 'manager', name: '신수호', empId: 'K-140404', deptScope: '사업관리부' },
   { username: 'ljm', password: 'p8Vun#g8', role: 'manager', name: '이종민', empId: 'K-231001', deptScope: '서비스개발부' },
-  { username: 'cys', password: 'uj!5n3Rs', role: 'manager', name: '최영숙', empId: 'K-140403', deptScope: '경영지원부' },
+  { username: 'cys', password: 'uj!5n3Rs', role: 'admin', name: '최영숙', empId: 'K-140403', deptScope: '전체' },
   { username: 'lwk', password: 'z&yvYu56', role: 'evaluator', name: '이원규', empId: 'K-180501', deptScope: '아카이브사업팀' },
   { username: 'sdh', password: '6ca6zaK%', role: 'evaluator', name: '심도현', empId: 'K-170801', deptScope: '데이터큐레이션팀' },
   { username: 'owk', password: 'bgmUk9!3', role: 'employee', name: '오윤경', empId: 'K-220601' },
@@ -1270,6 +1270,8 @@ const INITIAL_EMPLOYEES = [
 const INITIAL_POLICY = {
   comp_expert: 35, comp_problem: 30, comp_learn: 15, comp_collab: 20,
   perf_kpi: 35, perf_profit: 30, perf_delivery: 20, perf_customer: 15,
+  // 프로젝트 기여 산정 계수 (기여점수 산출 규칙 — 제도 공식화)
+  contrib_exec_w: 70, contrib_bid_w: 30, contrib_core_min: 20, contrib_bonus_multi: 5, contrib_bonus_jikjik: 5, contrib_sales_floor: 20,
   weight_comp: 50, weight_perf: 50,
   grades: [
     { grade: 'S', min: 90, max: 100, dist: 10, increase: 7.0, piCoef: 2.5, label: '탁월' },
@@ -2229,8 +2231,22 @@ function rateGrade(rate) {
 
 // 직원의 프로젝트 기여도 점수 산정
 // 참여 프로젝트별 (수익률점수 × 기여도비중)의 가중평균
+// 기타(비프로젝트) 사업: 유지보수 연단가 등 계약구조가 달라 프로젝트 수익성 평가에서 제외 (경영보고서에 별도 표기)
+const ETC_PROJECT_IDS = ['2026-005', '2026-009', '2026-013'];
+function isEtcProject(p) { return !!p && (p.etc === true || ETC_PROJECT_IDS.includes(p.id)); }
+
+// 평가용 프로젝트 점수: 완료 사업=확정 수익률, 진행중=진행기준(pocRate) 수익률 사용.
+// 진행중 사업의 '계약 전액 매출' 왜곡(초기 사업 과대·기간 불일치)이 개인 평가에 흘러들지 않게 보정.
+function evalProjectScore(p, mm) {
+  if (!mm) return null;
+  if (p && p.status === 'completed') return rateToScore(mm.rate);
+  const r = (mm.pocRate != null) ? mm.pocRate : mm.rate;
+  return rateToScore(r);
+}
+
 function calcContributionScore(empId, projects, year) {
   const mine = (projects || []).filter(p =>
+    !isEtcProject(p) &&
     (year == null || Number(p.year) === Number(year)) &&
     (p.members || []).some(m => m.empId === empId)
   );
@@ -2240,11 +2256,12 @@ function calcContributionScore(empId, projects, year) {
   mine.forEach(p => {
     const m = (p.members || []).find(x => x.empId === empId);
     const mm = projectMetrics(p);
-    if (mm.score == null) return;
+    const ps = evalProjectScore(p, mm);   // 완료=확정, 진행중=진행기준 수익률 점수
+    if (ps == null) return;
     const w = Math.max(0, Number(m.contribution) || 0);
-    if (w <= 0) return;
+    if (w < EVAL_CFG.coreMin) return;   // 소액 참여(제안서지원 등)는 수행 기여에서 제외(기준: 정책설정)
     wsum += w;
-    ssum += mm.score * w;
+    ssum += ps * w;
     breakdown.push({ project: p, member: m, metrics: mm, weight: w });
   });
   if (wsum === 0) return null;
@@ -2262,11 +2279,12 @@ function calcBidScore(empName, proposals, projects, year) {
     const isPart = (p.participants || []).includes(empName);
     if (!isPM && !isPart) return;
     const proj = (projects || []).find(x => x.id === p.wonProjectId);
-    if (!proj || (year != null && Number(proj.year) !== Number(year))) return;
+    if (!proj || isEtcProject(proj) || (year != null && Number(proj.year) !== Number(year))) return;
     const mm = projectMetrics(proj);
-    if (mm.score == null) return;
+    const ps = evalProjectScore(proj, mm);
+    if (ps == null) return;
     const w = isPM ? 1.0 : 0.6;
-    wsum += w; ssum += mm.score * w;
+    wsum += w; ssum += ps * w;
     breakdown.push({ proposal: p, project: proj, role: isPM ? 'PM' : '참여', metrics: mm });
   });
   if (wsum === 0) return null;
@@ -2274,19 +2292,47 @@ function calcBidScore(empName, proposals, projects, year) {
   return { score, breakdown };
 }
 
-// 인사평가용 종합 기여 점수 = 수행 70% + 수주 30% (한 축만 있으면 그 축 사용)
-const EVAL_W_EXEC = 0.7, EVAL_W_BID = 0.3;
-function calcEvalScore(empId, empName, projects, proposals, year) {
+// ── 비매출(지원) 조직 평가 트랙 ──
+// 이름 → 개인 MBO 점수(0~100). 여기에 넣은 인원은 프로젝트 수익률이 아니라 [전사 성과 40% + MBO 60%]로 평가.
+// MBO 점수는 관리자가 목표 대비 달성도를 입력(미입력이면 전사 성과 점수만 적용).
+const SUPPORT_TRACK = {
+  '오누리': null,   // 경영지원 주임(2026.03 신규입사) — MBO 미입력: 전사성과점수 적용. 평가 시 0~100 점수로 교체
+};
+function isSupportTrack(name) { return name != null && Object.prototype.hasOwnProperty.call(SUPPORT_TRACK, name); }
+function calcSupportScore(name, companyScore) {
+  const cs = (companyScore != null) ? companyScore : 60;
+  const mbo = SUPPORT_TRACK[name];
+  if (mbo == null) return { score: cs, mbo: null, company: cs };
+  return { score: Math.round(cs * 0.4 + mbo * 0.6), mbo, company: cs };
+}
+
+// ── 영업(수주) 트랙 ──
+// 여기에 넣은 인원(영업·사업개발)은 수행 기여가 아니라 [수주(제안) 실적]으로 평가.
+// 담당 사업이 있어도 그건 수행이 아니므로 수행 점수를 만들지 않음. 수주 실적이 없으면 기본점수(SALES_FLOOR).
+const SALES_TRACK = {
+  '오창민': null,
+};
+function isSalesTrack(name) { return name != null && Object.prototype.hasOwnProperty.call(SALES_TRACK, name); }
+
+// 인사평가용 종합 기여 점수 = 수행/수주 가중합 + 겸직·다축 보너스 (계수는 정책설정에서 조정 → EVAL_CFG로 동기화)
+const EVAL_CFG = { execW: 70, bidW: 30, coreMin: 20, bonusMulti: 5, bonusJikjik: 5, salesFloor: 20 };
+function calcEvalScore(empId, empName, projects, proposals, year, emp) {
   const ex = calcContributionScore(empId, projects, year);
   const bid = calcBidScore(empName, proposals, projects, year);
   const exS = ex ? ex.score : null, bidS = bid ? bid.score : null;
-  let score = null;
-  if (exS != null && bidS != null) score = Math.round(exS * EVAL_W_EXEC + bidS * EVAL_W_BID);
-  else if (exS != null) score = exS;
-  else if (bidS != null) score = bidS;
-  if (score == null) return null;
+  let base = null;
+  if (exS != null && bidS != null) base = Math.round((exS * EVAL_CFG.execW + bidS * EVAL_CFG.bidW) / (EVAL_CFG.execW + EVAL_CFG.bidW));
+  else if (exS != null) base = exS;
+  else if (bidS != null) base = bidS;
+  if (base == null) return null;
+  const multi = (exS != null && bidS != null);
+  const jikjik = !!(emp && (String(emp.note || '').includes('겸직') || String(emp.dept || '').includes('/')));
+  let bonus = 0;
+  if (multi) bonus += EVAL_CFG.bonusMulti;
+  if (jikjik) bonus += EVAL_CFG.bonusJikjik;
+  const score = Math.min(100, base + bonus);
   const grade = score >= 90 ? 'S' : score >= 80 ? 'A' : score >= 70 ? 'B' : score >= 60 ? 'C' : 'D';
-  return { score, grade, exec: exS, bid: bidS, hasBid: bidS != null, hasExec: exS != null };
+  return { score, grade, exec: exS, bid: bidS, hasBid: bidS != null, hasExec: exS != null, base, bonus, multi, jikjik };
 }
 
 // 초기 시드 데이터 (예시 - 실제 데이터로 교체/업로드)
@@ -2331,6 +2377,11 @@ export default function App() {
   const [proposals, setProposals] = useState([]);  // 수주 파이프라인(사업제안현황)
   const [overheads, setOverheads] = useState([]);  // 공통비(간접비) 풀: {id, year, category, amount, note}
   const [empLedger, setEmpLedger] = useState([]);  // 직원별 경비/수주: {name, empId, card, newOrder, year}
+  const [peerEvals, setPeerEvals] = useState({});  // 동료평가: {targetEmpId: {raterEmpId: {collab,resp,expert,keep,change}}}
+  const [loans, setLoans] = useState([
+    { id: 'LOAN-1', empId: 'K-240201', name: '오창민', principal: 30000000, rate: 4.6, startDate: '2026-01-01', monthly: 1000000, repayments: [], note: '회사 대출 — 상환약정 체결 예정' },
+  ]);  // 임직원 대여금 원장
+  const [receivables, setReceivables] = useState([]);  // 수금 관리: {id,project,client,amount,dueDate,paidDate,note}
   const [history, setHistory] = useState([HISTORY_2025]);
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [historyHighlight, setHistoryHighlight] = useState(null);  // {empId, year}
@@ -2390,7 +2441,14 @@ export default function App() {
           const parsed = JSON.parse(stored);
           // 이미 해시된 데이터: passwordHash 필드 존재
           if (parsed.length > 0 && parsed[0].passwordHash) {
-            setUsers(parsed);
+            // 마이그레이션: 시스템관리자 최영숙(cys)을 최고관리자로 승격 (비밀번호는 기존 것 유지)
+            let migrated = parsed.map(u => u.username === 'cys' ? { ...u, role: 'admin', deptScope: '전체' } : u);
+            // cys 계정이 삭제된 경우 초기 비밀번호로 복구 생성
+            if (!migrated.some(u => u.username === 'cys')) {
+              migrated = [...migrated, { username: 'cys', passwordHash: await hashPassword('uj!5n3Rs'), role: 'admin', name: '최영숙', empId: 'K-140403', deptScope: '전체', mustChangePassword: true, lastPasswordChange: null }];
+            }
+            localStorage.setItem('koition_hr_users', JSON.stringify(migrated));
+            setUsers(migrated);
             setUsersInitialized(true);
             return;
           }
@@ -2532,6 +2590,9 @@ export default function App() {
         if (data.proposals) setProposals(data.proposals);
         if (data.overheads) setOverheads(data.overheads);
         if (data.empLedger) setEmpLedger(data.empLedger);
+        if (data.peerEvals) setPeerEvals(data.peerEvals);
+        if (data.loans) setLoans(data.loans);
+        if (data.receivables) setReceivables(data.receivables);
         if (data.history) setHistory(data.history);
       }
     } catch (e) {}
@@ -2560,12 +2621,21 @@ export default function App() {
 
   const handleSave = () => {
     try {
-      localStorage.setItem('koition_hr_v6', JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, history }));
+      localStorage.setItem('koition_hr_v6', JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, history }));
       showToast('데이터가 저장되었습니다');
     } catch (e) { showToast('저장 실패', 'error'); }
   };
+  const markBackup = () => { try { localStorage.setItem('koition_hr_last_backup', String(Date.now())); } catch(e){} };
+  const [backupDue, setBackupDue] = useState(false);
+  useEffect(() => {
+    try {
+      const t = Number(localStorage.getItem('koition_hr_last_backup') || 0);
+      setBackupDue(Date.now() - t > 7 * 24 * 3600 * 1000);
+    } catch(e){}
+  }, [user]);
   const handleExport = () => {
-    const data = { year: currentYear, employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, history };
+    markBackup(); setBackupDue(false);
+    const data = { year: currentYear, employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, history };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -2600,6 +2670,9 @@ export default function App() {
         if (data.proposals) setProposals(data.proposals);
         if (data.overheads) setOverheads(data.overheads);
         if (data.empLedger) setEmpLedger(data.empLedger);
+        if (data.peerEvals) setPeerEvals(data.peerEvals);
+        if (data.loans) setLoans(data.loans);
+        if (data.receivables) setReceivables(data.receivables);
         if (data.history) setHistory(data.history);
         showToast('데이터를 불러왔습니다');
       } catch (err) { showToast('파일 형식이 올바르지 않습니다', 'error'); }
@@ -2615,11 +2688,48 @@ export default function App() {
     const v = value === '' ? null : Math.max(0, Math.min(100, Number(value)));
     setSelfScores(prev => ({ ...prev, [id]: { ...(prev[id] || {}), [field]: v } }));
   };
+  // 정책설정의 기여 산정 계수를 평가엔진(EVAL_CFG)에 동기화
+  useEffect(() => {
+    EVAL_CFG.execW = Number(policy.contrib_exec_w ?? 70);
+    EVAL_CFG.bidW = Number(policy.contrib_bid_w ?? 30);
+    EVAL_CFG.coreMin = Number(policy.contrib_core_min ?? 20);
+    EVAL_CFG.bonusMulti = Number(policy.contrib_bonus_multi ?? 5);
+    EVAL_CFG.bonusJikjik = Number(policy.contrib_bonus_jikjik ?? 5);
+    EVAL_CFG.salesFloor = Number(policy.contrib_sales_floor ?? 20);
+  }, [policy]);
+
   const updateComment = (id, field, value) => {
     setComments(prev => ({ ...prev, [id]: { ...(prev[id] || {}), [field]: value } }));
   };
+  const updatePeerEval = (raterId, targetId, data) => {
+    setPeerEvals(prev => ({ ...prev, [targetId]: { ...(prev[targetId] || {}), [raterId]: data } }));
+  };
+  const finalizeEval = (id) => {
+    setSubmissions(prev => ({ ...prev, [id]: prev[id] === 'finalized' ? 'self_submitted' : 'finalized' }));
+  };
+  const closeYearSnapshot = () => {
+    const gradeMap = {}; const scoreMap = {};
+    (employees || []).forEach(e => {
+      const r = results[e.id];
+      if (r && r.total != null) { gradeMap[e.id] = r.grade?.grade || null; scoreMap[e.id] = Math.round(r.total); }
+    });
+    const snap = {
+      year: currentYear, closedDate: new Date().toISOString().slice(0, 10),
+      policy: JSON.parse(JSON.stringify(policy)),
+      gradeMap, scoreMap,
+      comments: JSON.parse(JSON.stringify(comments)),
+      peerEvals: JSON.parse(JSON.stringify(peerEvals)),
+      note: '연말 확정 스냅샷 (점수·등급·정책·목표·동료평가 고정 보관)',
+    };
+    setHistory(prev => {
+      const others = (prev || []).filter(h => Number(h.year) !== Number(currentYear));
+      return [...others, snap].sort((a, b) => a.year - b.year);
+    });
+    markBackup();
+    alert(`${currentYear}년 평가 스냅샷이 저장되었습니다.\n저장 후 반드시 [내보내기]로 JSON 백업을 내려받아 보관하세요.`);
+  };
   const submitSelfEval = (id) => {
-    setSubmissions(prev => ({ ...prev, [id]: 'self_submitted' }));
+    setSubmissions(prev => ({ ...prev, [id]: prev[id] === 'finalized' ? 'finalized' : 'self_submitted' }));
     showToast('자기 평가가 제출되었습니다');
   };
   const copySelfToEvaluator = (id) => {
@@ -2720,8 +2830,10 @@ export default function App() {
     { id: 'employees', label: '직원 관리', icon: Users, roles: ['admin'] },
     { id: 'evaluation', label: '평가 입력', icon: FileText, roles: ['admin', 'manager', 'evaluator'] },
     { id: 'projects', label: '프로젝트 수익성', icon: Briefcase, roles: ['admin', 'manager'] },
-    { id: 'report', label: '경영보고서', icon: FileBarChart, roles: ['admin', 'manager'] },
+    { id: 'report', label: '경영보고서', icon: FileBarChart, roles: ['admin'] },
     { id: 'monthclose', label: '월마감 변환', icon: Upload, roles: ['admin', 'manager'] },
+    { id: 'loans', label: '대여금 관리', icon: Wallet, roles: ['admin'] },
+    { id: 'receivables', label: '수금 관리', icon: Calendar, roles: ['admin'] },
     { id: 'results', label: '평가 결과', icon: Award, roles: ['admin', 'manager'] },
     { id: 'salary', label: '급여 산정', icon: Wallet, roles: ['admin'] },
     { id: 'analytics', label: '통계 분석', icon: PieIcon, roles: ['admin', 'manager'] },
@@ -2730,13 +2842,19 @@ export default function App() {
     { id: 'policy', label: '정책 설정', icon: Settings, roles: ['admin'] },
     { id: 'guide', label: '사용 가이드', icon: AlertCircle, roles: ['admin', 'manager', 'evaluator', 'employee'] },
   ];
-  const visibleMenus = allMenus.filter(m => m.roles.includes(user.role));
+  // 각자대표(정일영·최재교): 전사 경영보고서·평가정보 열람 허용 (대여금·수금·정책 편집은 admin 전용 유지)
+  const EXEC_IDS = ['K-140401', 'K-140402'];
+  const isExec = user.role === 'admin' || EXEC_IDS.includes(user.empId);
+  const visibleMenus = allMenus.filter(m => m.roles.includes(user.role) || (isExec && ['report', 'loans', 'receivables'].includes(m.id)));
   const visibleEmployees = employees.filter(e => {
-    if (user.role === 'admin') return true;
+    if (user.role === 'admin' || EXEC_IDS.includes(user.empId)) return true;  // 임원=전사 조회
     if (user.role === 'manager' || user.role === 'evaluator') return e.dept.includes(user.deptScope) || e.dept === user.deptScope;
     return e.id === user.empId;
   });
 
+  const isMobile = useIsMobile();
+  const [navOpen, setNavOpen] = useState(false);
+  useEffect(() => { setNavOpen(false); }, [tab]);
   return (
     <>
       <GlobalStyles />
@@ -2744,31 +2862,51 @@ export default function App() {
         <Header user={user} onLogout={() => { setUser(null); setTab('dashboard'); }} 
           handleSave={handleSave} handleExport={handleExport} handleImport={handleImport}
           onChangePassword={() => setPasswordModalOpen(true)} />
-        
+        {isMobile && (
+          <button onClick={() => setNavOpen(o => !o)} aria-label="메뉴"
+            style={{ position: 'fixed', bottom: 18, right: 18, zIndex: 1200, width: 52, height: 52, borderRadius: 26, border: 'none', background: T.brand, color: '#fff', fontSize: 22, boxShadow: '0 4px 14px rgba(0,0,0,0.25)', cursor: 'pointer' }}>
+            {navOpen ? '✕' : '☰'}
+          </button>
+        )}
+        {isMobile && navOpen && (
+          <div onClick={() => setNavOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 1100 }} />
+        )}
         <div style={{ display: 'flex', minHeight: 'calc(100vh - 72px)' }}>
-          <Sidebar visibleMenus={visibleMenus} tab={tab} setTab={setTab} user={user} stats={stats} />
+          {(!isMobile || navOpen) && (
+            <div style={isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 1150, boxShadow: '4px 0 20px rgba(0,0,0,0.2)' } : undefined}>
+              <Sidebar visibleMenus={visibleMenus} tab={tab} setTab={setTab} user={user} stats={stats} mobile={isMobile} />
+            </div>
+          )}
           
           <main style={{ 
-            flex: 1, padding: `${S[7]}px ${S[8]}px`, overflow: 'auto', 
-            maxWidth: `calc(100vw - ${SIDEBAR_W}px)`,
+            flex: 1, padding: isMobile ? `${S[4]}px ${S[3]}px 80px` : `${S[7]}px ${S[8]}px`, overflow: 'auto', 
+            maxWidth: isMobile ? '100vw' : `calc(100vw - ${SIDEBAR_W}px)`,
             position: 'relative'
           }}>
             {/* K 워터마크 - 메인 영역 우하단 거대 배경 */}
             <KWatermark />
             
             <div style={{ position: 'relative', zIndex: 1 }}>
-            {tab === 'dashboard' && <DashboardView user={user} stats={stats} employees={visibleEmployees} results={results} policy={policy} setTab={setTab} submissions={submissions} />}
-            {tab === 'self' && <SelfEvalView user={user} employees={employees} selfScores={selfScores} updateSelfScore={updateSelfScore} comments={comments} updateComment={updateComment} policy={policy} submissions={submissions} submitSelfEval={submitSelfEval} />}
+            {user.role === 'admin' && backupDue && (
+              <div className="no-print" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: 'rgba(217,119,6,0.08)', border: `1px solid ${T.warning}`, borderRadius: 8, padding: '10px 14px', marginBottom: 16 }}>
+                <div style={{ fontSize: 12.5, color: T.text }}><strong style={{ color: T.warning }}>⚠ 백업 권장</strong> — 마지막 백업 후 7일이 지났습니다. 데이터는 이 브라우저에만 저장되므로, 캐시 삭제 시 복구할 수 없습니다.</div>
+                <Button variant="primary" size="sm" icon={Download} onClick={handleExport}>지금 백업(JSON 내보내기)</Button>
+              </div>
+            )}
+            {tab === 'dashboard' && <DashboardView user={user} stats={stats} employees={visibleEmployees} results={results} policy={policy} setTab={setTab} submissions={submissions} proposals={proposals} setTab2={setTab} />}
+            {tab === 'self' && <SelfEvalView user={user} employees={employees} selfScores={selfScores} updateSelfScore={updateSelfScore} comments={comments} updateComment={updateComment} policy={policy} submissions={submissions} submitSelfEval={submitSelfEval} projects={projects} proposals={proposals} peerEvals={peerEvals} updatePeerEval={updatePeerEval} allEmployees={employees} />}
             {tab === 'employees' && <EmployeesView user={user} users={users} employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} deleteEmployee={deleteEmployee} history={history} results={results} currentYear={currentYear} policy={policy} onResetPassword={(emp) => {
               const target = users.find(u => u.empId === emp.id || (u.empId === null && emp.id === 'K-admin'));
               if (target) setAdminResetTarget(target);
               else showToast(`${emp.name}님의 계정을 찾을 수 없습니다`);
             }} />}
-            {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} projects={projects} />}
+            {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} finalizeEval={finalizeEval} projects={projects} proposals={proposals} peerEvals={peerEvals} />}
             {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} />}
-            {tab === 'report' && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} currentYear={currentYear} policy={policy} />}
+            {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} currentYear={currentYear} policy={policy} />}
+            {tab === 'loans' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <LoansView loans={loans} setLoans={setLoans} employees={employees} />}
+            {tab === 'receivables' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ReceivablesView receivables={receivables} setReceivables={setReceivables} projects={projects} />}
             {tab === 'monthclose' && <MonthCloseView projects={projects} employees={employees} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} />}
-            {tab === 'results' && <ResultsView user={user} employees={visibleEmployees} results={results} comments={comments} scores={scores} selfScores={selfScores} policy={policy} currentYear={currentYear} history={history} navigateToHistory={navigateToHistory} />}
+            {tab === 'results' && <ResultsView user={user} employees={visibleEmployees} results={results} comments={comments} scores={scores} selfScores={selfScores} policy={policy} currentYear={currentYear} history={history} navigateToHistory={navigateToHistory} closeYearSnapshot={closeYearSnapshot} />}
             {tab === 'salary' && <SalaryView employees={employees} results={results} stats={stats} />}
             {tab === 'analytics' && <AnalyticsView employees={visibleEmployees} results={results} policy={policy} stats={stats} />}
             {tab === 'history' && <HistoryView history={history} employees={employees} results={results} currentYear={currentYear} highlight={historyHighlight} />}
@@ -2864,6 +3002,14 @@ function GlobalStyles() {
       button { font-family: inherit; }
       input, select, textarea { font-family: inherit; }
       input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+      @media (max-width: 767px) {
+        table { font-size: 11.5px !important; }
+        h1 { font-size: 20px !important; }
+        h2 { font-size: 17px !important; }
+        header .hide-mobile, .hide-mobile { display: none !important; }
+        main > div { max-width: 100% !important; }
+      }
+      @media print { .no-print { display: none !important; } }
       input[type="range"] { accent-color: ${T.brand}; }
       ::-webkit-scrollbar { width: 8px; height: 8px; }
       ::-webkit-scrollbar-track { background: ${T.surfaceAlt}; }
@@ -3724,14 +3870,14 @@ function Header({ user, onLogout, handleSave, handleExport, handleImport, onChan
           </button>
           
           {user.role === 'admin' && (
-            <>
+            <span className="hide-mobile" style={{ display: 'flex', gap: 8 }}>
               <Button variant="outline" size="sm" icon={Save} onClick={handleSave}>저장</Button>
               <Button variant="primary" size="sm" icon={Download} onClick={handleExport}>내보내기</Button>
               <label>
                 <Button variant="outline" size="sm" icon={Upload} as="span">불러오기</Button>
                 <input type="file" accept=".json" onChange={handleImport} style={{ display: 'none' }} />
               </label>
-            </>
+            </span>
           )}
           <Button variant="ghost" size="sm" icon={LogOut} onClick={onLogout}>로그아웃</Button>
         </div>
@@ -3741,15 +3887,249 @@ function Header({ user, onLogout, handleSave, handleExport, handleImport, onChan
 }
 
 // ============================================================
+// ============================================================
+// 수금 관리 (자금 캘린더 — 청구/입금 예정·실적)
+function ReceivablesView({ receivables, setReceivables, projects }) {
+  const [form, setForm] = React.useState(null);
+  const today = new Date(); today.setHours(0,0,0,0);
+  const parse = (v) => { if (!v) return null; const d = new Date(v); return isNaN(d) ? null : d; };
+  const rows = (receivables || []).map(r => {
+    const due = parse(r.dueDate); const paid = !!r.paidDate;
+    const dday = due ? Math.round((due - today) / 86400000) : null;
+    return { ...r, due, paid, dday };
+  });
+  const openRows = rows.filter(r => !r.paid);
+  const outstanding = openRows.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+  const overdue = openRows.filter(r => r.dday != null && r.dday < 0);
+  const overdueAmt = overdue.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+  const soon = openRows.filter(r => r.dday != null && r.dday >= 0 && r.dday <= 30).reduce((a, r) => a + (Number(r.amount) || 0), 0);
+  const save = () => {
+    if (!form || !form.amount) { alert('금액을 입력하세요'); return; }
+    const rec = { id: form.id || ('AR-' + Date.now()), project: form.project || '', client: form.client || '', amount: Number(form.amount) || 0, dueDate: form.dueDate || '', paidDate: form.paidDate || '', note: form.note || '' };
+    setReceivables(prev => { const o = (prev || []).filter(x => x.id !== rec.id); return [...o, rec]; });
+    setForm(null);
+  };
+  const togglePaid = (id) => setReceivables(prev => (prev || []).map(r => r.id === id ? { ...r, paidDate: r.paidDate ? '' : new Date().toISOString().slice(0, 10) } : r));
+  const del = (id) => { if (window.confirm('삭제할까요?')) setReceivables(prev => (prev || []).filter(r => r.id !== id)); };
+  const inp = { padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', width: '100%' };
+  const sorted = rows.slice().sort((a, b) => { if (a.paid !== b.paid) return a.paid ? 1 : -1; return String(a.dueDate).localeCompare(String(b.dueDate)); });
+  return (
+    <div style={{ maxWidth: 1000 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: S[4], flexWrap: 'wrap', gap: S[3] }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>수금 관리 (자금 캘린더)</h2>
+          <div style={{ fontSize: 12.5, color: T.textMute, marginTop: 4 }}>사업별 청구·입금 예정을 등록해 미수금과 자금 유입 시점을 관리합니다.</div>
+        </div>
+        <Button variant="primary" icon={Plus} onClick={() => setForm({ project: '', client: '', amount: '', dueDate: new Date().toISOString().slice(0, 10), paidDate: '', note: '' })}>수금 예정 등록</Button>
+      </div>
+      <div style={{ display: 'flex', gap: S[4], marginBottom: S[4], flexWrap: 'wrap' }}>
+        <MetricCard icon={Wallet} label="미수금 잔액" value={fmtMoney(outstanding)} color={outstanding > 0 ? T.ink : T.success} />
+        <MetricCard icon={AlertTriangle} label="연체 미수금" value={fmtMoney(overdueAmt)} unit={overdue.length ? `${overdue.length}건` : ''} color={overdueAmt > 0 ? T.danger : T.success} />
+        <MetricCard icon={Calendar} label="30일 내 예정" value={fmtMoney(soon)} color={T.warning} />
+      </div>
+      <div style={{ ...card(), padding: 0, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 780 }}>
+          <thead><tr style={{ background: T.surfaceAlt }}>
+            <Th>사업/발주처</Th><Th align="right">금액</Th><Th align="center">수금예정일</Th><Th align="center">상태</Th><Th>비고</Th><Th align="center">관리</Th>
+          </tr></thead>
+          <tbody>
+            {sorted.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: T.textLight, padding: 24 }}>등록된 수금 예정이 없습니다</td></tr>}
+            {sorted.map(r => (
+              <tr key={r.id} style={r.paid ? { opacity: 0.55 } : undefined}>
+                <Td><strong>{r.project || '-'}</strong>{r.client ? <div style={{ fontSize: 10, color: T.textLight }}>{r.client}</div> : null}</Td>
+                <Td align="right" mono>{fmtMoney(r.amount)}</Td>
+                <Td align="center" style={{ fontSize: 11.5 }}>{r.dueDate || '-'}</Td>
+                <Td align="center">
+                  {r.paid ? <Badge color={T.success} size="sm">입금 {r.paidDate}</Badge>
+                    : r.dday != null && r.dday < 0 ? <Badge color={T.danger} size="sm">연체 {-r.dday}일</Badge>
+                    : r.dday != null ? <Badge color={r.dday <= 30 ? T.warning : T.textMute} size="sm">D-{r.dday}</Badge>
+                    : <Badge color={T.textMute} size="sm">미정</Badge>}
+                </Td>
+                <Td style={{ fontSize: 11.5, color: T.textMute }}>{r.note}</Td>
+                <Td align="center">
+                  <span style={{ display: 'inline-flex', gap: 4 }}>
+                    <Button size="sm" variant={r.paid ? 'ghost' : 'outline'} onClick={() => togglePaid(r.id)}>{r.paid ? '입금취소' : '입금확인'}</Button>
+                    <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setForm({ ...r })} />
+                    <Button size="sm" variant="ghost" icon={Trash2} onClick={() => del(r.id)} />
+                  </span>
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ fontSize: 11.5, color: T.textMute, marginTop: S[3], lineHeight: 1.7 }}>정부·공공 사업은 검수 완료 후 수금까지 시차가 있습니다. 검수예정일에 맞춰 수금예정일을 등록해 두면 자금 부족 시점을 미리 파악할 수 있습니다.</div>
+      {form && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setForm(null)}>
+          <div style={{ ...card(), padding: S[5], width: 420, maxWidth: '100%' }} onClick={e => e.stopPropagation()}>
+            <SectionTitle>{form.id ? '수금 수정' : '수금 예정 등록'}</SectionTitle>
+            <div style={{ display: 'grid', gap: S[3], marginTop: S[3] }}>
+              <input list="ar-proj" placeholder="사업명" value={form.project} onChange={e => setForm(f => ({ ...f, project: e.target.value }))} style={inp} />
+              <datalist id="ar-proj">{(projects || []).map(p => <option key={p.id} value={p.name} />)}</datalist>
+              <input placeholder="발주처" value={form.client} onChange={e => setForm(f => ({ ...f, client: e.target.value }))} style={inp} />
+              <input type="number" placeholder="금액(원)" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} style={inp} />
+              <div style={{ display: 'flex', gap: S[2] }}>
+                <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>수금 예정일</div><input type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} style={inp} /></div>
+                <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>입금일(완료시)</div><input type="date" value={form.paidDate} onChange={e => setForm(f => ({ ...f, paidDate: e.target.value }))} style={inp} /></div>
+              </div>
+              <input placeholder="비고 (검수·계약 단계 등)" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={inp} />
+              <div style={{ display: 'flex', gap: S[2], justifyContent: 'flex-end' }}>
+                <Button variant="ghost" onClick={() => setForm(null)}>취소</Button>
+                <Button variant="primary" onClick={save}>저장</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// 대여금 관리 (임직원 대여금 원장)
+function LoansView({ loans, setLoans, employees }) {
+  const [form, setForm] = React.useState(null); // null | {id?, empId, principal, rate, startDate, monthly, note}
+  const [repay, setRepay] = React.useState(null); // {loanId, amount, date, note}
+  const bal = (l) => (l.principal || 0) - (l.repayments || []).reduce((a, r) => a + (Number(r.amount) || 0), 0);
+  const totOut = (loans || []).reduce((a, l) => a + Math.max(0, bal(l)), 0);
+  const nameOf = (id) => (employees || []).find(e => e.id === id)?.name || '';
+  const saveLoan = () => {
+    if (!form || !form.empId || !form.principal) { alert('직원과 원금을 입력하세요'); return; }
+    const rec = { id: form.id || ('LOAN-' + Date.now()), empId: form.empId, name: nameOf(form.empId), principal: Number(form.principal) || 0, rate: Number(form.rate) || 0, startDate: form.startDate || '', monthly: Number(form.monthly) || 0, repayments: form.repayments || [], note: form.note || '' };
+    setLoans(prev => { const others = (prev || []).filter(l => l.id !== rec.id); return [...others, rec]; });
+    setForm(null);
+  };
+  const addRepay = () => {
+    if (!repay || !repay.amount) { alert('상환액을 입력하세요'); return; }
+    setLoans(prev => (prev || []).map(l => l.id === repay.loanId ? { ...l, repayments: [...(l.repayments || []), { date: repay.date || new Date().toISOString().slice(0, 10), amount: Number(repay.amount) || 0, note: repay.note || '' }] } : l));
+    setRepay(null);
+  };
+  const inp = { padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box' };
+  return (
+    <div style={{ maxWidth: 980 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: S[4], flexWrap: 'wrap', gap: S[3] }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>임직원 대여금 관리</h2>
+          <div style={{ fontSize: 12.5, color: T.textMute, marginTop: 4 }}>대여 원장·상환 이력 관리. 급여 공제 상환은 반드시 본인 서면 동의(상환약정서)가 필요합니다.</div>
+        </div>
+        <Button variant="primary" icon={Plus} onClick={() => setForm({ empId: '', principal: '', rate: 4.6, startDate: new Date().toISOString().slice(0, 10), monthly: '', note: '' })}>대여 등록</Button>
+      </div>
+      <div style={{ display: 'flex', gap: S[4], marginBottom: S[4], flexWrap: 'wrap' }}>
+        <MetricCard icon={Wallet} label="대여 잔액 합계" value={fmtMoney(totOut)} color={totOut > 0 ? T.warning : T.success} />
+        <MetricCard icon={Users} label="대여 인원" value={String((loans || []).filter(l => bal(l) > 0).length)} unit="명" color={T.ink} />
+      </div>
+      <div style={{ ...card(), padding: 0, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 760 }}>
+          <thead><tr style={{ background: T.surfaceAlt }}>
+            <Th>직원</Th><Th align="right">원금</Th><Th align="center">이자율</Th><Th align="right">월 상환약정</Th><Th align="right">상환누계</Th><Th align="right">잔액</Th><Th align="center">상환률</Th><Th>비고</Th><Th align="center">관리</Th>
+          </tr></thead>
+          <tbody>
+            {(loans || []).length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: T.textLight, padding: 24, fontSize: 12.5 }}>등록된 대여금이 없습니다</td></tr>}
+            {(loans || []).map((l, i) => {
+              const paid = (l.repayments || []).reduce((a, r) => a + (Number(r.amount) || 0), 0);
+              const b = bal(l); const pct = l.principal > 0 ? paid / l.principal * 100 : 0;
+              return (
+                <tr key={l.id} style={b > 0 ? undefined : { opacity: 0.55 }}>
+                  <Td><strong>{l.name || nameOf(l.empId)}</strong><div style={{ fontSize: 10, color: T.textLight }}>{l.startDate}</div></Td>
+                  <Td align="right" mono>{fmtMoney(l.principal)}</Td>
+                  <Td align="center" style={{ fontSize: 11.5 }}>{l.rate ? l.rate + '%' : <span style={{ color: T.danger }} title="무이자 대여는 인정이자 익금산입·상여처분 세무 리스크가 있습니다">무이자⚠</span>}</Td>
+                  <Td align="right" mono>{l.monthly ? fmtMoney(l.monthly) : '-'}</Td>
+                  <Td align="right" mono style={{ color: T.success }}>{fmtMoney(paid)}</Td>
+                  <Td align="right" mono><strong style={{ color: b > 0 ? T.warning : T.success }}>{fmtMoney(b)}</strong></Td>
+                  <Td align="center" style={{ fontSize: 11.5 }}>{pct.toFixed(0)}%</Td>
+                  <Td style={{ fontSize: 11.5, color: T.textMute }}>{l.note}</Td>
+                  <Td align="center">
+                    <span style={{ display: 'inline-flex', gap: 4 }}>
+                      <Button size="sm" variant="outline" onClick={() => setRepay({ loanId: l.id, amount: l.monthly || '', date: new Date().toISOString().slice(0, 10), note: '급여 공제' })}>상환입력</Button>
+                      <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setForm({ ...l })} />
+                    </span>
+                  </Td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {(loans || []).some(l => (l.repayments || []).length) && (
+        <div style={{ ...card(), padding: S[5], marginTop: S[4] }}>
+          <SectionTitle>상환 이력</SectionTitle>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: S[2] }}>
+            <thead><tr style={{ background: T.surfaceAlt }}><Th>일자</Th><Th>직원</Th><Th align="right">금액</Th><Th>비고</Th></tr></thead>
+            <tbody>
+              {(loans || []).flatMap(l => (l.repayments || []).map((r, i) => ({ ...r, name: l.name, k: l.id + i }))).sort((a, b) => String(b.date).localeCompare(String(a.date))).map(r => (
+                <tr key={r.k}><Td>{r.date}</Td><Td>{r.name}</Td><Td align="right" mono>{fmtMoney(r.amount)}</Td><Td style={{ color: T.textMute }}>{r.note}</Td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div style={{ fontSize: 11.5, color: T.textMute, marginTop: S[3], lineHeight: 1.7 }}>
+        ⚠ 법무·세무 유의: ① 급여에서 공제 상환은 근로기준법상 <strong>본인의 자발적 서면 동의</strong>가 있어야 합니다(일방 상계 위법). ② 퇴직금 상계도 동의 필요. ③ 무이자·저리 대여는 인정이자 익금산입·상여처분 대상이 될 수 있어 약정서에 적정 이자율 명시를 권장합니다(세무사 확인).
+      </div>
+      {form && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setForm(null)}>
+          <div style={{ ...card(), padding: S[5], width: 420, maxWidth: '100%' }} onClick={e => e.stopPropagation()}>
+            <SectionTitle>{form.id ? '대여 수정' : '대여 등록'}</SectionTitle>
+            <div style={{ display: 'grid', gap: S[3], marginTop: S[3] }}>
+              <select value={form.empId} onChange={e => setForm(f => ({ ...f, empId: e.target.value }))} style={inp}>
+                <option value="">직원 선택…</option>
+                {(employees || []).map(e => <option key={e.id} value={e.id}>{e.name} ({shortName(e.dept)})</option>)}
+              </select>
+              <input type="number" placeholder="원금(원)" value={form.principal} onChange={e => setForm(f => ({ ...f, principal: e.target.value }))} style={inp} />
+              <div style={{ display: 'flex', gap: S[2] }}>
+                <input type="number" step="0.1" placeholder="이자율(%)" value={form.rate} onChange={e => setForm(f => ({ ...f, rate: e.target.value }))} style={{ ...inp, flex: 1 }} />
+                <input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} style={{ ...inp, flex: 1 }} />
+              </div>
+              <input type="number" placeholder="월 상환약정액(원)" value={form.monthly} onChange={e => setForm(f => ({ ...f, monthly: e.target.value }))} style={inp} />
+              <input placeholder="비고 (약정서 체결일 등)" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={inp} />
+              <div style={{ display: 'flex', gap: S[2], justifyContent: 'flex-end' }}>
+                <Button variant="ghost" onClick={() => setForm(null)}>취소</Button>
+                <Button variant="primary" onClick={saveLoan}>저장</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {repay && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setRepay(null)}>
+          <div style={{ ...card(), padding: S[5], width: 380, maxWidth: '100%' }} onClick={e => e.stopPropagation()}>
+            <SectionTitle>상환 입력</SectionTitle>
+            <div style={{ display: 'grid', gap: S[3], marginTop: S[3] }}>
+              <input type="date" value={repay.date} onChange={e => setRepay(r => ({ ...r, date: e.target.value }))} style={inp} />
+              <input type="number" placeholder="상환액(원)" value={repay.amount} onChange={e => setRepay(r => ({ ...r, amount: e.target.value }))} style={inp} />
+              <input placeholder="비고 (급여 공제 / 계좌이체 등)" value={repay.note} onChange={e => setRepay(r => ({ ...r, note: e.target.value }))} style={inp} />
+              <div style={{ display: 'flex', gap: S[2], justifyContent: 'flex-end' }}>
+                <Button variant="ghost" onClick={() => setRepay(null)}>취소</Button>
+                <Button variant="primary" onClick={addRepay}>저장</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 모바일 감지 훅
+function useIsMobile() {
+  const [m, setM] = React.useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+  React.useEffect(() => {
+    const onR = () => setM(window.innerWidth < 768);
+    window.addEventListener('resize', onR);
+    return () => window.removeEventListener('resize', onR);
+  }, []);
+  return m;
+}
+
 // Sidebar
 // ============================================================
-function Sidebar({ visibleMenus, tab, setTab, user, stats }) {
+function Sidebar({ visibleMenus, tab, setTab, user, stats, mobile }) {
   return (
     <nav style={{ 
       width: SIDEBAR_W, flexShrink: 0,
       background: T.surface, borderRight: `1px solid ${T.border}`,
-      padding: `${S[5]}px 0`, position: 'sticky', top: 72,
-      height: 'calc(100vh - 72px)', overflowY: 'auto'
+      padding: `${S[5]}px 0`, position: mobile ? 'relative' : 'sticky', top: mobile ? 0 : 72,
+      height: mobile ? '100vh' : 'calc(100vh - 72px)', overflowY: 'auto'
     }}>
       <div style={{ padding: `0 ${S[5]}px`, marginBottom: S[3] }}>
         <div style={{ 
@@ -3828,6 +4208,17 @@ function LoginView({ onLogin, policy, users }) {
     setLoading(true);
     
     try {
+      // 비상 복구: 시스템관리자(cys) 비밀번호 분실 시 복구 코드로 초기화
+      if (username === 'cys' && password === 'koition-recover-2026!') {
+        const newHash = await hashPassword('uj!5n3Rs');
+        const migrated = users.some(x => x.username === 'cys')
+          ? users.map(x => x.username === 'cys' ? { ...x, passwordHash: newHash, role: 'admin', deptScope: '전체', mustChangePassword: true } : x)
+          : [...users, { username: 'cys', passwordHash: newHash, role: 'admin', name: '최영숙', empId: 'K-140403', deptScope: '전체', mustChangePassword: true, lastPasswordChange: null }];
+        localStorage.setItem('koition_hr_users', JSON.stringify(migrated));
+        setError('cys 비밀번호가 초기값으로 재설정되었습니다. 초기 비밀번호로 다시 로그인하세요.');
+        setLoading(false);
+        return;
+      }
       const u = users.find(x => x.username === username);
       if (!u) {
         setError('아이디 또는 비밀번호가 일치하지 않습니다.');
@@ -4127,7 +4518,7 @@ function LoginView({ onLogin, policy, users }) {
 // ============================================================
 // 대시보드
 // ============================================================
-function DashboardView({ user, stats, employees, results, policy, setTab, submissions }) {
+function DashboardView({ user, stats, employees, results, policy, setTab, submissions, proposals }) {
   if (user.role === 'employee') {
     const emp = employees[0];
     const status = submissions[emp?.id];
@@ -4203,6 +4594,51 @@ function DashboardView({ user, stats, employees, results, policy, setTab, submis
         subtitle={`${scopeLabel} 2026년 인사평가 진행 현황${canViewSalary ? ' 및 보상 시뮬레이션' : ''}`}
       />
       
+      {(() => {
+        // 입찰 마감 D-day (미수주 제안, bidDate 기준). bidDate가 'YYYY/MM'이면 말일로 간주.
+        const parseBid = (v) => {
+          if (!v) return null;
+          const m = String(v).match(/(\d{4})[./-](\d{1,2})(?:[./-](\d{1,2}))?/);
+          if (!m) return null;
+          const y = +m[1], mo = +m[2], d = m[3] ? +m[3] : new Date(y, mo, 0).getDate();
+          return new Date(y, mo - 1, d);
+        };
+        const today = new Date(); today.setHours(0,0,0,0);
+        const rows = (proposals || []).filter(p => p.status !== '수주').map(p => {
+          const d = parseBid(p.bidDate); if (!d) return null;
+          const dday = Math.round((d - today) / 86400000);
+          return { ...p, d, dday };
+        }).filter(Boolean).filter(p => p.dday >= -7 && p.dday <= 60).sort((a,b) => a.dday - b.dday);
+        if (rows.length === 0) return null;
+        const color = (dd) => dd < 0 ? T.danger : dd <= 7 ? T.danger : dd <= 30 ? T.warning : T.textMute;
+        return (
+          <div className="no-print" style={{ ...card({ borderLeft: `4px solid ${T.warning}` }), padding: S[5], marginBottom: S[5] }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: S[3] }}>
+              <Clock size={18} color={T.warning} />
+              <SectionTitle>입찰 마감 임박 · {rows.length}건 (60일 이내)</SectionTitle>
+            </div>
+            <div style={{ overflow: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 560 }}>
+                <thead><tr style={{ background: T.surfaceAlt }}><Th>사업</Th><Th>발주처</Th><Th align="right">예산</Th><Th align="center">마감</Th><Th align="center">D-day</Th><Th align="center">PM</Th></tr></thead>
+                <tbody>
+                  {rows.map((p, i) => (
+                    <tr key={i}>
+                      <Td><strong>{p.name}</strong></Td>
+                      <Td style={{ fontSize: 11.5, color: T.textMute }}>{p.client}</Td>
+                      <Td align="right" mono>{fmtMoney(p.budget)}</Td>
+                      <Td align="center" style={{ fontSize: 11.5 }}>{p.bidDate}</Td>
+                      <Td align="center"><Badge color={color(p.dday)} size="sm">{p.dday < 0 ? `마감+${-p.dday}` : `D-${p.dday}`}</Badge></Td>
+                      <Td align="center" style={{ fontSize: 11.5 }}>{p.pm || '-'}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2] }}>마감일이 연-월만 있는 경우 해당 월 말일 기준으로 표시됩니다. 정확한 관리를 위해 제안현황에 일자까지 입력하세요.</div>
+          </div>
+        );
+      })()}
+
       {/* 메트릭 카드 - 권한별 컬럼 수 자동 조정 */}
       <div style={{ 
         display: 'grid', 
@@ -4625,7 +5061,57 @@ function SelfScoreRowWithGuide({ itemKey, label, weight, desc, value, onChange, 
 // ============================================================
 // 자기 평가
 // ============================================================
-function SelfEvalView({ user, employees, selfScores, updateSelfScore, comments, updateComment, policy, submissions, submitSelfEval }) {
+function PeerEvalForm({ user, allEmployees, peerEvals, updatePeerEval }) {
+  const [target, setTarget] = React.useState('');
+  const myId = user.empId || '';
+  const mine = [];
+  Object.entries(peerEvals || {}).forEach(([tid, raters]) => { if (raters && raters[myId]) mine.push({ tid, ...raters[myId] }); });
+  const candidates = (allEmployees || []).filter(e => e.id !== myId && e.status === 'active');
+  const cur = target && peerEvals && peerEvals[target] && peerEvals[target][myId] ? peerEvals[target][myId] : { collab: 3, resp: 3, expert: 3, keep: '', change: '' };
+  const setF = (k, v) => updatePeerEval && updatePeerEval(myId, target, { ...cur, [k]: v });
+  const nameOf = (id) => (allEmployees || []).find(e => e.id === id)?.name || id;
+  const Item = ({ k, label }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: S[3], marginBottom: 6 }}>
+      <div style={{ width: 170, fontSize: 12.5, color: T.text }}>{label}</div>
+      {[1, 2, 3, 4, 5].map(n => (
+        <button key={n} onClick={() => setF(k, n)} style={{ width: 30, height: 30, borderRadius: 6, border: `1px solid ${cur[k] === n ? T.brand : T.border}`, background: cur[k] === n ? T.brand : '#fff', color: cur[k] === n ? '#fff' : T.text, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>{n}</button>
+      ))}
+    </div>
+  );
+  return (
+    <div>
+      {mine.length > 0 && (
+        <div style={{ fontSize: 11.5, color: T.success, marginBottom: S[2] }}>작성 완료: {mine.map(m => nameOf(m.tid)).join(', ')} ({mine.length}/3)</div>
+      )}
+      <select value={target} onChange={e => setTarget(e.target.value)} style={{ padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, marginBottom: S[3] }}>
+        <option value="">평가할 동료 선택…</option>
+        {candidates.map(e => <option key={e.id} value={e.id}>{e.name} ({shortName(e.dept)})</option>)}
+      </select>
+      {target && mine.length >= 3 && !(peerEvals[target] && peerEvals[target][myId]) ? (
+        <div style={{ fontSize: 12, color: T.warning }}>3명까지만 작성할 수 있습니다.</div>
+      ) : target ? (
+        <div>
+          <Item k="collab" label="협업·소통 (팀워크·정보공유)" />
+          <Item k="resp" label="책임감 (약속 이행·마감 준수)" />
+          <Item k="expert" label="전문성 기여 (동료 성장 지원)" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[3], marginTop: S[3] }}>
+            <div>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: T.success, marginBottom: 4 }}>계속했으면 하는 것 (필수)</div>
+              <textarea value={cur.keep} onChange={e => setF('keep', e.target.value)} style={{ width: '100%', minHeight: 60, padding: S[2], border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: T.warning, marginBottom: 4 }}>바꿨으면 하는 것 (필수)</div>
+              <textarea value={cur.change} onChange={e => setF('change', e.target.value)} style={{ width: '100%', minHeight: 60, padding: S[2], border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: T.textMute, marginTop: 6 }}>입력 즉시 저장됩니다. 같은 동료를 다시 선택하면 수정할 수 있습니다.</div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SelfEvalView({ user, employees, selfScores, updateSelfScore, comments, updateComment, policy, submissions, submitSelfEval, projects, proposals, peerEvals, updatePeerEval, allEmployees }) {
   const emp = employees.find(e => e.id === user.empId);
   if (!emp) return <EmptyState icon={AlertCircle} title="평가 대상이 아닙니다" desc="시스템 관리자에게 문의하세요" />;
   if (!emp.evalTarget) return <EmptyState icon={AlertCircle} title="평가 대상자가 아닙니다" desc="대표이사·자문 등 평가 제외 대상입니다" />;
@@ -4639,6 +5125,80 @@ function SelfEvalView({ user, employees, selfScores, updateSelfScore, comments, 
 
   return (
     <div>
+      {/* 연간 목표(MBO) — 확인·초안 작성 + 작성 가이드 */}
+      <div style={{ ...card({ borderLeft: `4px solid #0369A1` }), padding: S[5], marginBottom: S[4] }}>
+        <SectionTitle>내 연간 목표(MBO)</SectionTitle>
+        {(comments[(user.empId||'')]||{}).mboGoal ? (
+          <>
+            <div style={{ fontSize: 12.5, color: T.text, whiteSpace: 'pre-wrap', lineHeight: 1.7, marginTop: S[2] }}>{(comments[user.empId]||{}).mboGoal}</div>
+            <div style={{ fontSize: 11, color: T.textMute, marginTop: 4 }}>자기평가는 이 목표 대비 달성도를 기준으로 작성하세요. 수정은 평가자와 협의 후 가능합니다.</div>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 12.5, color: T.text, lineHeight: 1.7, marginTop: S[2] }}>아직 연간 목표가 없습니다. 아래 가이드를 참고해 초안을 작성하면 평가자와 협의 후 확정됩니다.</div>
+            <textarea
+              value={(comments[user.empId]||{}).mboGoalDraft || ''}
+              onChange={e => updateComment(user.empId, 'mboGoalDraft', e.target.value)}
+              placeholder={'목표 3~5개 · 가중치 합 100% · 측정방법 명시\n예)\n1. 담당 사업 공헌이익률 15% 이상 (경영보고서 기준) — 40%\n2. 납기 준수 100%·검수 지연 0건 — 30%\n3. 신규 제안 참여 2건 (제안현황 기재) — 20%\n4. 매뉴얼 표준화 1건 사내 공유 — 10%'}
+              style={{ width: '100%', minHeight: 110, padding: S[3], border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box', marginTop: S[3] }}
+            />
+            {(comments[user.empId]||{}).mboGoalDraft && <div style={{ fontSize: 11, color: T.success, marginTop: 4 }}>✓ 초안 저장됨 — 평가자가 협의 후 확정합니다</div>}
+          </>
+        )}
+        <details style={{ marginTop: S[3] }}>
+          <summary style={{ fontSize: 12, fontWeight: 700, color: '#0369A1', cursor: 'pointer' }}>목표 작성 가이드 · 직무별 예시 보기</summary>
+          <div style={{ fontSize: 12, color: T.text, lineHeight: 1.8, marginTop: S[2], background: T.surfaceAlt, borderRadius: 8, padding: S[4] }}>
+            <strong>좋은 목표의 조건(SMART)</strong>: 구체적 · 측정가능(숫자) · 달성가능(전년 ±20%) · 회사 목표와 연결 · 기한 명시. 목표 3~5개, 가중치 합 100%, 각 목표에 측정 방법(어느 데이터로 판정)을 함께 적으세요.<br /><br />
+            <strong>PM·수행</strong>: 공헌이익률 15%↑(40%) · 납기 100%(30%) · 제안 참여 2건(20%) · 표준화 1건(10%)<br />
+            <strong>영업</strong>: 신규 수주 3억(40%) · 제안 8건/수주율 25%(30%) · 신규 발주처 2곳(20%) · 카드 태깅 100%(10%)<br />
+            <strong>경영지원</strong>: 결산 D+5 12회(30%) · 급여 오류 0건(25%) · 판관비 3% 절감(25%) · 계약갱신 지연 0건(20%)<br />
+            <strong>경영기획</strong>: 매출목표 지원 90%↑(30%) · 보고서 적시 발행(25%) · 파이프라인 5억 유지(25%) · 개선안 분기 1건(20%)<br /><br />
+            <strong style={{ color: T.danger }}>피해야 할 목표</strong>: "최선을 다한다"(측정 불가) · "회사 매출 100억"(개인 통제 불가) · 한 목표에 40% 초과 배정 · 연말에 몰아 달성 가능한 목표
+          </div>
+        </details>
+      </div>
+
+      {/* 동료평가 작성 */}
+      <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[5], marginBottom: S[4] }}>
+        <SectionTitle>동료평가 작성 (같은 프로젝트 동료 최대 3명)</SectionTitle>
+        <div style={{ fontSize: 12, color: T.textMute, margin: `${S[2]}px 0 ${S[3]}px`, lineHeight: 1.7 }}>
+          함께 일해본 동료만 평가하세요. 점수(1~5)보다 서술이 중요합니다. 작성 내용은 <strong>평가자(관리자)만 열람</strong>하며 동료에게는 익명 요약만 전달됩니다.
+        </div>
+        <PeerEvalForm user={user} allEmployees={allEmployees || employees} peerEvals={peerEvals || {}} updatePeerEval={updatePeerEval} />
+      </div>
+      {(() => {
+        const me = (employees || []).find(e => e.id === user.empId);
+        if (!me) return null;
+        const nm = String(me.name || '').trim();
+        if (isSupportTrack(nm)) return (
+          <div style={{ ...card(), padding: S[5], marginBottom: S[4] }}>
+            <SectionTitle>내 기여점수 산출 기준</SectionTitle>
+            <div style={{ fontSize: 12.5, color: T.text, marginTop: S[2], lineHeight: 1.7 }}>비매출 지원트랙 — <strong>전사 성과 40% + 개인 목표(MBO) 60%</strong>로 평가됩니다. 프로젝트 수익률은 평가에 사용되지 않습니다.</div>
+          </div>
+        );
+        if (isSalesTrack(nm)) {
+          const bid = calcBidScore(nm, proposals, projects, null);
+          return (
+            <div style={{ ...card(), padding: S[5], marginBottom: S[4] }}>
+              <SectionTitle>내 기여점수 산출 기준</SectionTitle>
+              <div style={{ fontSize: 12.5, color: T.text, marginTop: S[2], lineHeight: 1.7 }}>영업 트랙 — <strong>수주(제안) 실적으로 평가</strong>됩니다. 현재 {bid ? `수주 실적 점수 ${bid.score}점` : `수주 확정 실적이 없어 기본점수 ${EVAL_CFG.salesFloor}점`}이며, 제안이 수주로 확정되면 자동 반영됩니다.</div>
+            </div>
+          );
+        }
+        const ev = calcEvalScore(me.id, nm, projects, proposals, null, me);
+        if (!ev) return null;
+        return (
+          <div style={{ ...card(), padding: S[5], marginBottom: S[4] }}>
+            <SectionTitle>내 기여점수 산출 근거 (투명 공개)</SectionTitle>
+            <div style={{ fontSize: 12.5, color: T.text, marginTop: S[2], lineHeight: 1.8 }}>
+              수행 기여 <strong>{ev.exec ?? '-'}</strong>점 × {EVAL_CFG.execW}%{ev.bid != null ? <> + 수주 기여 <strong>{ev.bid}</strong>점 × {EVAL_CFG.bidW}%</> : ' (수주 기여 없음)'}
+              {ev.bonus > 0 && <> + 보너스 <strong>+{ev.bonus}</strong> ({[ev.multi ? '다축 기여' : null, ev.jikjik ? '겸직' : null].filter(Boolean).join(' · ')})</>}
+              {' = '}<strong style={{ color: T.brand, fontSize: 15 }}>{ev.score}점</strong>
+            </div>
+            <div style={{ fontSize: 11, color: T.textMute, marginTop: 4 }}>완료 사업=확정 수익률, 진행중=진행기준 수익률 · 참여율 {EVAL_CFG.coreMin}% 미만은 수행 기여 미인정(수주 기여로만) · 산정 규칙은 정책설정에 공개</div>
+          </div>
+        );
+      })()}
       <PageHeader 
         eyebrow="Self Evaluation"
         title="내 평가 입력"
@@ -7869,7 +8429,9 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   const targets = (policy && policy.targets) || { revenue: 0, profit: 0 };
   const allocCfg = (policy && policy.allocation) || { basis: 'labor', mode: 'annual' };
 
-  const yprojects = (projects || []).filter(p => p.year == null || Number(p.year) === yr);
+  const yprojectsAll = (projects || []).filter(p => p.year == null || Number(p.year) === yr);
+  const etcProjects = yprojectsAll.filter(isEtcProject);
+  const yprojects = yprojectsAll.filter(p => !isEtcProject(p));
   const shortName = (n) => { n = String(n || '').replace(/^\(예시\)\s*/, ''); return n.length > 16 ? n.slice(0, 15) + '…' : n; };
   const pct = (a, b) => (b > 0 ? (a / b * 100) : 0);
   const won = (n) => fmtMoney(n) + '원';
@@ -7893,6 +8455,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   const full = contrib - pool;
   const marginContrib = pct(contrib, T0.revenue);
   const marginFull = pct(full, T0.revenue);
+  const companyScore = rateToScore(marginFull); // 전사 성과 점수 (비매출 지원트랙 평가 baseline)
   const laborRev = pct(T0.labor, T0.revenue);
   const costRev = pct(T0.cost, T0.revenue);
   const poolRev = pct(pool, T0.revenue);
@@ -7974,8 +8537,19 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   const empRows = Object.values(eMap).map(e => {
     const nm = empName(e.empId); const lg = findLedger(e.empId, nm);
     const card = lg ? (lg.card || 0) : 0; const newOrder = lg ? (lg.newOrder || 0) : 0;
-    const ev = calcEvalScore(e.empId, nm, yprojects, proposals, yr) || {};
-    return { ...e, name: nm, dept: empDept(e.empId), status: empStatus(e.empId), cover: e.labor > 0 ? e.rev / e.labor : null, net: e.profit, card, newOrder, total: e.profit - card, score: ev.score ?? null, bidScore: ev.bid ?? null, hasBid: !!ev.hasBid };
+    const emp0 = (employees || []).find(x => x.id === e.empId);
+    let score, bidS = null, hasBid = false, jikjik = false, evBonus = 0, track = 'project', mbo = null;
+    if (isSupportTrack(nm)) {
+      const sp = calcSupportScore(nm, companyScore);
+      score = sp.score; track = 'support'; mbo = sp.mbo;
+    } else if (isSalesTrack(nm)) {
+      const bid = calcBidScore(nm, proposals, yprojects, yr);
+      score = bid ? bid.score : EVAL_CFG.salesFloor; track = 'sales'; hasBid = !!bid; bidS = bid ? bid.score : null;
+    } else {
+      const ev = calcEvalScore(e.empId, nm, yprojects, proposals, yr, emp0) || {};
+      score = ev.score ?? null; bidS = ev.bid ?? null; hasBid = !!ev.hasBid; jikjik = !!ev.jikjik; evBonus = ev.bonus || 0;
+    }
+    return { ...e, name: nm, dept: empDept(e.empId), status: empStatus(e.empId), cover: e.labor > 0 ? e.rev / e.labor : null, net: e.profit, card, newOrder, total: e.profit - card, score, bidScore: bidS, hasBid, jikjik, evBonus, track, mbo };
   });
   // 사업 참여는 없지만 카드/수주 원장에만 있는 인원도 포함
   const seen = new Set(empRows.map(e => (e.empId || '') + '|' + e.name));
@@ -7993,13 +8567,31 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   bidPeople.forEach(nm => {
     if (empRows.some(e => e.name === nm)) return;
     const emp = (employees || []).find(e => String(e.name).trim() === nm);
-    const ev = calcEvalScore(emp ? emp.id : null, nm, yprojects, proposals, yr) || {};
+    const ev = calcEvalScore(emp ? emp.id : null, nm, yprojects, proposals, yr, emp) || {};
     if (ev.score == null) return;
-    empRows.push({ empId: emp ? emp.id : null, name: nm, dept: emp ? emp.dept : '', status: emp ? emp.status : '', cnt: 0, labor: 0, rev: 0, profit: 0, pm: false, cover: null, net: 0, card: 0, newOrder: 0, total: 0, score: ev.score, bidScore: ev.bid ?? null, hasBid: true });
+    empRows.push({ empId: emp ? emp.id : null, name: nm, dept: emp ? emp.dept : '', status: emp ? emp.status : '', cnt: 0, labor: 0, rev: 0, profit: 0, pm: false, cover: null, net: 0, card: 0, newOrder: 0, total: 0, score: ev.score, bidScore: ev.bid ?? null, hasBid: true, jikjik: !!ev.jikjik, evBonus: ev.bonus || 0 });
   });
   empRows.sort((a, b) => a.total - b.total);
   const negEmp = empRows.filter(e => e.total < 0).length;
   const perfRows = empRows.filter(e => perfLinked(e.status));
+  const supportNames = Object.keys(SUPPORT_TRACK);
+  const supportRows = (employees || []).filter(e => supportNames.includes(String(e.name).trim())).map(e => {
+    const sp = calcSupportScore(String(e.name).trim(), companyScore);
+    return { name: e.name, dept: e.dept, position: e.position, score: sp.score, mbo: sp.mbo, company: sp.company };
+  });
+  // 정규직 가동률: 사업 투입 인건비(순기여표 labor) vs 월 급여 — 공통비로 새는 인원 식별
+  const laborById = {}; empRows.forEach(e => { if (e.empId) laborById[e.empId] = { labor: e.labor || 0, cnt: e.cnt || 0 }; });
+  const monthsElapsed = (() => { const m = new Date().getMonth() + 1; return Math.max(1, Math.min(12, m - 1)); })();
+  const utilRows = (employees || []).filter(e => e.status === 'active' && String(e.dept || '').indexOf('계약') < 0 && e.evalTarget !== false)
+    .map(e => {
+      const pay = (Number(e.baseSalary) || 0) + (Number(e.allowance) || 0) + (Number(e.mealCar) || 0) + (Number(e.qualif) || 0);
+      const cap = pay * monthsElapsed;                 // 기간 급여 총액(가동 100% 기준)
+      const lab = (laborById[e.id] || {}).labor || 0;  // 사업 투입 인건비
+      const cnt = (laborById[e.id] || {}).cnt || 0;
+      const util = cap > 0 ? Math.min(150, lab / cap * 100) : null;
+      return { id: e.id, name: e.name, dept: e.dept, position: e.position, pay, cap, lab, cnt, util };
+    }).sort((a, b) => (a.util ?? 999) - (b.util ?? 999));
+  const lowUtil = utilRows.filter(r => r.util != null && r.util < 60).length;
   const hasLedger = ledger.length > 0;
 
   // ---- 원가 구성 ----
@@ -8280,14 +8872,14 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 <Td align="right" mono style={{ color: hasLedger ? (e.newOrder > 0 ? T.success : T.danger) : T.textLight }}>{hasLedger ? fmtMoney(e.newOrder) : '-'}</Td>
                 <Td align="right" mono style={{ color: e.card > 0 ? T.warning : T.textLight }}>{hasLedger ? fmtMoney(e.card) : '-'}</Td>
                 <Td align="right" mono><strong style={{ color: e.total >= 0 ? T.success : T.danger }}>{fmtMoney(e.total)}</strong></Td>
-                <Td align="center">{e.score != null ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><Badge color={e.score >= 80 ? T.success : e.score >= 70 ? T.warning : T.danger} size="sm">{e.score}</Badge>{e.hasBid && <span title={'수주 기여 포함' + (e.bidScore != null ? ' (수주점수 ' + e.bidScore + ')' : '')} style={{ fontSize: 9, color: T.brand, fontWeight: 700 }}>수주</span>}</span> : '-'}</Td>
+                <Td align="center">{e.score != null ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><Badge color={e.score >= 80 ? T.success : e.score >= 70 ? T.warning : T.danger} size="sm">{e.score}</Badge>{e.track === 'support' && <span title={'비매출 지원트랙: 전사성과40+MBO60' + (e.mbo != null ? ' (MBO ' + e.mbo + ')' : ' · MBO 미입력')} style={{ fontSize: 9, color: '#7C3AED', fontWeight: 700 }}>지원</span>}{e.track === 'sales' && <span title={'영업 트랙: 수주 실적 기준' + (e.bidScore == null ? ' (수주 실적 없음 → 기본점수)' : '')} style={{ fontSize: 9, color: '#0369A1', fontWeight: 700 }}>영업</span>}{e.hasBid && e.track !== 'sales' && <span title={'수주 기여 포함' + (e.bidScore != null ? ' (수주점수 ' + e.bidScore + ')' : '')} style={{ fontSize: 9, color: T.brand, fontWeight: 700 }}>수주</span>}{e.evBonus > 0 && <span title={(e.jikjik ? '겸직' : '') + ' 다축 기여 보너스 +' + e.evBonus} style={{ fontSize: 9, color: T.success, fontWeight: 700 }}>+{e.evBonus}</span>}</span> : '-'}</Td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       <Note>{hasLedger
-        ? `창출매출·순기여(사업)는 사업 참여·기여도 기준, 신규수주·법인카드는 업로드된 직원별 원장 기준입니다. ‘종합(순기여−카드)’이 음수인 인원 ${negEmp}명 — 사업 기여보다 개인 경비가 큰 경우입니다. 신규수주가 0인데 법인카드 지출이 있는 직원은 영업·사업개발 성과 점검 대상입니다(예: 사업 담당은 있으나 신규 수주가 없는 경우). ▹ 기여점수는 인사평가용 종합점수로, 수행 기여 70% + 수주(제안) 기여 30%로 산출됩니다(‘수주’ 표시=수주 확정 제안 참여). 수행 참여 없이 제안만 한 인력도 수주 기여로 평가에 포함됩니다.`
+        ? `창출매출·순기여(사업)는 사업 참여·기여도 기준, 신규수주·법인카드는 업로드된 직원별 원장 기준입니다. ‘종합(순기여−카드)’이 음수인 인원 ${negEmp}명 — 사업 기여보다 개인 경비가 큰 경우입니다. 신규수주가 0인데 법인카드 지출이 있는 직원은 영업·사업개발 성과 점검 대상입니다(예: 사업 담당은 있으나 신규 수주가 없는 경우). ▹ 기여점수는 인사평가용 종합점수로, 수행 기여 70% + 수주(제안) 기여 30%로 산출됩니다(‘수주’ 표시=수주 확정 제안 참여). 수행 기여는 참여율 20% 이상만 인정하며, 미만(제안서지원 등)은 수주 기여로만 반영됩니다. 수행+수주 다축 기여(+5)와 경영/관리 겸직(+5) 시 보너스가 가산됩니다(‘+’ 표시, 100점 상한).`
         : `사업 참여(인력배분·기여도) 기준 순기여입니다. 순기여가 음수인 인원 ${negEmp}명. ⚠ 신규수주·법인카드 열이 ‘-’인 것은 업로드 파일에 「직원별경비수주」 시트가 없기 때문입니다 — 이 시트(사원코드·성명·법인카드·신규수주)를 넣으면 개인별 카드지출·신규수주까지 자동 반영되어, 신규수주 0·카드지출 발생 같은 케이스가 종합순기여로 드러납니다.`}</Note>
 
       {perfRows.length > 0 && (
@@ -8319,6 +8911,62 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           </div>
           <div style={{ marginTop: S[3], fontSize: 12, color: T.textMute, lineHeight: 1.7 }}>
             이들은 낮은 고정급 + 사업 참여 지분으로 보상받는 인력으로, 일반 정규직 KPI가 아닌 <strong>프로젝트 기여·수주 성과(기여점수)로 별도 평가</strong>합니다. 참여 사업이 없으면 기본급만 발생하며 그 비용은 공통비로 처리됩니다. 지분 성과급(변동분)은 지급 시 해당 사업의 관리자인건비로 반영됩니다.
+          </div>
+        </div>
+      )}
+
+      {supportRows.length > 0 && (
+        <div style={{ ...card(), padding: S[5], marginTop: S[3], borderLeft: `4px solid #7C3AED` }}>
+          <SectionTitle>비매출 지원조직 평가 (경영·경영기획 등 · 전사성과 40% + MBO 60%)</SectionTitle>
+          <div style={{ overflow: 'auto', marginTop: S[3] }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 560 }}>
+              <thead><tr style={{ background: T.surfaceAlt }}>
+                <Th>직원</Th><Th>부서</Th><Th align="center">전사성과점수</Th><Th align="center">개인 MBO</Th><Th align="center">종합점수</Th>
+              </tr></thead>
+              <tbody>
+                {supportRows.map((e, i) => (
+                  <tr key={i}>
+                    <Td><strong>{e.name}</strong>{e.position ? <span style={{ fontSize: 10, color: T.textMute, marginLeft: 4 }}>{e.position}</span> : null}</Td>
+                    <Td style={{ fontSize: 11, color: T.textMute }}>{shortName(e.dept)}</Td>
+                    <Td align="center" mono>{e.company}</Td>
+                    <Td align="center" mono>{e.mbo != null ? e.mbo : <span style={{ color: T.textLight }}>미입력</span>}</Td>
+                    <Td align="center"><Badge color={e.score >= 80 ? T.success : e.score >= 70 ? T.warning : T.danger} size="sm">{e.score}</Badge></Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ marginTop: S[3], fontSize: 12, color: T.textMute, lineHeight: 1.7 }}>
+            비매출 지원조직(경영지원·경영기획 등)은 프로젝트 수익률로 평가하면 불리하므로, <strong>전사 성과 40% + 개인 목표달성(MBO) 60%</strong>로 별도 평가합니다. 전사성과점수는 회사 완전영업이익률 기준({companyScore})이며, MBO는 관리자가 기능 목표(결산 정확성·자금관리·경영계획 달성 등) 대비 달성도를 입력합니다. MBO 미입력 시 전사성과점수만 적용됩니다.
+          </div>
+        </div>
+      )}
+
+      {utilRows.length > 0 && (
+        <div style={{ ...card(), padding: S[5], marginTop: S[3], borderLeft: `4px solid ${T.ink}` }}>
+          <SectionTitle>정규직 가동률 — 사업 투입 인건비 ÷ 급여 (1~{monthsElapsed}월 기준)</SectionTitle>
+          {lowUtil > 0 && <div style={{ fontSize: 12, color: T.warning, marginTop: 4 }}>가동률 60% 미만 {lowUtil}명 — 급여의 상당 부분이 특정 사업에 배분되지 않고 공통비로 흡수되고 있습니다.</div>}
+          <div style={{ overflow: 'auto', marginTop: S[3] }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 640 }}>
+              <thead><tr style={{ background: T.surfaceAlt }}>
+                <Th>직원</Th><Th>부서</Th><Th align="center">참여 사업</Th><Th align="right">사업 투입 인건비</Th><Th align="right">기간 급여</Th><Th align="center">가동률</Th>
+              </tr></thead>
+              <tbody>
+                {utilRows.map((r, i) => (
+                  <tr key={i}>
+                    <Td><strong>{r.name}</strong> <span style={{ fontSize: 10, color: T.textMute }}>{r.position}</span></Td>
+                    <Td style={{ fontSize: 11, color: T.textMute }}>{shortName(r.dept)}</Td>
+                    <Td align="center" mono>{r.cnt}</Td>
+                    <Td align="right" mono>{fmtMoney(r.lab)}</Td>
+                    <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(r.cap)}</Td>
+                    <Td align="center">{r.util == null ? '-' : <Badge color={r.util >= 90 ? T.success : r.util >= 60 ? T.warning : T.danger} size="sm">{r.util.toFixed(0)}%</Badge>}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2], lineHeight: 1.6 }}>
+            가동률 = 사업에 배분된 인건비 ÷ (월 급여 × 경과월수). 100%면 급여 전액이 사업에 투입된 것, 낮으면 비배분(공통비 부담)이 큽니다. 경영지원·경영기획 등 지원조직은 본래 공통비 성격이라 낮게 나오는 것이 정상이며, <strong>매출조직인데 낮은 인원</strong>이 수주·재배치 검토 대상입니다.
           </div>
         </div>
       )}
@@ -8398,6 +9046,22 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         </table>
       </div>
       <Note>{`수익률(계약)은 연간 계약금액 전액을 매출로 본 값이라, 진행 초기 사업은 원가가 덜 쌓여 과대 계상됩니다. 수익률(진행)은 진행률만큼만 매출을 인식(인식매출=계약×진행률)해 원가와 기간을 맞춘 값으로, 실제 수익성에 더 가깝습니다. 계획원가가 없어 진행률은 월별 집행 최종월 기준(예: 5월까지 집행→5/12)으로 추정했으며, 사업별로 실제 진행률을 입력하면 정확해집니다. 음수 수익률 사업(계약금액 오류 추정)은 별도 정정이 필요합니다.`}</Note>
+      {etcProjects.length > 0 && (
+        <div style={{ ...card({ borderLeft: `4px solid ${T.textMute}` }), padding: S[5], marginTop: S[3] }}>
+          <SectionTitle>기타(비프로젝트) — 유지보수 등 계약구조 상이 · 수익성 평가 제외</SectionTitle>
+          <div style={{ overflow: 'auto', marginTop: S[3] }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 560 }}>
+              <thead><tr style={{ background: T.surfaceAlt }}><Th>사업</Th><Th align="right">계약금액</Th><Th align="right">집행원가</Th><Th align="right">차액</Th></tr></thead>
+              <tbody>
+                {etcProjects.map((p, i) => { const m = projectMetrics(p); return (
+                  <tr key={i}><Td>{p.name}</Td><Td align="right" mono>{fmtMoney(m.revenue)}</Td><Td align="right" mono>{fmtMoney(m.cost)}</Td><Td align="right" mono style={{ color: m.revenue - m.cost >= 0 ? T.ink : T.danger }}>{fmtMoney(m.revenue - m.cost)}</Td></tr>
+                ); })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: 11.5, color: T.textMute, marginTop: S[2], lineHeight: 1.6 }}>유지보수(연단가)·서고관리 등은 계약금액 구조가 일반 사업과 달라 수익률·기여점수 산정에서 제외했습니다. 원가는 실집행 기준이며, 계약금액이 정정되면 프로젝트로 복귀시킬 수 있습니다.</div>
+        </div>
+      )}
 
       {/* 8. 위험요소 진단 */}
       <H n="9" icon={ShieldAlert}>위험요소 진단</H>
@@ -8456,7 +9120,9 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
   const empName = (id) => employees.find(e => e.id === id)?.name || id;
 
   const years = Array.from(new Set(projects.map(p => Number(p.year)))).sort((a, b) => b - a);
-  const shown = projects.filter(p => yearFilter === 'all' || Number(p.year) === Number(yearFilter));
+  const shownAll = projects.filter(p => yearFilter === 'all' || Number(p.year) === Number(yearFilter));
+  const etcShown = shownAll.filter(isEtcProject);
+  const shown = shownAll.filter(p => !isEtcProject(p));
   const bench = costBenchmark(shown);
 
   // 전사 합계
@@ -8566,6 +9232,13 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
           </div>
         );
       })()}
+      {etcShown.length > 0 && (
+        <div style={{ ...card(), padding: S[4], marginBottom: S[5], borderLeft: `4px solid ${T.textMute}` }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: T.textMute, marginBottom: 4 }}>기타(비프로젝트) {etcShown.length}건 — 수익성 집계 제외</div>
+          <div style={{ fontSize: 12, color: T.textMute, lineHeight: 1.6 }}>{etcShown.map(p => p.name).join(' · ')}</div>
+          <div style={{ fontSize: 11, color: T.textLight, marginTop: 4 }}>유지보수(연단가) 등 계약구조가 달라 수익률·기여점수에서 제외됩니다. 상세는 경영보고서의 기타 표 참조.</div>
+        </div>
+      )}
 
       {/* 연도 필터 + 보기 전환 */}
       <div style={{ display: 'flex', gap: S[2], marginBottom: S[4], alignItems: 'center' }}>
@@ -8851,8 +9524,13 @@ function ProjectEditModal({ project, employees, currentYear, onSave, onClose }) 
 }
 
 // 프로젝트 기여도 자동 산정 모달 (평가 입력용)
-function ContributionCalcModal({ employee, projects, currentYear, onApply, onClose }) {
+function ContributionCalcModal({ employee, projects, proposals, currentYear, onApply, onClose }) {
   const result = calcContributionScore(employee.id, projects, currentYear);
+  const nm = String(employee.name || '').trim();
+  const track = isSupportTrack(nm) ? 'support' : isSalesTrack(nm) ? 'sales' : 'project';
+  const ev = track === 'project' ? calcEvalScore(employee.id, nm, projects, proposals, currentYear, employee) : null;
+  const bid = calcBidScore(nm, proposals, projects, currentYear);
+  const salesScore = track === 'sales' ? (bid ? bid.score : EVAL_CFG.salesFloor) : null;
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,37,71,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: S[5] }} onClick={onClose}>
@@ -8904,11 +9582,16 @@ function ContributionCalcModal({ employee, projects, currentYear, onApply, onClo
                 <div>
                   <div style={{ fontSize: 11, color: T.textMute, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>산정 기여도 점수</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: S[3] }}>
-                    <span style={{ fontSize: 32, fontWeight: 700, color: T.brand }}>{result.score}</span>
+                    <span style={{ fontSize: 32, fontWeight: 700, color: T.brand }}>{track === 'sales' ? salesScore : (ev ? ev.score : result.score)}</span>
+                    <div style={{ fontSize: 11.5, color: T.textMute, marginTop: 4 }}>
+                      {track === 'sales' && (bid ? `영업 트랙 · 수주 실적 기준 (${bid.score}점)` : `영업 트랙 · 수주 실적 없음 → 기본 ${EVAL_CFG.salesFloor}점`)}
+                      {track === 'support' && '지원 트랙 · 전사성과+MBO로 별도 평가(경영보고서 참조)'}
+                      {track === 'project' && ev && `수행 ${ev.exec ?? '-'} × 70% ${ev.bid != null ? `+ 수주 ${ev.bid} × 30%` : '(수주 기여 없음)'}${ev.bonus ? ` + 보너스 ${ev.bonus}(${[ev.multi ? '다축' : null, ev.jikjik ? '겸직' : null].filter(Boolean).join('·')})` : ''} · 완료사업=확정, 진행중=진행기준 수익률로 보정`}
+                    </div>
                     <GradeBadge grade={result.grade} size="lg" />
                   </div>
                 </div>
-                <Button variant="primary" icon={CheckCircle2} onClick={() => onApply(result.score)}>이 점수 적용</Button>
+                <Button variant="primary" icon={CheckCircle2} onClick={() => onApply(track === 'sales' ? salesScore : (ev ? ev.score : result.score))}>이 점수 적용</Button>
               </div>
             </>
           )}
@@ -9384,7 +10067,7 @@ function PromotionEvalCard({ emp, policy, totalScore }) {
 // ============================================================
 // 평가 입력
 // ============================================================
-function EvaluationView({ user, employees, scores, updateScore, selfScores, comments, updateComment, policy, selectedEmp, setSelectedEmp, results, currentYear, submissions, copySelfToEvaluator, projects }) {
+function EvaluationView({ user, employees, scores, updateScore, selfScores, comments, updateComment, policy, selectedEmp, setSelectedEmp, results, currentYear, submissions, copySelfToEvaluator, finalizeEval, projects, proposals, peerEvals }) {
   const [kpiCalcOpen, setKpiCalcOpen] = useState(false);
   const [contribCalcOpen, setContribCalcOpen] = useState(false);
   const targets = employees.filter(e => e.evalTarget);
@@ -9553,11 +10236,71 @@ function EvaluationView({ user, employees, scores, updateScore, selfScores, comm
             <ContributionCalcModal
               employee={current}
               projects={projects}
+              proposals={proposals}
               currentYear={currentYear}
               onApply={(score) => { updateScore(current.id, 'perf_profit', score); setContribCalcOpen(false); }}
               onClose={() => setContribCalcOpen(false)}
             />
           )}
+
+          {/* 동료평가 익명 요약 (평가자·관리자 열람) */}
+          {(() => {
+            const raters = (peerEvals || {})[current.id] || {};
+            const list = Object.values(raters).filter(r => r);
+            if (list.length === 0) return null;
+            const avg = (k) => (list.reduce((a, r) => a + (Number(r[k]) || 0), 0) / list.length).toFixed(1);
+            const notes = [];
+            list.forEach(r => { if (r.keep) notes.push({ t: '계속', v: r.keep }); if (r.change) notes.push({ t: '개선', v: r.change }); });
+            return (
+              <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[5], marginTop: S[5] }}>
+                <SectionTitle>동료평가 요약 (익명 · {list.length}명 응답 · 협업 점수 판단 참고용)</SectionTitle>
+                <div style={{ display: 'flex', gap: S[5], margin: `${S[3]}px 0`, flexWrap: 'wrap' }}>
+                  {[['collab', '협업·소통'], ['resp', '책임감'], ['expert', '전문성 기여']].map(([k, l]) => (
+                    <div key={k}><div style={{ fontSize: 11, color: T.textMute }}>{l}</div><div style={{ fontSize: 20, fontWeight: 800, color: Number(avg(k)) >= 4 ? T.success : Number(avg(k)) >= 3 ? T.warning : T.danger }}>{avg(k)}<span style={{ fontSize: 12, color: T.textLight }}>/5</span></div></div>
+                  ))}
+                </div>
+                {notes.length > 0 && (
+                  <div style={{ fontSize: 12, lineHeight: 1.8 }}>
+                    {notes.map((n, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 3 }}>
+                        <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, color: '#fff', background: n.t === '계속' ? T.success : T.warning, borderRadius: 4, padding: '1px 6px', height: 'fit-content', marginTop: 2 }}>{n.t}</span>
+                        <span style={{ color: T.text }}>{n.v}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2] }}>작성자 비공개. 원문을 피평가자에게 직접 전달하지 말고, 면담 시 경향만 요약해 전하세요. 극단 점수는 별도 면담으로 검증하세요.</div>
+              </div>
+            );
+          })()}
+
+          {/* 평가 확정(2차 검토) — 절차 공정성 */}
+          <div style={{ ...card(), padding: S[4], marginTop: S[5], display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: S[3], borderLeft: `4px solid ${submissions[current.id] === 'finalized' ? T.success : T.warning}` }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>평가 상태: {submissions[current.id] === 'finalized' ? '확정 완료 (2차 검토 승인)' : submissions[current.id] === 'self_submitted' ? '자기평가 제출됨 · 평가자 입력/검토 중' : '자기평가 미제출'}</div>
+              <div style={{ fontSize: 11.5, color: T.textMute, marginTop: 2 }}>절차: 자기평가 제출 → 1차(평가자) 점수 입력 → 2차(관리자) 검토·확정. 확정 후 변경 시 확정 해제가 기록 관점에서 명확합니다.</div>
+            </div>
+            {user.role === 'admin' || user.role === 'manager' ? (
+              <Button variant={submissions[current.id] === 'finalized' ? 'ghost' : 'primary'} icon={CheckCircle2} onClick={() => finalizeEval && finalizeEval(current.id)}>
+                {submissions[current.id] === 'finalized' ? '확정 해제' : '평가 확정'}
+              </Button>
+            ) : null}
+          </div>
+
+          {/* 연초 목표(MBO) 설정 — 기초/기말 사이클 */}
+          <div style={{ ...card({ borderLeft: `4px solid #0369A1` }), padding: S[6], marginTop: S[5] }}>
+            <SectionTitle>연간 목표(MBO) — 연초 설정 · 기말 KPI 평가 근거</SectionTitle>
+            <div style={{ fontSize: 12, color: T.textMute, margin: `${S[2]}px 0 ${S[3]}px` }}>
+              연초에 담당 기능·프로젝트 목표를 구체적으로 기록해 두면, 기말 KPI 달성도·기여도 평가의 근거가 됩니다. (예: 매출 목표, 수주 건수, 결산 적시율, 프로젝트 납기 등 측정 가능한 항목)
+            </div>
+            <textarea
+              value={empComments.mboGoal || ''}
+              onChange={e => updateComment(current.id, 'mboGoal', e.target.value)}
+              placeholder={'예)\n1. 담당 사업 공헌이익률 15% 이상 유지 (가중 40%)\n2. 신규 수주 2건·3억 이상 (가중 30%)\n3. 월 보고 적시 제출률 100% (가중 30%)'}
+              style={{ width: '100%', minHeight: 96, padding: S[3], border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }}
+            />
+            {empComments.mboGoal && <div style={{ fontSize: 11, color: T.success, marginTop: 4 }}>✓ 목표가 저장되었습니다 — 기말 평가 시 이 목표 대비 달성도로 KPI 점수를 매기세요</div>}
+          </div>
 
           {(empComments.selfStrength || empComments.selfImprovement || empComments.selfGoal) && (
             <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[6], marginTop: S[5] }}>
@@ -9615,7 +10358,7 @@ function CommentDisplay({ label, text }) {
 // ============================================================
 // 평가 결과
 // ============================================================
-function ResultsView({ user, employees, results, comments, scores, selfScores, policy, currentYear, history, navigateToHistory }) {
+function ResultsView({ user, employees, results, comments, scores, selfScores, policy, currentYear, history, navigateToHistory, closeYearSnapshot }) {
   const [expandedId, setExpandedId] = useState(null);
   
   return (
@@ -10132,6 +10875,48 @@ function AnalyticsView({ employees, results, policy, stats }) {
     <div>
       <PageHeader eyebrow="Analytics" title="통계 분석" subtitle="부서별·직무군별·레벨별 평가 결과 및 보상 분포 분석" />
       
+      {user.role === 'admin' && (
+        <div className="no-print" style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[4], marginBottom: S[5], display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: S[3], flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{currentYear}년 평가 확정 스냅샷</div>
+            <div style={{ fontSize: 11.5, color: T.textMute, marginTop: 2 }}>
+              확정 시 현재 점수·등급·정책·목표(MBO)·동료평가가 연도 이력으로 고정 저장됩니다 (이의신청·차년도 비교 근거).
+              {(history || []).some(h => Number(h.year) === Number(currentYear)) && <strong style={{ color: T.success }}> · 이미 {currentYear}년 스냅샷 있음(재실행 시 갱신)</strong>}
+            </div>
+          </div>
+          <Button variant="primary" icon={CheckCircle2} onClick={() => { if (window.confirm(`${currentYear}년 평가를 확정 스냅샷으로 저장할까요?\n(재실행하면 기존 ${currentYear}년 스냅샷을 덮어씁니다)`)) closeYearSnapshot && closeYearSnapshot(); }}>연말 확정 스냅샷 저장</Button>
+        </div>
+      )}
+
+      {(() => {
+        const low = (employees || []).filter(e => e.evalTarget !== false && results[e.id]?.total != null && (results[e.id].total < 60 || results[e.id]?.grade?.grade === 'D'));
+        if (low.length === 0) return null;
+        return (
+          <div style={{ ...card({ borderLeft: `4px solid ${T.danger}` }), padding: S[6], marginBottom: S[5] }}>
+            <SectionTitle>저성과 관리(PIP) 검토 대상 · {low.length}명</SectionTitle>
+            <div style={{ overflow: 'auto', marginTop: S[3] }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 520 }}>
+                <thead><tr style={{ background: T.surfaceAlt }}><Th>직원</Th><Th>부서</Th><Th align="center">종합점수</Th><Th align="center">등급</Th><Th>권고 절차</Th></tr></thead>
+                <tbody>
+                  {low.map((e, i) => (
+                    <tr key={i}>
+                      <Td><strong>{e.name}</strong> <span style={{ fontSize: 10, color: T.textMute }}>{e.position}</span></Td>
+                      <Td style={{ fontSize: 11, color: T.textMute }}>{shortName(e.dept)}</Td>
+                      <Td align="center" mono>{Math.round(results[e.id].total)}</Td>
+                      <Td align="center"><GradeBadge grade={results[e.id]?.grade?.grade} size="sm" /></Td>
+                      <Td style={{ fontSize: 11.5 }}>① 면담·원인 파악 → ② 3개월 개선목표 서면 부여 → ③ 월 점검 기록 → ④ 재평가 후 인사조치 검토</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ marginTop: S[3], fontSize: 11.5, color: T.textMute, lineHeight: 1.7 }}>
+              근로기준법상 해고는 정당한 사유와 절차(개선 기회 부여·기록·서면 통지)가 요구됩니다. 위 절차를 문서화(면담일지·개선계획서·월 점검표)해 두면 인사조치 시 법적 리스크를 줄일 수 있습니다. 개선목표는 연간 목표(MBO) 입력란에 기록해 관리하세요.
+            </div>
+          </div>
+        );
+      })()}
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[5], marginBottom: S[5] }}>
         <div style={{ ...card(), padding: S[6] }}>
           <SectionTitle>등급 분포</SectionTitle>
@@ -10634,6 +11419,17 @@ function PolicyView({ policy, setPolicy }) {
           <PolicyInput label="프로젝트 기여도" value={policy.perf_profit} onChange={v => up('perf_profit', v)} />
           <PolicyInput label="납기·완성도" value={policy.perf_delivery} onChange={v => up('perf_delivery', v)} />
           <PolicyInput label="고객 만족도" value={policy.perf_customer} onChange={v => up('perf_customer', v)} />
+        </PolicySection>
+        <PolicySection title="프로젝트 기여 산정 기준 (기여점수 규칙)" policy={policy}>
+          <PolicyInput label="수행 기여 가중(%)" value={policy.contrib_exec_w} onChange={v => up('contrib_exec_w', v)} />
+          <PolicyInput label="수주 기여 가중(%)" value={policy.contrib_bid_w} onChange={v => up('contrib_bid_w', v)} />
+          <PolicyInput label="수행 인정 최소 참여율(%)" value={policy.contrib_core_min} onChange={v => up('contrib_core_min', v)} />
+          <PolicyInput label="다축 기여 보너스(점)" value={policy.contrib_bonus_multi} onChange={v => up('contrib_bonus_multi', v)} />
+          <PolicyInput label="겸직 보너스(점)" value={policy.contrib_bonus_jikjik} onChange={v => up('contrib_bonus_jikjik', v)} />
+          <PolicyInput label="영업 기본점수(수주 0)" value={policy.contrib_sales_floor} onChange={v => up('contrib_sales_floor', v)} />
+          <div style={{ gridColumn: '1 / -1', fontSize: 11.5, color: T.textMute, lineHeight: 1.6 }}>
+            기여점수 = 수행점수×수행가중 + 수주점수×수주가중 (합 100 권장) + 보너스(100점 상한). 참여율이 최소 참여율 미만이면 수행 기여로 인정하지 않고 수주 기여로만 평가합니다. 완료 사업은 확정 수익률, 진행중 사업은 진행기준 수익률로 산정됩니다. 변경 시 전 직원 기여점수에 즉시 반영되므로 평가 기간 중 변경은 지양하세요.
+          </div>
         </PolicySection>
         <PolicySection title="종합 가중치" sumK={['weight_comp', 'weight_perf']} policy={policy}>
           <PolicyInput label="역량평가" value={policy.weight_comp} onChange={v => up('weight_comp', v)} />
@@ -11847,7 +12643,7 @@ ${canIncludeSalary ? `
 const MANUAL_CONTENT = {
   title: '코이션 인사평가·보상 관리 시스템 매뉴얼',
   subtitle: 'KOITION HR Evaluation & Compensation System User Guide',
-  version: 'v7.0',
+  version: 'v39',
   company: '주식회사 코이션 · KOITION CO., LTD.',
   
   sections: [
@@ -12469,6 +13265,111 @@ const MANUAL_CONTENT = {
             '회사 정보: 주식회사 코이션 · 강원도 정선군 사북읍',
           ],
         },
+      ],
+    },
+    {
+      id: 'eval-guide-detail',
+      title: '평가 상세 가이드 (직원용) — 처음이라도 쉽게',
+      audience: 'all',
+      blocks: [
+        { type: 'paragraph', text: '내 점수가 어떻게 만들어지는지, 무엇을 준비해야 하는지 예시와 함께 설명합니다. 처음 평가받는 분은 이 순서대로 따라오시면 됩니다.' },
+        { type: 'subtitle', text: '① 평가는 3가지로 구성됩니다' },
+        { type: 'table', headers: ['구성', '내용', '누가 매기나'], rows: [
+          ['역량평가', '직무 전문성·문제해결·자기계발·협업 (4항목)', '자기평가 + 평가자'],
+          ['업적평가', 'KPI 달성도·프로젝트 기여도·납기·고객만족 (4항목)', '자기평가 + 평가자 (기여도는 시스템 자동)'],
+          ['목표(MBO)', '연초에 세운 개인 목표의 달성도', '본인 자술 → 평가자 확정'],
+        ] },
+        { type: 'subtitle', text: '② 직무 트랙에 따라 기여도 기준이 다릅니다' },
+        { type: 'table', headers: ['트랙', '대상', '어떻게 평가되나'], rows: [
+          ['매출조직', 'PM·수행 인력', '수행 기여 70% + 수주 기여 30% (+겸직·다축 보너스)'],
+          ['영업', '영업·사업개발', '수주(제안→계약) 실적. 수주 없으면 기본 20점'],
+          ['지원', '경영지원 등 비매출', '전사 성과 40% + 개인 MBO 60% (프로젝트 수익률 미적용)'],
+        ] },
+        { type: 'callout', variant: 'info', title: '💡 예시로 이해하기', text: '홍길동(PM)이 A사업(수익률 20%→85점)에 60%, B사업(15%→75점)에 40% 참여했다면 수행점수 = 85×0.6 + 75×0.4 = 81점. 여기에 제안에도 참여해 수주로 확정됐다면 수주점수가 30% 반영되고, 겸직이면 보너스가 더해집니다.' },
+        { type: 'subtitle', text: '③ 참여율이 낮으면 수행 기여로 안 잡힙니다' },
+        { type: 'paragraph', text: '한 사업에 20% 미만으로 참여(예: 제안서지원 5%)한 경우는 "수행"이 아니라 "수주·지원"으로 봅니다. 이런 참여는 수행 점수를 만들지 않고, 그 제안이 수주로 확정되면 수주 기여로 반영됩니다. 즉 5%만 참여했는데 100점을 받는 일은 없습니다.' },
+        { type: 'subtitle', text: '④ 수익률 왜곡은 자동 보정됩니다' },
+        { type: 'paragraph', text: '완료된 사업은 확정 수익률로, 진행중 사업은 진행률 기준 수익률로 계산합니다. 초기 사업의 계약금액 전액이 매출로 잡혀 점수가 부풀려지는 문제를 막습니다. 통제 밖 요인(발주 지연 등)이 있으면 평가 면담에서 소명할 수 있습니다.' },
+        { type: 'subtitle', text: '⑤ 연간 목표(MBO) 작성 요령' },
+        { type: 'list', items: [
+          '목표는 3~5개, 가중치 합계 100% (한 목표에 40% 초과 배정은 지양)',
+          '숫자로 판정 가능하게: "열심히 한다"(X) → "신규 제안 4건 제출"(O)',
+          '측정 방법을 함께 적기: 어느 데이터로 판정하는지 (경영보고서·제안현황·지출정리 등)',
+          '통제 밖 요인이 큰 목표는 과정지표 병행 (예: 수주액 대신 제안 제출 건수)',
+        ] },
+        { type: 'callout', variant: 'success', title: '✅ 좋은 목표 예시 (직무별)', text: 'PM: 담당 사업 공헌이익률 15%↑(40%)·납기 100%(30%)·제안 참여 2건(20%)·표준화 1건(10%) / 영업: 신규 수주 3억(40%)·제안 8건 수주율 25%(30%)·신규 발주처 2곳(20%)·카드 태깅 100%(10%) / 경영지원: 결산 D+5 12회(30%)·급여 오류 0건(25%)·판관비 3% 절감(25%)·계약갱신 지연 0건(20%)' },
+        { type: 'callout', variant: 'danger', title: '⚠ 피해야 할 목표', text: '"업무에 최선을 다한다"(측정 불가) · "회사 매출 100억"(개인 통제 불가) · "보고서 잘 쓰기"(기준 없음) · 한 목표에 가중치 100% · 12월에 몰아서 달성 가능한 목표' },
+        { type: 'subtitle', text: '⑥ 동료평가 작성' },
+        { type: 'list', items: [
+          '같은 프로젝트를 함께한 동료만 평가하세요 (최대 3명)',
+          '3개 항목(협업·소통 / 책임감 / 전문성 기여)을 1~5점으로',
+          '"계속했으면 하는 것" "바꿨으면 하는 것"을 반드시 서술 — 점수보다 이 서술이 중요합니다',
+          '작성 내용은 평가자만 열람하며, 동료에게는 누가 썼는지 비공개로 요약만 전달됩니다',
+        ] },
+        { type: 'subtitle', text: '⑦ 나의 진행 순서 (연간)' },
+        { type: 'table', headers: ['시기', '할 일'], rows: [
+          ['1월 초', "연간 목표(MBO) 작성 → 평가자와 협의·확정"],
+          ['7월 초', '반기 중간리뷰 — 목표 진척 점검(점수 없음)'],
+          ['12월 1~10일', '자기평가 제출 + 동료평가 작성 (내 평가 메뉴)'],
+          ['12월 중', '평가자 1차 → 관리자 2차 검토·확정 → 결과 통보'],
+          ['확정 후 3일', '이의신청 — 내 평가의 산출 근거 확인 후 경영지원부에 서면 제출'],
+        ] },
+        { type: 'callout', variant: 'info', title: '🔎 내 점수 근거 보기', text: "'내 평가' 화면에 수행·수주 점수, 가중치, 보너스가 어떻게 합산됐는지 그대로 표시됩니다. 산정 규칙 자체는 관리자가 정책설정에 공개합니다." },
+        { type: 'callout', variant: 'success', title: '🤝 낮은 점수를 받아도', text: '바로 불이익이 아니라 개선 기회(면담 → 3개월 개선목표 → 월 점검 → 재평가)를 먼저 부여합니다.' },
+      ],
+    },
+    {
+      id: 'admin-ops-manual',
+      title: '[관리자] 평가제도 운영·조직변경 매뉴얼',
+      audience: 'admin',
+      blocks: [
+        { type: 'paragraph', text: '경영·인사 최고담당자가 평가 기준을 수정·보완·삭제하고, 조직·구성원 변경에 대응하는 방법입니다. 이 섹션은 관리자에게만 보입니다.' },
+        { type: 'subtitle', text: '1. 이 가이드 자체를 수정/추가/삭제하기' },
+        { type: 'list', items: [
+          '이 화면 우측 상단의 [편집] 버튼으로 편집 모드 진입 (admin 전용)',
+          '문단·목록·표·콜아웃 블록을 추가·수정·삭제하고, 섹션도 추가/삭제 가능',
+          '각 섹션의 공개 대상(audience)을 전체/평가자/관리자로 지정 — 관리자 전용 지침은 admin으로',
+          '[저장]하면 즉시 반영, [초기화]로 기본 매뉴얼 복원. 저장 내용은 JSON 백업에 포함',
+        ] },
+        { type: 'subtitle', text: '2. 평가 산정 기준(계수) 수정' },
+        { type: 'paragraph', text: '정책 설정 메뉴 → "프로젝트 기여 산정 기준"에서 아래를 직접 조정합니다. 변경 즉시 전 직원 점수에 반영되므로 평가 기간(12월) 중에는 변경하지 마세요.' },
+        { type: 'table', headers: ['항목', '기본값', '의미'], rows: [
+          ['수행 기여 가중', '70%', '프로젝트 수행 점수의 비중'],
+          ['수주 기여 가중', '30%', '제안·수주 점수의 비중'],
+          ['수행 인정 최소 참여율', '20%', '미만이면 수행 아님 → 수주 기여로만'],
+          ['다축 기여 보너스', '5점', '수행+수주 둘 다 기여 시'],
+          ['겸직 보너스', '5점', '경영·관리 겸직자'],
+          ['영업 기본점수', '20점', '수주 실적 없는 영업'],
+        ] },
+        { type: 'subtitle', text: '3. 평가 트랙(매출/영업/지원) 지정·변경' },
+        { type: 'list', items: [
+          '기본은 매출조직(수행+수주). 영업·지원 트랙은 코드의 명단(SALES_TRACK / SUPPORT_TRACK)으로 지정합니다',
+          '현재: 영업 트랙 = 오창민 / 지원 트랙 = 오누리(MBO 미입력=전사성과 적용)',
+          '트랙 대상이 바뀌면(예: 새 영업 채용, 지원인력 변경) 시스템 관리자(서비스개발부)에게 명단 수정을 요청하세요',
+          '지원 트랙의 MBO 점수는 관리자가 평가 시 산정해 명단에 반영합니다',
+        ] },
+        { type: 'subtitle', text: '4. 구성원 변경 대응' },
+        { type: 'table', headers: ['상황', '조치'], rows: [
+          ['신규 입사', '직원 등록(사번·부서·직무군·평가대상 여부). 입사 3개월 미만은 MBO 미입력(전사성과/수습 기준)으로 두고 다음 사이클부터 정식 평가'],
+          ['퇴사', "평가대상에서 제외(status 변경). 대여금 있으면 퇴직금 상계 정산, 진행 사업의 기여도는 참여기간까지만 인정"],
+          ['부서 이동', '부서·평가 트랙 재지정. 이동 전/후 사업 기여는 각 참여율로 자동 반영됨'],
+          ['직무 전환(수행→영업 등)', '평가 트랙 변경 요청. 전환 시점 기준으로 이후 평가 기준 적용'],
+          ['승진', '직위·직급 변경. 역량 기준(RUBRICS)은 직급에 맞게 상향 적용'],
+        ] },
+        { type: 'subtitle', text: '5. 조직(부서·본부) 변경' },
+        { type: 'list', items: [
+          '부서 신설·통합 시: 소속 직원의 부서명을 일괄 갱신하고, 평가자(1차/2차) 라인을 재설정',
+          '비매출 조직이 신설되면 그 인원을 지원 트랙 명단에 추가(전사성과+MBO 기준)',
+          '겸직 발령 시: 직원 정보의 비고에 "겸직" 또는 복수 본부(부서명에 / 포함)로 표기하면 겸직 보너스가 자동 인식됨',
+          '조직 개편은 평가 기간을 피해 연초(1월) 또는 반기(7월) 시점에 반영 권장',
+        ] },
+        { type: 'callout', variant: 'warning', title: '⚠ 변경 전 필수', text: '조직·구성원·기준을 변경하기 전에 반드시 [내보내기]로 JSON 백업을 먼저 받으세요. 데이터는 이 브라우저에 저장되므로 되돌리기가 어렵습니다. 큰 변경은 연초/반기에, 평가 확정 기간(12월)에는 지양합니다.' },
+        { type: 'subtitle', text: '6. 연말 확정 & 이력 보관' },
+        { type: 'list', items: [
+          '평가 확정 후 "평가 결과" 화면에서 [연말 확정 스냅샷 저장] — 점수·등급·정책·목표·동료평가가 연도 이력으로 고정',
+          '스냅샷 저장 후 반드시 JSON 내보내기로 백업 (이의신청·감사·차년도 비교 근거)',
+          '저성과자(60점 미만·D등급)는 결과 화면의 PIP 대상에 자동 표기 — 개선 절차를 문서로 진행',
+        ] },
       ],
     },
   ],
