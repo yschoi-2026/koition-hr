@@ -2633,7 +2633,9 @@ function App() {
         if (data.policy) {
           // 기존 정책에 coverStats/coverImage/promotion이 없으면 기본값 보충 (마이그레이션)
           const migrated = { 
+            ...INITIAL_POLICY,               // 구조 키(grades·등급기준 등) 기본 보존
             ...data.policy, 
+            grades: (Array.isArray(data.policy.grades) && data.policy.grades.length) ? data.policy.grades : INITIAL_POLICY.grades,
             coverStats: data.policy.coverStats || INITIAL_POLICY.coverStats,
             coverImage: data.policy.coverImage || INITIAL_POLICY.coverImage,
             promotion: data.policy.promotion || INITIAL_POLICY.promotion,
@@ -2713,7 +2715,9 @@ function App() {
         if (data.employees) setEmployees(data.employees);
         if (data.policy) {
           const migrated = { 
+            ...INITIAL_POLICY,               // 구조 키(grades·등급기준 등) 기본 보존
             ...data.policy, 
+            grades: (Array.isArray(data.policy.grades) && data.policy.grades.length) ? data.policy.grades : INITIAL_POLICY.grades,
             coverStats: data.policy.coverStats || INITIAL_POLICY.coverStats,
             coverImage: data.policy.coverImage || INITIAL_POLICY.coverImage,
             promotion: data.policy.promotion || INITIAL_POLICY.promotion,
@@ -2849,6 +2853,7 @@ function App() {
     });
   };
   const deleteProposal = (id) => setProposals(prev => prev.filter(x => x.id !== id));
+  const updateProposal = (id, patch) => setProposals(prev => (prev || []).map(x => x.id === id ? { ...x, ...patch } : x));
   // 수주 확정: 제안 → 신규 프로젝트 생성 + 수주 인력 보상(직원별 원장 신규수주 + 수주 기여점수 자동)
   const winProposal = (proposalId) => {
     const p = (proposals || []).find(x => x.id === proposalId);
@@ -7901,7 +7906,8 @@ function OverheadView({ projects, overheads, currentYear, yearFilter, policy, se
 }
 
 // 수주 파이프라인 (사업제안현황 연동)
-function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal }) {
+function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal, updateProposal }) {
+  const [edit, setEdit] = React.useState(null); // {id, pm, participants, support}
   if (!proposals || proposals.length === 0) {
     return <EmptyState icon={TrendingUp} title="제안 데이터가 없습니다" desc="사업관리 엑셀(사업제안현황 시트)을 업로드하면 수주 파이프라인이 표시됩니다" />;
   }
@@ -7958,13 +7964,14 @@ function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal }) {
                   <Td>{p.client}</Td>
                   <Td align="right" mono>{fmtMoney(p.budget)}</Td>
                   <Td>{p.bidDate}</Td>
-                  <Td>{p.pm}</Td>
+                  <Td>{p.pm}{(p.participants || []).length > 0 && <span title={'제안참여: ' + p.participants.join(', ')} style={{ fontSize: 10, color: T.brand, marginLeft: 4 }}>참여{p.participants.length}</span>}{(p.support || []).length > 0 && <span title={'서류지원: ' + p.support.join(', ')} style={{ fontSize: 10, color: T.textMute, marginLeft: 4 }}>지원{p.support.length}</span>}</Td>
                   <Td align="center"><Badge color={p.status === '수주' ? T.success : T.textMute} variant={p.status === '수주' ? 'solid' : 'outline'} size="sm">{p.status}</Badge></Td>
                   {canEdit && <Td align="center">
                     <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
                       {p.status !== '수주' && winProposal && (
                         <Button size="sm" variant="secondary" icon={Award} onClick={() => winProposal(p.id)}>수주 확정</Button>
                       )}
+                      {updateProposal && <button title="인력 편집 (PM·제안참여·서류지원)" onClick={() => setEdit({ id: p.id, pm: p.pm || '', participants: (p.participants || []).join(', '), support: (p.support || []).join(', ') })} style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.brand }}><Pencil size={14} /></button>}
                       <button onClick={() => { if (window.confirm('이 제안을 삭제할까요?')) deleteProposal(p.id); }} style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }} title="삭제"><Trash2 size={14} /></button>
                     </span>
                   </Td>}
@@ -7974,6 +7981,26 @@ function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal }) {
           </table>
         </div>
       </div>
+      {edit && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setEdit(null)}>
+          <div style={{ ...card(), padding: S[5], width: 440, maxWidth: '100%' }} onClick={ev => ev.stopPropagation()}>
+            <SectionTitle>제안 인력 편집 — 수주 기여점수 반영 대상</SectionTitle>
+            <div style={{ display: 'grid', gap: S[3], marginTop: S[3] }}>
+              <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>사업 PM (가중 {EVAL_CFG.bidPmW}%)</div>
+                <input value={edit.pm} onChange={ev => setEdit(f => ({ ...f, pm: ev.target.value }))} placeholder="예) 오창민" style={{ width: '100%', padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box' }} /></div>
+              <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>제안참여 인력 (가중 {EVAL_CFG.bidPartW}% · 쉼표로 구분)</div>
+                <input value={edit.participants} onChange={ev => setEdit(f => ({ ...f, participants: ev.target.value }))} placeholder="예) 최영숙, 이원규" style={{ width: '100%', padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box' }} /></div>
+              <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>서류제출·관리 지원 인력 (가중 {EVAL_CFG.bidSuppW}% · 쉼표로 구분)</div>
+                <input value={edit.support} onChange={ev => setEdit(f => ({ ...f, support: ev.target.value }))} placeholder="예) 오누리" style={{ width: '100%', padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box' }} /></div>
+              <div style={{ display: 'flex', gap: S[2], justifyContent: 'flex-end' }}>
+                <Button variant="ghost" onClick={() => setEdit(null)}>취소</Button>
+                <Button variant="primary" onClick={() => { const sp = t => String(t || '').split(/[,\s]+/).map(x => x.trim()).filter(Boolean); updateProposal(edit.id, { pm: edit.pm.trim(), participants: sp(edit.participants), support: sp(edit.support) }); setEdit(null); }}>저장</Button>
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: T.textMute, marginTop: S[3], lineHeight: 1.6 }}>이 제안이 수주 확정되면 위 인력에게 역할 가중대로 수주 기여점수가 반영됩니다(정규직 명단과 이름 일치 필요). 가중치는 정책설정에서 조정.</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -9427,7 +9454,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
       </div>
 
       {view === 'pipeline' ? (
-        <ProjectPipeline proposals={proposals || []} canEdit={canEdit} deleteProposal={deleteProposal} winProposal={winProposal} />
+        <ProjectPipeline proposals={proposals || []} canEdit={canEdit} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} />
       ) : view === 'overhead' ? (
         <OverheadView projects={shown} overheads={overheads || []} currentYear={currentYear} yearFilter={yearFilter}
           policy={policy} setPolicy={setPolicy} canEdit={canEdit}
@@ -11059,7 +11086,7 @@ function AnalyticsView({ employees, results, policy, stats }) {
     return Object.values(map).map(d => ({ ...d, avg: d.count > 0 ? (d.total / d.count) : 0 }));
   }, [employees, results]);
 
-  const gradePieData = policy.grades.map(g => ({
+  const gradePieData = (policy.grades || []).map(g => ({
     name: g.grade, value: stats.gradeCount[g.grade] || 0, grade: g.grade
   })).filter(d => d.value > 0);
 
