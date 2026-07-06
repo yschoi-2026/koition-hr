@@ -2289,7 +2289,8 @@ function calcBidScore(empName, proposals, projects, year) {
     if (ps == null) return;
     const w = (isPM ? EVAL_CFG.bidPmW : isPart ? EVAL_CFG.bidPartW : EVAL_CFG.bidSuppW) / 100;
     if (w <= 0) return;
-    wsum += w; ssum += ps * w;
+    // 역할 가중을 점수 크기에 직접 반영: PM=사업점수×100%, 참여=×60%, 지원=×30% (사업별 균등 평균)
+    wsum += 1; ssum += ps * w;
     breakdown.push({ proposal: p, project: proj, role: isPM ? 'PM' : isPart ? '참여' : '지원', metrics: mm });
   });
   if (wsum === 0) return null;
@@ -9092,11 +9093,23 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 <Td align="right" mono style={{ color: hasLedger ? (e.newOrder > 0 ? T.success : T.danger) : T.textLight }}>{hasLedger ? fmtMoney(e.newOrder) : '-'}</Td>
                 <Td align="right" mono style={{ color: e.card > 0 ? T.warning : T.textLight }}>{hasLedger ? fmtMoney(e.card) : '-'}</Td>
                 <Td align="right" mono><strong style={{ color: e.total >= 0 ? T.success : T.danger }}>{fmtMoney(e.total)}</strong></Td>
-                <Td align="center">{e.score != null ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><Badge color={e.score >= 80 ? T.success : e.score >= 70 ? T.warning : T.danger} size="sm">{e.score}</Badge>{e.track === 'support' && <span title={'비매출 지원트랙: 전사성과40+MBO60' + (e.mbo != null ? ' (MBO ' + e.mbo + ')' : ' · MBO 미입력')} style={{ fontSize: 9, color: '#7C3AED', fontWeight: 700 }}>지원</span>}{e.track === 'sales' && <span title={'영업 트랙: 수주 실적 기준' + (e.bidScore == null ? ' (수주 실적 없음 → 기본점수)' : '')} style={{ fontSize: 9, color: '#0369A1', fontWeight: 700 }}>영업</span>}{e.hasBid && e.track !== 'sales' && <span title={'수주 기여 포함' + (e.bidScore != null ? ' (수주점수 ' + e.bidScore + ')' : '')} style={{ fontSize: 9, color: T.brand, fontWeight: 700 }}>수주</span>}{e.evBonus > 0 && <span title={(e.jikjik ? '겸직' : '') + ' 다축 기여 보너스 +' + e.evBonus} style={{ fontSize: 9, color: T.success, fontWeight: 700 }}>+{e.evBonus}</span>}</span> : '-'}</Td>
+                <Td align="center">{e.score != null ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                    <Badge color={e.score >= 80 ? T.success : e.score >= 70 ? T.warning : T.danger} size="sm">{e.score}</Badge>
+                    {(e.track === 'support' || e.track === 'sales' || (e.hasBid && e.track !== 'sales') || e.evBonus > 0) && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+                        {e.track === 'support' && <span title={'비매출 지원트랙: 전사성과40+MBO60' + (e.mbo != null ? ' (MBO ' + e.mbo + ')' : ' · MBO 미입력')} style={{ fontSize: 9, color: '#7C3AED', fontWeight: 700 }}>지원</span>}
+                        {e.track === 'sales' && <span title={'영업 트랙: 수주 실적 기준' + (e.bidScore == null ? ' (수주 실적 없음 → 기본점수)' : '')} style={{ fontSize: 9, color: '#0369A1', fontWeight: 700 }}>영업</span>}
+                        {e.hasBid && e.track !== 'sales' && <span title={'제안팀 수주 기여 포함' + (e.bidScore != null ? ' (수주점수 ' + e.bidScore + ')' : '')} style={{ fontSize: 9, color: T.brand, fontWeight: 700 }}>제안팀</span>}
+                        {e.evBonus > 0 && <span title={(e.jikjik ? '겸직' : '') + ' 다축 기여 보너스 +' + e.evBonus} style={{ fontSize: 9, color: T.success, fontWeight: 700 }}>+{e.evBonus}</span>}
+                      </span>
+                    )}
+                  </div>
+                ) : '-'}</Td>
                 {canEditLedger && <Td align="center">
                   <span style={{ display: 'inline-flex', gap: 4 }}>
                     <button title="원장 수정 (신규수주·카드)" onClick={() => setLedgerForm({ name: e.name, empId: e.empId, card: e.card || 0, newOrder: e.newOrder || 0 })} style={{ padding: 3, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}><Pencil size={13} /></button>
-                    {(e.card || e.newOrder || e.cnt === 0) ? <button title="원장에서 삭제 (비직원·오분류 정리)" onClick={() => removeLedger(e)} style={{ padding: 3, background: 'transparent', border: 'none', cursor: 'pointer', color: T.danger }}><Trash2 size={13} /></button> : null}
+                    <button title="원장에서 삭제 (신규수주·카드 기록 제거 — 사업 참여는 유지)" onClick={() => removeLedger(e)} style={{ padding: 3, background: 'transparent', border: 'none', cursor: 'pointer', color: T.danger }}><Trash2 size={13} /></button>
                   </span>
                 </Td>}
               </tr>
