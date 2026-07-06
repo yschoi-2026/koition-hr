@@ -2362,7 +2362,65 @@ const INITIAL_PROJECTS = [
 // ============================================================
 // 메인 App
 // ============================================================
-export default function App() {
+class AppErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error('앱 오류:', error, info); }
+  backup = () => {
+    try {
+      const keys = ['koition_hr_v6', 'koition_hr_users', 'koition_hr_last_backup'];
+      const dump = {};
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf('koition') >= 0) dump[k] = localStorage.getItem(k); }
+      keys.forEach(k => { if (!(k in dump)) { const v = localStorage.getItem(k); if (v) dump[k] = v; } });
+      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'koition-hr-백업-' + new Date().toISOString().slice(0, 10) + '.json'; a.click();
+    } catch (e) { alert('백업 실패: ' + e.message); }
+  };
+  resetData = () => {
+    if (!window.confirm('업무 데이터(프로젝트·평가 등)를 초기화합니다.\n계정은 유지됩니다. 먼저 [백업 다운로드]를 하셨나요?')) return;
+    try {
+      const remove = [];
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf('koition') >= 0 && k !== 'koition_hr_users') remove.push(k); }
+      remove.forEach(k => localStorage.removeItem(k));
+      window.location.reload();
+    } catch (e) { alert('초기화 실패: ' + e.message); }
+  };
+  resetAll = () => {
+    if (!window.confirm('계정을 포함한 모든 데이터를 초기화합니다.\n초기 관리자(cys / uj!5n3Rs)로 재설정됩니다. 계속할까요?')) return;
+    try {
+      const remove = [];
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf('koition') >= 0) remove.push(k); }
+      remove.forEach(k => localStorage.removeItem(k));
+      window.location.reload();
+    } catch (e) { alert('초기화 실패: ' + e.message); }
+  };
+  render() {
+    if (!this.state.error) return this.props.children;
+    const err = this.state.error;
+    return (
+      <div style={{ minHeight: '100vh', background: '#F5F7FA', fontFamily: "'Pretendard', 'Malgun Gothic', sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div style={{ maxWidth: 560, width: '100%', background: '#fff', borderRadius: 12, border: '1px solid #E2E8F0', padding: 28, boxShadow: '0 8px 30px rgba(0,0,0,0.08)' }}>
+          <div style={{ fontSize: 19, fontWeight: 800, color: '#B42318', marginBottom: 8 }}>⚠ 화면 표시 중 오류가 발생했습니다</div>
+          <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.7, marginBottom: 12 }}>
+            대부분 이전 버전에서 저장된 데이터와 새 버전의 충돌입니다. 아래 순서대로 진행하세요:<br />
+            ① <strong>백업 다운로드</strong>(현재 데이터 보존) → ② <strong>업무 데이터 초기화</strong>(계정 유지) → 재로그인 후 [불러오기]로 백업 복원 시도
+          </div>
+          <div style={{ background: '#FBEDEC', border: '1px solid #F1C3C0', borderRadius: 8, padding: '10px 12px', fontSize: 11.5, color: '#7A2E28', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', marginBottom: 16, maxHeight: 120, overflow: 'auto' }}>
+            {String(err && (err.message || err))}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={this.backup} style={{ padding: '10px 14px', borderRadius: 8, border: 'none', background: '#1B3A6F', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>① 백업 다운로드</button>
+            <button onClick={this.resetData} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #D97706', background: '#fff', color: '#B45309', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>② 업무 데이터 초기화(계정 유지)</button>
+            <button onClick={this.resetAll} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #B42318', background: '#fff', color: '#B42318', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>전체 초기화(계정 포함)</button>
+          </div>
+          <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 12 }}>오류가 반복되면 위 빨간 박스의 메시지를 관리자(경영지원)에게 전달하세요.</div>
+        </div>
+      </div>
+    );
+  }
+}
+
+function App() {
   const [user, setUser] = useState(null);
   const [users, setUsers] = useState([]);  // 해시된 비밀번호 포함 사용자 배열
   const [usersInitialized, setUsersInitialized] = useState(false);
@@ -2848,7 +2906,7 @@ export default function App() {
   const visibleMenus = allMenus.filter(m => m.roles.includes(user.role) || (isExec && ['report', 'loans', 'receivables'].includes(m.id)));
   const visibleEmployees = employees.filter(e => {
     if (user.role === 'admin' || EXEC_IDS.includes(user.empId)) return true;  // 임원=전사 조회
-    if (user.role === 'manager' || user.role === 'evaluator') return e.dept.includes(user.deptScope) || e.dept === user.deptScope;
+    if (user.role === 'manager' || user.role === 'evaluator') return String(e.dept || '').includes(user.deptScope || '') || e.dept === user.deptScope;
     return e.id === user.empId;
   });
 
@@ -14579,4 +14637,9 @@ ${sectionsHtml}
 <script>setTimeout(() => { window.print(); }, 800);</script>
 </body></html>`;
   win.document.write(html); win.document.close();
+}
+
+
+export default function AppRoot() {
+  return <AppErrorBoundary><App /></AppErrorBoundary>;
 }
