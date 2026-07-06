@@ -2624,6 +2624,7 @@ function App() {
     return { success: true, newUsername: trimmed };
   };
 
+  const dataLoadedRef = useRef(false);   // 자동 저장 가드: 초기 로드 완료 전에는 저장 안 함(기존 데이터 보호)
   useEffect(() => {
     try {
       const res = localStorage.getItem('koition_hr_v6');
@@ -2659,6 +2660,7 @@ function App() {
         if (data.history) setHistory(data.history);
       }
     } catch (e) {}
+  dataLoadedRef.current = true;
   }, []);
 
   const showToast = (message, type = 'success') => {
@@ -2688,6 +2690,16 @@ function App() {
       showToast('데이터가 저장되었습니다');
     } catch (e) { showToast('저장 실패', 'error'); }
   };
+  // 자동 저장: 데이터 변경 후 1초 디바운스로 브라우저에 기록 (불러오기·입력 후 저장 누락 방지)
+  useEffect(() => {
+    if (!dataLoadedRef.current) return;
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem('koition_hr_v6', JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, history }));
+      } catch (e) { /* 저장 공간 부족 등 — 수동 저장/내보내기 사용 */ }
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, history]);
   const markBackup = () => { try { localStorage.setItem('koition_hr_last_backup', String(Date.now())); } catch(e){} };
   const [backupDue, setBackupDue] = useState(false);
   useEffect(() => {
@@ -3005,7 +3017,7 @@ function App() {
               else showToast(`${emp.name}님의 계정을 찾을 수 없습니다`);
             }} />}
             {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} finalizeEval={finalizeEval} projects={projects} proposals={proposals} peerEvals={peerEvals} />}
-            {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} />}
+            {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} />}
             {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} />}
             {tab === 'loans' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <LoansView loans={loans} setLoans={setLoans} employees={employees} />}
             {tab === 'receivables' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ReceivablesView receivables={receivables} setReceivables={setReceivables} projects={projects} />}
@@ -9297,7 +9309,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   );
 }
 
-function ProjectProfitView({ user, employees, projects, proposals, overheads, upsertProject, deleteProject, bulkUpsertProjects, bulkUpsertProposals, deleteProposal, upsertOverhead, deleteOverhead, bulkUpsertOverheads, bulkSetEmpLedger, currentYear, policy, setPolicy }) {
+function ProjectProfitView({ user, employees, projects, proposals, overheads, upsertProject, deleteProject, bulkUpsertProjects, bulkUpsertProposals, deleteProposal, winProposal, updateProposal, upsertOverhead, deleteOverhead, bulkUpsertOverheads, bulkSetEmpLedger, currentYear, policy, setPolicy }) {
   const canEdit = user.role === 'admin' || user.deptScope === '경영지원부';
   const cfg = (policy && policy.diag) || {};
   const pmFloor = cfg.pmFloor ?? PM_MIN_CONTRIBUTION;
@@ -11094,47 +11106,7 @@ function AnalyticsView({ employees, results, policy, stats }) {
     <div>
       <PageHeader eyebrow="Analytics" title="통계 분석" subtitle="부서별·직무군별·레벨별 평가 결과 및 보상 분포 분석" />
       
-      {user.role === 'admin' && (
-        <div className="no-print" style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[4], marginBottom: S[5], display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: S[3], flexWrap: 'wrap' }}>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{currentYear}년 평가 확정 스냅샷</div>
-            <div style={{ fontSize: 11.5, color: T.textMute, marginTop: 2 }}>
-              확정 시 현재 점수·등급·정책·목표(MBO)·동료평가가 연도 이력으로 고정 저장됩니다 (이의신청·차년도 비교 근거).
-              {(history || []).some(h => Number(h.year) === Number(currentYear)) && <strong style={{ color: T.success }}> · 이미 {currentYear}년 스냅샷 있음(재실행 시 갱신)</strong>}
-            </div>
-          </div>
-          <Button variant="primary" icon={CheckCircle2} onClick={() => { if (window.confirm(`${currentYear}년 평가를 확정 스냅샷으로 저장할까요?\n(재실행하면 기존 ${currentYear}년 스냅샷을 덮어씁니다)`)) closeYearSnapshot && closeYearSnapshot(); }}>연말 확정 스냅샷 저장</Button>
-        </div>
-      )}
-
-      {(() => {
-        const low = (employees || []).filter(e => e.evalTarget !== false && results[e.id]?.total != null && (results[e.id].total < 60 || results[e.id]?.grade?.grade === 'D'));
-        if (low.length === 0) return null;
-        return (
-          <div style={{ ...card({ borderLeft: `4px solid ${T.danger}` }), padding: S[6], marginBottom: S[5] }}>
-            <SectionTitle>저성과 관리(PIP) 검토 대상 · {low.length}명</SectionTitle>
-            <div style={{ overflow: 'auto', marginTop: S[3] }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 520 }}>
-                <thead><tr style={{ background: T.surfaceAlt }}><Th>직원</Th><Th>부서</Th><Th align="center">종합점수</Th><Th align="center">등급</Th><Th>권고 절차</Th></tr></thead>
-                <tbody>
-                  {low.map((e, i) => (
-                    <tr key={i}>
-                      <Td><strong>{e.name}</strong> <span style={{ fontSize: 10, color: T.textMute }}>{e.position}</span></Td>
-                      <Td style={{ fontSize: 11, color: T.textMute }}>{shortName(e.dept)}</Td>
-                      <Td align="center" mono>{Math.round(results[e.id].total)}</Td>
-                      <Td align="center"><GradeBadge grade={results[e.id]?.grade?.grade} size="sm" /></Td>
-                      <Td style={{ fontSize: 11.5 }}>① 면담·원인 파악 → ② 3개월 개선목표 서면 부여 → ③ 월 점검 기록 → ④ 재평가 후 인사조치 검토</Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div style={{ marginTop: S[3], fontSize: 11.5, color: T.textMute, lineHeight: 1.7 }}>
-              근로기준법상 해고는 정당한 사유와 절차(개선 기회 부여·기록·서면 통지)가 요구됩니다. 위 절차를 문서화(면담일지·개선계획서·월 점검표)해 두면 인사조치 시 법적 리스크를 줄일 수 있습니다. 개선목표는 연간 목표(MBO) 입력란에 기록해 관리하세요.
-            </div>
-          </div>
-        );
-      })()}
+      
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[5], marginBottom: S[5] }}>
         <div style={{ ...card(), padding: S[6] }}>
