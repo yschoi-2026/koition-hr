@@ -3836,6 +3836,16 @@ function AdminPasswordResetModal({ targetUser, onReset, onClose, onSuccess }) {
 // ============================================================
 // Header
 // ============================================================
+function ImportButton({ handleImport }) {
+  const ref = React.useRef(null);
+  return (
+    <>
+      <Button variant="outline" size="sm" icon={Upload} onClick={() => ref.current && ref.current.click()}>불러오기</Button>
+      <input ref={ref} type="file" accept=".json" onChange={(e) => { handleImport(e); if (ref.current) ref.current.value = ''; }} style={{ display: 'none' }} />
+    </>
+  );
+}
+
 function Header({ user, onLogout, handleSave, handleExport, handleImport, onChangePassword }) {
   const roleConfig = {
     admin: { label: '관리자', color: T.brand },
@@ -3932,10 +3942,7 @@ function Header({ user, onLogout, handleSave, handleExport, handleImport, onChan
             <span className="hide-mobile" style={{ display: 'flex', gap: 8 }}>
               <Button variant="outline" size="sm" icon={Save} onClick={handleSave}>저장</Button>
               <Button variant="primary" size="sm" icon={Download} onClick={handleExport}>내보내기</Button>
-              <label>
-                <Button variant="outline" size="sm" icon={Upload} as="span">불러오기</Button>
-                <input type="file" accept=".json" onChange={handleImport} style={{ display: 'none' }} />
-              </label>
+              <ImportButton handleImport={handleImport} />
             </span>
           )}
           <Button variant="ghost" size="sm" icon={LogOut} onClick={onLogout}>로그아웃</Button>
