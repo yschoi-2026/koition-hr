@@ -2868,6 +2868,10 @@ function App() {
     setTimeout(() => setHistoryHighlight(null), 5000);
   };
 
+  const isMobile = useIsMobile();
+  const [navOpen, setNavOpen] = useState(false);
+  useEffect(() => { setNavOpen(false); }, [tab]);
+
   if (!user) {
     if (!usersInitialized) {
       return (
@@ -2910,9 +2914,6 @@ function App() {
     return e.id === user.empId;
   });
 
-  const isMobile = useIsMobile();
-  const [navOpen, setNavOpen] = useState(false);
-  useEffect(() => { setNavOpen(false); }, [tab]);
   return (
     <>
       <GlobalStyles />
