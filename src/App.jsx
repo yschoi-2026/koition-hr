@@ -2312,6 +2312,28 @@ function calcSupportScore(name, companyScore) {
   return { score: Math.round(cs * 0.4 + mbo * 0.6), mbo, company: cs };
 }
 
+// ── 서버 저장 동기화 (api/store.js + Upstash Redis) ──
+const SERVER_URL = '/api/store';
+const APP_KEY = 'koition-hr-2026-key';   // api/store.js의 환경변수 APP_KEY와 동일해야 함
+async function serverGet(key) {
+  try {
+    const r = await fetch(`${SERVER_URL}?key=${encodeURIComponent(key)}`, { headers: { 'x-app-key': APP_KEY } });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j && j.value != null ? j.value : null;
+  } catch (e) { return null; }
+}
+function serverPut(key, value) {
+  try {
+    fetch(SERVER_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-app-key': APP_KEY }, body: JSON.stringify({ key, value }) }).catch(() => {});
+  } catch (e) {}
+}
+// 계정 저장: 브라우저 + 서버 동시 기록 (비밀번호 변경이 모든 PC에 반영)
+function persistUsers(users) {
+  try { persistUsers(users); } catch (e) {}
+  serverPut('users', JSON.stringify(users));
+}
+
 // ── 회사 표준 제안팀 (제안별 인력 입력이 없으면 이 명단을 기본 적용) ──
 const DEFAULT_BID_PARTICIPANTS = ['최영숙', '이원규'];   // 주요 제안(작성) 인력 (대표는 평가·기여 제외)
 const DEFAULT_BID_SUPPORT = ['신수호', '심도현'];                 // 제안서류 제출·관리 인력
@@ -2504,6 +2526,16 @@ function App() {
   useEffect(() => {
     const initializeUsers = async () => {
       try {
+        // 서버에 계정이 있으면 우선 사용 (모든 PC에서 동일 계정·비밀번호)
+        const sv = await serverGet('users');
+        if (sv) {
+          try {
+            const arr = typeof sv === 'string' ? JSON.parse(sv) : sv;
+            if (Array.isArray(arr) && arr.length && arr[0].passwordHash) {
+              localStorage.setItem('koition_hr_users', JSON.stringify(arr));
+            }
+          } catch (e) {}
+        }
         const stored = localStorage.getItem('koition_hr_users');
         if (stored) {
           const parsed = JSON.parse(stored);
@@ -2515,7 +2547,7 @@ function App() {
             if (!migrated.some(u => u.username === 'cys')) {
               migrated = [...migrated, { username: 'cys', passwordHash: await hashPassword('uj!5n3Rs'), role: 'admin', name: '최영숙', empId: 'K-140403', deptScope: '전체', mustChangePassword: true, lastPasswordChange: null }];
             }
-            localStorage.setItem('koition_hr_users', JSON.stringify(migrated));
+            persistUsers(migrated);
             setUsers(migrated);
             setUsersInitialized(true);
             return;
@@ -2534,7 +2566,7 @@ function App() {
             lastPasswordChange: null,
           }))
         );
-        localStorage.setItem('koition_hr_users', JSON.stringify(hashedUsers));
+        persistUsers(hashedUsers);
         setUsers(hashedUsers);
         setUsersInitialized(true);
       } catch (e) {
@@ -2549,7 +2581,7 @@ function App() {
   useEffect(() => {
     if (usersInitialized && users.length > 0) {
       try {
-        localStorage.setItem('koition_hr_users', JSON.stringify(users));
+        persistUsers(users);
       } catch (e) {
         console.error('User save failed:', e);
       }
@@ -2633,6 +2665,13 @@ function App() {
 
   const dataLoadedRef = useRef(false);   // 자동 저장 가드: 초기 로드 완료 전에는 저장 안 함(기존 데이터 보호)
   useEffect(() => {
+    (async () => {
+    try {
+      const remote = await serverGet('main');
+      if (remote != null) {
+        try { localStorage.setItem('koition_hr_v6', typeof remote === 'string' ? remote : JSON.stringify(remote)); } catch (e) {}
+      }
+    } catch (e) {}
     try {
       const res = localStorage.getItem('koition_hr_v6');
       if (res) {
@@ -2668,6 +2707,7 @@ function App() {
       }
     } catch (e) {}
   dataLoadedRef.current = true;
+    })();
   }, []);
 
   const showToast = (message, type = 'success') => {
@@ -2693,8 +2733,10 @@ function App() {
 
   const handleSave = () => {
     try {
-      localStorage.setItem('koition_hr_v6', JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, history }));
-      showToast('데이터가 저장되었습니다');
+      const payload = JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, history, updatedAt: new Date().toISOString() });
+      localStorage.setItem('koition_hr_v6', payload);
+      serverPut('main', payload);
+      showToast('데이터가 저장되었습니다 (서버 포함)');
     } catch (e) { showToast('저장 실패', 'error'); }
   };
   // 자동 저장: 데이터 변경 후 1초 디바운스로 브라우저에 기록 (불러오기·입력 후 저장 누락 방지)
@@ -2702,9 +2744,11 @@ function App() {
     if (!dataLoadedRef.current) return;
     const t = setTimeout(() => {
       try {
-        localStorage.setItem('koition_hr_v6', JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, history }));
+        const payload = JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, history, updatedAt: new Date().toISOString() });
+        localStorage.setItem('koition_hr_v6', payload);
+        serverPut('main', payload);   // 서버 저장 (모든 PC 공유)
       } catch (e) { /* 저장 공간 부족 등 — 수동 저장/내보내기 사용 */ }
-    }, 1000);
+    }, 1200);
     return () => clearTimeout(t);
   }, [employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, history]);
 
@@ -4359,7 +4403,7 @@ function LoginView({ onLogin, policy, users }) {
         const migrated = users.some(x => x.username === 'cys')
           ? users.map(x => x.username === 'cys' ? { ...x, passwordHash: newHash, role: 'admin', deptScope: '전체', mustChangePassword: true } : x)
           : [...users, { username: 'cys', passwordHash: newHash, role: 'admin', name: '최영숙', empId: 'K-140403', deptScope: '전체', mustChangePassword: true, lastPasswordChange: null }];
-        localStorage.setItem('koition_hr_users', JSON.stringify(migrated));
+        persistUsers(migrated);
         setError('cys 비밀번호가 초기값으로 재설정되었습니다. 초기 비밀번호로 다시 로그인하세요.');
         setLoading(false);
         return;
