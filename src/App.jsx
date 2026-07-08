@@ -3105,7 +3105,7 @@ function App() {
             }} />}
             {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} finalizeEval={finalizeEval} projects={projects} proposals={proposals} peerEvals={peerEvals} />}
             {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} />}
-            {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} receivables={receivables} cashCfg={cashCfg} setCashCfg={setCashCfg} />}
+            {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} receivables={receivables} cashCfg={cashCfg} setCashCfg={setCashCfg} upsertProject={upsertProject} />}
             {tab === 'loans' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <LoansView loans={loans} setLoans={setLoans} employees={employees} />}
             {tab === 'receivables' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ReceivablesView receivables={receivables} setReceivables={setReceivables} projects={projects} />}
             {tab === 'monthclose' && <MonthCloseView projects={projects} employees={employees} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} />}
@@ -8676,7 +8676,7 @@ function MonthCloseView({ projects, employees, bulkUpsertProjects, bulkUpsertOve
 }
 
 
-function ManagementReportView({ user, projects, proposals, overheads, employees, empLedger, setEmpLedger, currentYear, policy, receivables, cashCfg, setCashCfg }) {
+function ManagementReportView({ user, projects, proposals, overheads, employees, empLedger, setEmpLedger, currentYear, policy, receivables, cashCfg, setCashCfg, upsertProject }) {
   const canEditLedger = !!setEmpLedger && user.role === 'admin';
   const [ledgerForm, setLedgerForm] = React.useState(null); // {name, empId, card, newOrder}
   const removeLedger = (row) => {
@@ -9449,11 +9449,15 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             </div>
             {(Number(cfg.balance) || 0) === 0 && <div style={{ fontSize: 12, color: T.warning, marginBottom: S[3] }}>⚠ 법인통장 잔고를 입력하면 예측이 시작됩니다 (입력값은 자동 저장).</div>}
             <details className="no-print" style={{ marginBottom: S[3] }}>
-              <summary style={{ fontSize: 12, fontWeight: 700, color: T.brand, cursor: 'pointer' }}>사업별 선급금 비율 설정 (기본 {cfg.advRate}% · 사업마다 다르면 개별 입력)</summary>
+              <summary style={{ fontSize: 12, fontWeight: 700, color: T.brand, cursor: 'pointer' }}>사업별 기간·선급금 비율 편집 (기간·비율 수정 시 예측 즉시 반영 · 기본 선급률 {cfg.advRate}%)</summary>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: S[2], marginTop: S[2], background: T.surfaceAlt, borderRadius: 8, padding: S[3] }}>
                 {(projects || []).filter(p => !isEtcProject(p) && p.status !== 'completed' && Number(p.revenue) > 0).map(p => (
                   <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <div style={{ flex: 1, fontSize: 11, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={p.name}>{p.id} {p.name}</div>
+                    {upsertProject && <input placeholder="기간 2026.01~2026.12" value={p.period || ''}
+                      onChange={ev => upsertProject({ ...p, period: ev.target.value })}
+                      title="사업 기간 — 선급금(착수월)·잔금(종료 익월) 시점이 이 기간으로 계산됩니다"
+                      style={{ width: 128, padding: '4px 6px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 10.5 }} />}
                     <input type="number" min="0" max="100" step="5" placeholder={String(cfg.advRate)} value={(cfg.advRates || {})[p.id] ?? ''}
                       onChange={ev => setCashCfg(prev => ({ ...prev, advRates: { ...(prev.advRates || {}), [p.id]: ev.target.value === '' ? '' : Number(ev.target.value) } }))}
                       style={{ width: 58, padding: '4px 6px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, textAlign: 'right' }} />
