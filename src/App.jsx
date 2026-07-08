@@ -2316,6 +2316,9 @@ function calcSupportScore(name, companyScore) {
   return { score: Math.round(cs * 0.4 + mbo * 0.6), mbo, company: cs };
 }
 
+// ── 경영회계 CMS 초기 데이터 (회계 원장·매출·급여 실적 반영) ──
+const INITIAL_FIN = {"period": "2026-06", "sales": {"용역": 1376809157.0, "상품": 9527273.0}, "salesMonthly": [146622070.0, 107737340.0, 10685040.0, 551286540.0, 608339540.0, 298790540.0, 0], "salesMonths": ["2026.1", "2026.2", "2026.3", "2026.4", "2026.5", "2026.6", "2026.7"], "sga": {"직원급여": 110187850.0, "잡급": 58009600.0, "퇴직급여": 8263728.0, "복리후생비": 81444494.0, "여비교통비": 12516672.0, "접대비-카드": 5189744.0, "접대비-일반": 3000000.0, "통신비": 3341872.0, "소모품비": 98889334.0, "세금과공과금": 81840846.0, "지급임차료": 32935754.0, "수선비": 260000.0, "보험료": 25219686.0, "차량유지비": 10884095.0, "사무용품비": 670515.0, "수도광열비": 653735.0, "지급수수료": 17035255.0, "도서인쇄비": 12717545.0, "외주용역비": 297297935.0, "건물관리비": 24450813.0, "운반비": 2035000.0}, "etc": {"이자비용": 14718707.0, "국고보조금": 9684592.0}, "salaryReg": 93844670, "salaryCon": 88379060, "clients": [{"n": "행정안전부 국가기록원", "t": 394562000.0}, {"n": "병무청", "t": 337324000.0}, {"n": "해군본부", "t": 241290000.0}, {"n": "강원특별자치도", "t": 136586800.0}, {"n": "서울대학교 기록관", "t": 123480000.0}, {"n": "국방과학연구소", "t": 120800000.0}, {"n": "제천시청", "t": 100831500.0}, {"n": "행정안전부 대통령기록관", "t": 76500000.0}, {"n": "여주시청", "t": 75383000.0}, {"n": "(주)오늘소프트", "t": 42750000.0}, {"n": "주시회사 라온투비", "t": 26400000.0}, {"n": "대전광역시 중구청", "t": 20960000.0}]};
+
 // ── 서버 저장 동기화 (api/store.js + Upstash Redis) ──
 const SERVER_URL = '/api/store';
 const APP_KEY = 'koition-hr-2026-key';   // api/store.js의 환경변수 APP_KEY와 동일해야 함
@@ -2483,6 +2486,7 @@ function App() {
   ]);  // 임직원 대여금 원장
   const [receivables, setReceivables] = useState([]);  // 수금 관리: {id,project,client,amount,dueDate,paidDate,note}
   const [cashCfg, setCashCfg] = useState({ balance: 0, advRate: 50, advRates: {}, monthlyLabor: 237000000, monthlyOpex: 51000000, vatQ: 30000000, corpTax: 20000000, safety: 50000000 });  // 자금 예측 설정
+  const [fin, setFin] = useState(INITIAL_FIN);  // 경영회계 CMS 데이터
   const [history, setHistory] = useState([HISTORY_2025]);
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [historyHighlight, setHistoryHighlight] = useState(null);  // {empId, year}
@@ -2715,6 +2719,7 @@ function App() {
         if (data.loans) setLoans(data.loans);
         if (data.receivables) setReceivables(data.receivables);
         if (data.cashCfg) setCashCfg(prev => ({ ...prev, ...data.cashCfg }));
+        if (data.fin) setFin(data.fin);
         if (data.history) setHistory(data.history);
       }
     } catch (e) {}
@@ -2745,7 +2750,7 @@ function App() {
 
   const handleSave = () => {
     try {
-      const payload = JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, history, updatedAt: new Date().toISOString() });
+      const payload = JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, fin, history, updatedAt: new Date().toISOString() });
       localStorage.setItem('koition_hr_v6', payload);
       serverPut('main', payload);
       showToast('데이터가 저장되었습니다 (서버 포함)');
@@ -2756,13 +2761,13 @@ function App() {
     if (!dataLoadedRef.current) return;
     const t = setTimeout(() => {
       try {
-        const payload = JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, history, updatedAt: new Date().toISOString() });
+        const payload = JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, fin, history, updatedAt: new Date().toISOString() });
         localStorage.setItem('koition_hr_v6', payload);
         serverPut('main', payload);   // 서버 저장 (모든 PC 공유)
       } catch (e) { /* 저장 공간 부족 등 — 수동 저장/내보내기 사용 */ }
     }, 1200);
     return () => clearTimeout(t);
-  }, [employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, history]);
+  }, [employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, fin, history]);
 
   // 기존 수주 사업 소급: 2026년 등록 사업은 전부 제안팀 수주 성과 → 수주 확정 제안 자동 생성(중복 방지·기타 제외)
   useEffect(() => {
@@ -2798,7 +2803,7 @@ function App() {
   }, [user]);
   const handleExport = () => {
     markBackup(); setBackupDue(false);
-    const data = { year: currentYear, employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, history };
+    const data = { year: currentYear, employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, fin, history };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -2839,6 +2844,7 @@ function App() {
         if (data.loans) setLoans(data.loans);
         if (data.receivables) setReceivables(data.receivables);
         if (data.cashCfg) setCashCfg(prev => ({ ...prev, ...data.cashCfg }));
+        if (data.fin) setFin(data.fin);
         if (data.history) setHistory(data.history);
         showToast('데이터를 불러왔습니다');
       } catch (err) { showToast('파일 형식이 올바르지 않습니다', 'error'); }
@@ -3039,6 +3045,7 @@ function App() {
     { id: 'evaluation', label: '평가 입력', icon: FileText, roles: ['admin', 'manager', 'evaluator'] },
     { id: 'projects', label: '프로젝트 수익성', icon: Briefcase, roles: ['admin', 'manager'] },
     { id: 'report', label: '경영보고서', icon: FileBarChart, roles: ['admin'] },
+    { id: 'cms', label: '경영회계 CMS', icon: Layers, roles: ['admin'] },
     { id: 'monthclose', label: '월마감 변환', icon: Upload, roles: ['admin', 'manager'] },
     { id: 'loans', label: '대여금 관리', icon: Wallet, roles: ['admin'] },
     { id: 'receivables', label: '수금 관리', icon: Calendar, roles: ['admin'] },
@@ -3053,7 +3060,7 @@ function App() {
   // 각자대표(정일영·최재교): 전사 경영보고서·평가정보 열람 허용 (대여금·수금·정책 편집은 admin 전용 유지)
   const EXEC_IDS = ['K-140401', 'K-140402'];
   const isExec = user.role === 'admin' || EXEC_IDS.includes(user.empId);
-  const visibleMenus = allMenus.filter(m => m.roles.includes(user.role) || (isExec && ['report', 'loans', 'receivables'].includes(m.id)));
+  const visibleMenus = allMenus.filter(m => m.roles.includes(user.role) || (isExec && ['report', 'loans', 'receivables', 'cms'].includes(m.id)));
   const visibleEmployees = employees.filter(e => {
     if (user.role === 'admin' || EXEC_IDS.includes(user.empId)) return true;  // 임원=전사 조회
     if (user.role === 'manager' || user.role === 'evaluator') return String(e.dept || '').includes(user.deptScope || '') || e.dept === user.deptScope;
@@ -3107,7 +3114,8 @@ function App() {
             }} />}
             {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} finalizeEval={finalizeEval} projects={projects} proposals={proposals} peerEvals={peerEvals} />}
             {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} />}
-            {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} receivables={receivables} cashCfg={cashCfg} setCashCfg={setCashCfg} upsertProject={upsertProject} />}
+            {tab === 'cms' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <AccountingCmsView fin={fin} setFin={setFin} projects={projects} cashCfg={cashCfg} canEdit={user.role === 'admin'} />}
+            {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} receivables={receivables} cashCfg={cashCfg} setCashCfg={setCashCfg} upsertProject={upsertProject} fin={fin} />}
             {tab === 'loans' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <LoansView loans={loans} setLoans={setLoans} employees={employees} />}
             {tab === 'receivables' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ReceivablesView receivables={receivables} setReceivables={setReceivables} projects={projects} />}
             {tab === 'monthclose' && <MonthCloseView projects={projects} employees={employees} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} />}
@@ -8678,7 +8686,146 @@ function MonthCloseView({ projects, employees, bulkUpsertProjects, bulkUpsertOve
 }
 
 
-function ManagementReportView({ user, projects, proposals, overheads, employees, empLedger, setEmpLedger, currentYear, policy, receivables, cashCfg, setCashCfg, upsertProject }) {
+function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
+  const [edit, setEdit] = React.useState(false);
+  const f = fin || {};
+  const salesTotal = (f.sales?.용역 || 0) + (f.sales?.상품 || 0);
+  const sgaEntries = Object.entries(f.sga || {}).sort((a, b) => b[1] - a[1]);
+  const sgaTotal = sgaEntries.reduce((s, [, v]) => s + v, 0);
+  const etcExp = (f.etc?.이자비용 || 0);
+  const opProfit = salesTotal - sgaTotal;
+  const netProfit = opProfit - etcExp + (f.etc?.국고보조금 || 0);
+  const opMargin = salesTotal ? (opProfit / salesTotal * 100) : 0;
+  const salaryTotal = (f.salaryReg || 0) + (f.salaryCon || 0);
+  const monthlyChart = (f.salesMonths || []).map((m, i) => ({ name: String(m).replace('2026.', '') + '월', 매출: Math.round((f.salesMonthly?.[i] || 0) / 1000000) }));
+  const upNum = (path, v) => setFin(prev => {
+    const n = JSON.parse(JSON.stringify(prev || {}));
+    const ks = path.split('.'); let o = n;
+    for (let i = 0; i < ks.length - 1; i++) { o[ks[i]] = o[ks[i]] || {}; o = o[ks[i]]; }
+    o[ks[ks.length - 1]] = Number(String(v).replace(/[^\d.-]/g, '')) || 0;
+    return n;
+  });
+
+  const KPI = ({ label, value, sub, tone }) => (
+    <div style={{ ...card(), padding: S[4], flex: 1, minWidth: 150 }}>
+      <div style={{ fontSize: 11.5, color: T.textMute, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 800, color: tone || T.ink, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      {sub && <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+  const eok = (n) => (n / 100000000).toFixed(2) + '억';
+
+  return (
+    <div>
+      <PageHeader eyebrow="Management Accounting" title="경영회계 CMS" subtitle={`회계 실적 통합 대시보드 · 기준 ${f.period || '-'} 누계`}
+        action={canEdit && <Button variant={edit ? 'primary' : 'outline'} size="sm" icon={edit ? CheckCircle2 : Settings} onClick={() => setEdit(e => !e)}>{edit ? '편집 완료' : '데이터 편집'}</Button>} />
+
+      {/* 핵심 KPI */}
+      <div style={{ display: 'flex', gap: S[3], flexWrap: 'wrap', marginBottom: S[4] }}>
+        <KPI label="매출 (누계)" value={eok(salesTotal)} sub={`용역 ${eok(f.sales?.용역 || 0)} + 상품 ${eok(f.sales?.상품 || 0)}`} tone={T.brand} />
+        <KPI label="판관비 (누계)" value={eok(sgaTotal)} sub={`${sgaEntries.length}개 계정`} />
+        <KPI label="영업이익" value={eok(opProfit)} sub={`영업이익률 ${opMargin.toFixed(1)}%`} tone={opProfit >= 0 ? T.success : T.danger} />
+        <KPI label="당기순이익(추정)" value={eok(netProfit)} sub={`이자비용 차감 후`} tone={netProfit >= 0 ? T.success : T.danger} />
+        <KPI label="인건비 (6월/월)" value={eok(salaryTotal)} sub={`정규 ${eok(f.salaryReg || 0)} + 계약 ${eok(f.salaryCon || 0)}`} />
+      </div>
+
+      {/* 월별 매출 추이 */}
+      <div style={{ ...card(), padding: S[4], marginBottom: S[4] }}>
+        <SectionTitle>월별 매출 추이 (백만원)</SectionTitle>
+        <div style={{ height: 200, marginTop: S[2] }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={monthlyChart} margin={{ top: 8, right: 10, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 10 }} unit="M" />
+              <Tooltip formatter={(v) => v.toLocaleString() + '백만원'} />
+              <Bar dataKey="매출" fill={T.brand} radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: S[4] }}>
+        {/* 판관비 구조 */}
+        <div style={{ ...card(), padding: S[4] }}>
+          <SectionTitle>판매관리비 구조</SectionTitle>
+          <div style={{ overflow: 'auto', maxHeight: 340 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead><tr style={{ background: T.surfaceAlt }}><Th>계정</Th><Th align="right">금액</Th><Th align="right">비중</Th></tr></thead>
+              <tbody>
+                {sgaEntries.map(([k, v]) => (
+                  <tr key={k}>
+                    <Td>{k}</Td>
+                    <Td align="right" mono>{edit ? <input value={fmtInput(v)} onChange={e => upNum('sga.' + k, e.target.value)} style={{ width: 110, textAlign: 'right', border: `1px solid ${T.border}`, borderRadius: 4, padding: '2px 5px', fontSize: 11.5 }} /> : fmtMoney(v)}</Td>
+                    <Td align="right" style={{ color: T.textMute }}>{sgaTotal ? (v / sgaTotal * 100).toFixed(1) : 0}%</Td>
+                  </tr>
+                ))}
+                <tr style={{ borderTop: `2px solid ${T.border}`, fontWeight: 700 }}><Td>합계</Td><Td align="right" mono>{fmtMoney(sgaTotal)}</Td><Td align="right">100%</Td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* 거래처별 매출 */}
+        <div style={{ ...card(), padding: S[4] }}>
+          <SectionTitle>주요 거래처별 매출 (누계)</SectionTitle>
+          <div style={{ overflow: 'auto', maxHeight: 340 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead><tr style={{ background: T.surfaceAlt }}><Th>거래처</Th><Th align="right">매출</Th><Th align="right">비중</Th></tr></thead>
+              <tbody>
+                {(f.clients || []).map((c, i) => (
+                  <tr key={i}><Td>{c.n}</Td><Td align="right" mono>{fmtMoney(c.t)}</Td><Td align="right" style={{ color: T.textMute }}>{salesTotal ? (c.t / salesTotal * 100).toFixed(1) : 0}%</Td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* 손익 요약 + 편집 */}
+      <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[4], marginTop: S[4] }}>
+        <SectionTitle>손익 요약 (Income Statement)</SectionTitle>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: S[2] }}>
+          <tbody>
+            {[
+              ['매출액', salesTotal, false],
+              ['(−) 판매관리비', sgaTotal, false],
+              ['영업이익', opProfit, true],
+              ['(−) 이자비용', etcExp, false],
+              ['(+) 국고보조금', f.etc?.국고보조금 || 0, false],
+              ['당기순이익(추정)', netProfit, true],
+            ].map(([label, val, bold], i) => (
+              <tr key={i} style={bold ? { borderTop: `1px solid ${T.border}`, background: T.surfaceAlt } : undefined}>
+                <Td style={{ fontWeight: bold ? 700 : 400 }}>{label}</Td>
+                <Td align="right" mono style={{ fontWeight: bold ? 800 : 400, color: bold && val < 0 ? T.danger : bold ? T.brand : T.ink }}>{fmtMoney(val)}</Td>
+                <Td align="right" style={{ color: T.textMute, width: 70 }}>{salesTotal ? (val / salesTotal * 100).toFixed(1) + '%' : ''}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {edit && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: S[3], marginTop: S[4], background: T.surfaceAlt, borderRadius: 8, padding: S[3] }}>
+            {[['용역매출', 'sales.용역'], ['상품매출', 'sales.상품'], ['이자비용', 'etc.이자비용'], ['국고보조금', 'etc.국고보조금'], ['정규직 인건비', 'salaryReg'], ['계약직 인건비', 'salaryCon']].map(([label, path]) => {
+              const cur = path.split('.').reduce((o, k) => (o || {})[k], f) || 0;
+              return (
+                <div key={path}>
+                  <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>{label}</div>
+                  <input value={fmtInput(cur)} onChange={e => upNum(path, e.target.value)} inputMode="numeric" style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }} />
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div style={{ fontSize: 11, color: T.textMute, marginTop: S[3], lineHeight: 1.7 }}>
+          회계 원장(월계표)·매출집계표·급여대장에서 추출한 6월 누계 실적입니다. [데이터 편집]으로 수치를 조정하면 즉시 반영·저장됩니다. 매출총이익률 {opMargin.toFixed(1)}%는 {opMargin >= 20 ? '양호' : opMargin >= 10 ? '보통' : '개선 필요'} 수준이며, 판관비 중 외주용역비·인건비 비중이 가장 큽니다. 인사평가의 전사 성과지표는 이 손익을 기준으로 연동됩니다.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function ManagementReportView({ user, projects, proposals, overheads, employees, empLedger, setEmpLedger, currentYear, policy, receivables, cashCfg, setCashCfg, upsertProject, fin }) {
   const canEditLedger = !!setEmpLedger && user.role === 'admin';
   const [ledgerForm, setLedgerForm] = React.useState(null); // {name, empId, card, newOrder}
   const removeLedger = (row) => {
@@ -9389,6 +9536,20 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
       {(() => {
         const cfg = cashCfg || {};
         const up = (k, v) => setCashCfg && setCashCfg(prev => ({ ...prev, [k]: Number(v) || 0 }));
+        // ── CMS 실적 연동: 실제 월 인건비·운영경비를 예측 기본값으로 산출 ──
+        const finData = fin || {};
+        const monthsElapsed = (() => { const m = String(finData.period || '').match(/-(\d{2})/); return m ? Number(m[1]) : 6; })();
+        const actualLaborMonthly = ((finData.salaryReg || 0) + (finData.salaryCon || 0));   // CMS 인건비(월)
+        const sgaVals = Object.entries(finData.sga || {});
+        const sgaTotalCms = sgaVals.reduce((a, [, v]) => a + v, 0);
+        // 운영경비(월) = 판관비 누계에서 인건비성 계정 제외 후 ÷ 경과월
+        const laborLike = ['직원급여', '잡급', '퇴직급여', '복리후생비'];
+        const opexCum = sgaVals.filter(([k]) => !laborLike.some(l => k.includes(l))).reduce((a, [, v]) => a + v, 0);
+        const actualOpexMonthly = monthsElapsed ? Math.round(opexCum / monthsElapsed) : 0;
+        const cmsLinked = !!(finData.salaryReg || finData.salaryCon || sgaTotalCms);
+        // 사용값: cashCfg에 수동입력이 있으면 우선, 없으면 CMS 실적 자동 적용
+        const useLabor = (cfg.laborFromCms !== false && actualLaborMonthly) ? actualLaborMonthly : (Number(cfg.monthlyLabor) || 0);
+        const useOpex = (cfg.opexFromCms !== false && actualOpexMonthly) ? actualOpexMonthly : (Number(cfg.monthlyOpex) || 0);
         const now = new Date(); const y0 = now.getFullYear(), m0 = now.getMonth(); // 이번 달부터 12개월
         const months = Array.from({ length: 12 }, (_, i) => { const d = new Date(y0, m0 + i, 1); return { y: d.getFullYear(), m: d.getMonth() + 1, key: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), label: (d.getMonth() + 1) + '월' }; });
         const idxOf = (yy, mm) => (yy - y0) * 12 + (mm - 1 - m0);
@@ -9424,7 +9585,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           const end = start + 6; if (end < 12) incS[end] += p.budget * (1 - advP);
         });
         // 지출: 인건비 + 운영경비 + 세금(부가세 1·4·7·10월, 법인세 3월)
-        const exp = months.map(mo => (Number(cfg.monthlyLabor) || 0) + (Number(cfg.monthlyOpex) || 0) + ([1, 4, 7, 10].includes(mo.m) ? (Number(cfg.vatQ) || 0) : 0) + (mo.m === 3 ? (Number(cfg.corpTax) || 0) : 0));
+        const exp = months.map(mo => useLabor + useOpex + ([1, 4, 7, 10].includes(mo.m) ? (Number(cfg.vatQ) || 0) : 0) + (mo.m === 3 ? (Number(cfg.corpTax) || 0) : 0));
         let bal = Number(cfg.balance) || 0, balS = Number(cfg.balance) || 0;
         const rows = months.map((mo, i) => { bal += inc[i] - exp[i]; balS += incS[i] - exp[i]; return { ...mo, inc: inc[i], incS: incS[i], exp: exp[i], bal, balS, notes: incNote[i].slice(0, 3).join(', ') }; });
         const safety = Number(cfg.safety) || 0;
@@ -9439,11 +9600,29 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const chartData = rows.map(r => ({ name: r.label, 잔고: Math.round(r.bal / 1000000), '잔고(파이프라인 포함)': Math.round(r.balS / 1000000), 안전선: Math.round(safety / 1000000) }));
         return (
           <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[5], marginTop: S[3] }}>
+            {/* CMS 실적 연동 배너 */}
+            {cmsLinked && (
+              <div style={{ background: '#EEF3FA', border: `1px solid ${T.brand}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12 }}>
+                <strong style={{ color: T.brand }}>🔗 경영회계 CMS 실적 연동</strong> — 예측 지출이 실제 회계 실적 기준으로 자동 설정됩니다:
+                월 인건비 <strong>{fmtMoney(actualLaborMonthly)}원</strong> (CMS 급여), 월 운영경비 <strong>{fmtMoney(actualOpexMonthly)}원</strong> ({monthsElapsed}개월 판관비 ÷ 경과월).
+                <label style={{ marginLeft: 10, fontSize: 11.5, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={cfg.laborFromCms !== false && cfg.opexFromCms !== false} onChange={e => setCashCfg(prev => ({ ...prev, laborFromCms: e.target.checked, opexFromCms: e.target.checked }))} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+                  실적 자동 적용
+                </label>
+                <span style={{ color: T.textMute, marginLeft: 6 }}>(해제 시 아래 수동 입력값 사용)</span>
+              </div>
+            )}
             {/* 설정 입력 */}
             <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: S[3], marginBottom: S[4], background: T.surfaceAlt, borderRadius: 8, padding: S[4] }}>
               {inp('법인통장 잔고(원·이번 달 초)', 'balance')}
-              {inp('월 인건비(원)', 'monthlyLabor')}
-              {inp('월 운영경비(원)', 'monthlyOpex')}
+              <div>
+                <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>월 인건비(원){cfg.laborFromCms !== false && actualLaborMonthly ? ' · CMS연동' : ''}</div>
+                <input inputMode="numeric" disabled={cfg.laborFromCms !== false && !!actualLaborMonthly} value={fmtInput(useLabor)} onChange={ev => up('monthlyLabor', parseInput(ev.target.value))} style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', background: (cfg.laborFromCms !== false && actualLaborMonthly) ? T.surfaceAlt : '#fff', color: (cfg.laborFromCms !== false && actualLaborMonthly) ? T.textMute : T.ink }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>월 운영경비(원){cfg.opexFromCms !== false && actualOpexMonthly ? ' · CMS연동' : ''}</div>
+                <input inputMode="numeric" disabled={cfg.opexFromCms !== false && !!actualOpexMonthly} value={fmtInput(useOpex)} onChange={ev => up('monthlyOpex', parseInput(ev.target.value))} style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', background: (cfg.opexFromCms !== false && actualOpexMonthly) ? T.surfaceAlt : '#fff', color: (cfg.opexFromCms !== false && actualOpexMonthly) ? T.textMute : T.ink }} />
+              </div>
               {inp('분기 부가세(1·4·7·10월)', 'vatQ')}
               {inp('법인세(3월)', 'corpTax')}
               {inp('선급금 비율(%)', 'advRate', 5)}
@@ -9514,7 +9693,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               </table>
             </div>
             <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2], lineHeight: 1.7 }}>
-              수입 = ①수금 관리 등록분(가장 우선) + ②진행 사업 선급금(기본 {cfg.advRate}% · 사업별 개별 설정 가능 · 착수월)과 잔금(종료 익월, 종료 지연분은 이번 달 가정). 파이프라인 라인은 미수주 제안이 전부 수주된다는 가정(마감 익월 선급, +6개월 잔금). <strong>신규 수주 확정 시 자동으로 확정 라인에 반영</strong>됩니다. 지출 = 월 인건비+운영경비+분기 부가세+법인세(예측비용은 위에서 조정). 정확한 수금 일정은 「수금 관리」에 등록할수록 예측이 정밀해집니다.
+              수입 = ①수금 관리 등록분(가장 우선) + ②진행 사업 선급금(기본 {cfg.advRate}% · 사업별 개별 설정 가능 · 착수월)과 잔금(종료 익월, 종료 지연분은 이번 달 가정). 파이프라인 라인은 미수주 제안이 전부 수주된다는 가정(마감 익월 선급, +6개월 잔금). <strong>신규 수주 확정 시 자동으로 확정 라인에 반영</strong>됩니다. 지출 = 월 인건비+운영경비+분기 부가세+법인세. 인건비·운영경비는 경영회계 CMS의 실제 실적(급여대장·판관비)에서 자동 산출되며, 체크 해제 시 수동 입력으로 전환됩니다. 정확한 수금 일정은 「수금 관리」에 등록할수록 예측이 정밀해집니다.
             </div>
           </div>
         );
