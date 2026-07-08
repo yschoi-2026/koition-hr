@@ -2278,14 +2278,17 @@ function calcBidScore(empName, proposals, projects, year) {
   won.forEach(p => {
     const parts = (p.participants && p.participants.length) ? p.participants : DEFAULT_BID_PARTICIPANTS;
     const supps = (p.support && p.support.length) ? p.support : DEFAULT_BID_SUPPORT;
-    const isPM = p.pm && p.pm === empName;
+    const pmList = String(p.pm || '').split(/[,\s]+/).map(x => x.trim()).filter(Boolean);   // PM 복수 지원 (쉼표 구분 → 각자 100%)
+    const isPM = pmList.includes(empName);
     const isPart = parts.includes(empName);
     const isSupp = supps.includes(empName);   // 서류제출·관리 지원 인력
     if (!isPM && !isPart && !isSupp) return;
     const proj = (projects || []).find(x => x.id === p.wonProjectId);
-    if (!proj || isEtcProject(proj) || (year != null && Number(proj.year) !== Number(year))) return;
+    if (!proj || (year != null && Number(proj.year) !== Number(year))) return;
+    const etc = isEtcProject(proj);
+    if (etc && !isPM) return;   // 기타(유지보수)는 명시 담당(PM)에게만 인정
     const mm = projectMetrics(proj);
-    const ps = evalProjectScore(proj, mm);
+    const ps = etc ? ETC_BID_SCORE : evalProjectScore(proj, mm);   // 기타는 고정점(수익률 왜곡 방지)
     if (ps == null) return;
     const w = (isPM ? EVAL_CFG.bidPmW : isPart ? EVAL_CFG.bidPartW : EVAL_CFG.bidSuppW) / 100;
     if (w <= 0) return;
@@ -2337,6 +2340,9 @@ function persistUsers(users) {
 // ── 회사 표준 제안팀 (제안별 인력 입력이 없으면 이 명단을 기본 적용) ──
 const DEFAULT_BID_PARTICIPANTS = ['최영숙', '이원규'];   // 주요 제안(작성) 인력 (대표는 평가·기여 제외)
 const DEFAULT_BID_SUPPORT = ['신수호', '심도현'];                 // 제안서류 제출·관리 인력
+const MAINT_SUPPORT_IDS = ['2026-005', '2026-006', '2026-009', '2026-013'];  // 유지보수·OPT변환 — 사업지원(신수호·고영훈) 100% 귀속
+const MAINT_SUPPORT_PM = '신수호, 고영훈';
+const ETC_BID_SCORE = 40;   // 수익률 산정 제외(기타) 사업의 수주 기여 고정점수
 
 // ── 영업(수주) 트랙 ──
 // 여기에 넣은 인원(영업·사업개발)은 수행 기여가 아니라 [수주(제안) 실적]으로 평가.
@@ -2472,6 +2478,7 @@ function App() {
     { id: 'LOAN-1', empId: 'K-240201', name: '오창민', principal: 30000000, rate: 4.6, startDate: '2026-01-01', monthly: 1000000, repayments: [], note: '회사 대출 — 상환약정 체결 예정' },
   ]);  // 임직원 대여금 원장
   const [receivables, setReceivables] = useState([]);  // 수금 관리: {id,project,client,amount,dueDate,paidDate,note}
+  const [cashCfg, setCashCfg] = useState({ balance: 0, advRate: 50, advRates: {}, monthlyLabor: 237000000, monthlyOpex: 51000000, vatQ: 30000000, corpTax: 20000000, safety: 50000000 });  // 자금 예측 설정
   const [history, setHistory] = useState([HISTORY_2025]);
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [historyHighlight, setHistoryHighlight] = useState(null);  // {empId, year}
@@ -2703,6 +2710,7 @@ function App() {
         if (data.peerEvals) setPeerEvals(data.peerEvals);
         if (data.loans) setLoans(data.loans);
         if (data.receivables) setReceivables(data.receivables);
+        if (data.cashCfg) setCashCfg(prev => ({ ...prev, ...data.cashCfg }));
         if (data.history) setHistory(data.history);
       }
     } catch (e) {}
@@ -2733,7 +2741,7 @@ function App() {
 
   const handleSave = () => {
     try {
-      const payload = JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, history, updatedAt: new Date().toISOString() });
+      const payload = JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, history, updatedAt: new Date().toISOString() });
       localStorage.setItem('koition_hr_v6', payload);
       serverPut('main', payload);
       showToast('데이터가 저장되었습니다 (서버 포함)');
@@ -2744,27 +2752,37 @@ function App() {
     if (!dataLoadedRef.current) return;
     const t = setTimeout(() => {
       try {
-        const payload = JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, history, updatedAt: new Date().toISOString() });
+        const payload = JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, history, updatedAt: new Date().toISOString() });
         localStorage.setItem('koition_hr_v6', payload);
         serverPut('main', payload);   // 서버 저장 (모든 PC 공유)
       } catch (e) { /* 저장 공간 부족 등 — 수동 저장/내보내기 사용 */ }
     }, 1200);
     return () => clearTimeout(t);
-  }, [employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, history]);
+  }, [employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, history]);
 
   // 기존 수주 사업 소급: 2026년 등록 사업은 전부 제안팀 수주 성과 → 수주 확정 제안 자동 생성(중복 방지·기타 제외)
   useEffect(() => {
     if (!dataLoadedRef.current) return;
     const linked = new Set((proposals || []).filter(p => p.wonProjectId).map(p => p.wonProjectId));
-    const missing = (projects || []).filter(p => Number(p.year) === 2026 && !isEtcProject(p) && p.id && !linked.has(p.id));
-    if (missing.length === 0) return;
-    setProposals(prev => ([...(prev || []), ...missing.map(p => ({
-      id: 'P:auto:' + p.id, name: p.name, client: p.client || '',
-      budget: Number(p.revenue) || 0, bidDate: '',
-      pm: '', participants: [], support: [],   // 비워두면 표준 제안팀(참여: 정일영·최영숙·이원규 / 지원: 신수호·심도현) 자동 적용
-      status: '수주', wonProjectId: p.id,
-      note: '기존 수주사업 자동 등록 — 제안팀 수주기여 반영 (인력 편집 가능)',
-    }))]));
+    const missing = (projects || []).filter(p => Number(p.year) === 2026 && p.id && !linked.has(p.id) && (!isEtcProject(p) || MAINT_SUPPORT_IDS.includes(p.id)));
+    // 기존 자동 제안 보정: 유지보수·OPT 사업인데 담당 미지정이면 신수호·고영훈 지정
+    const needFix = (proposals || []).some(p => String(p.id).startsWith('P:auto:') && MAINT_SUPPORT_IDS.includes(p.wonProjectId) && !p.pm);
+    if (missing.length === 0 && !needFix) return;
+    setProposals(prev => {
+      let list = (prev || []).map(p => (String(p.id).startsWith('P:auto:') && MAINT_SUPPORT_IDS.includes(p.wonProjectId) && !p.pm) ? { ...p, pm: MAINT_SUPPORT_PM, participants: ['-'], support: ['-'], note: '유지보수·OPT — 사업지원(신수호·고영훈) 100% 귀속' } : p);
+      const add = missing.map(p => {
+        const maint = MAINT_SUPPORT_IDS.includes(p.id);
+        return {
+          id: 'P:auto:' + p.id, name: p.name, client: p.client || '',
+          budget: Number(p.revenue) || 0, bidDate: '',
+          pm: maint ? MAINT_SUPPORT_PM : '',
+          participants: maint ? ['-'] : [], support: maint ? ['-'] : [],   // '-' = 표준팀 미적용
+          status: '수주', wonProjectId: p.id,
+          note: maint ? '유지보수·OPT — 사업지원(신수호·고영훈) 100% 귀속' : '기존 수주사업 자동 등록 — 제안팀 수주기여 반영 (인력 편집 가능)',
+        };
+      });
+      return [...list, ...add];
+    });
   }, [projects, proposals]);
   const markBackup = () => { try { localStorage.setItem('koition_hr_last_backup', String(Date.now())); } catch(e){} };
   const [backupDue, setBackupDue] = useState(false);
@@ -2776,7 +2794,7 @@ function App() {
   }, [user]);
   const handleExport = () => {
     markBackup(); setBackupDue(false);
-    const data = { year: currentYear, employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, history };
+    const data = { year: currentYear, employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, history };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -2816,6 +2834,7 @@ function App() {
         if (data.peerEvals) setPeerEvals(data.peerEvals);
         if (data.loans) setLoans(data.loans);
         if (data.receivables) setReceivables(data.receivables);
+        if (data.cashCfg) setCashCfg(prev => ({ ...prev, ...data.cashCfg }));
         if (data.history) setHistory(data.history);
         showToast('데이터를 불러왔습니다');
       } catch (err) { showToast('파일 형식이 올바르지 않습니다', 'error'); }
@@ -3084,7 +3103,7 @@ function App() {
             }} />}
             {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} finalizeEval={finalizeEval} projects={projects} proposals={proposals} peerEvals={peerEvals} />}
             {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} />}
-            {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} />}
+            {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} receivables={receivables} cashCfg={cashCfg} setCashCfg={setCashCfg} />}
             {tab === 'loans' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <LoansView loans={loans} setLoans={setLoans} employees={employees} />}
             {tab === 'receivables' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ReceivablesView receivables={receivables} setReceivables={setReceivables} projects={projects} />}
             {tab === 'monthclose' && <MonthCloseView projects={projects} employees={employees} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} />}
@@ -4245,8 +4264,8 @@ function LoansView({ loans, setLoans, employees }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: S[2] }}>
             <thead><tr style={{ background: T.surfaceAlt }}><Th>일자</Th><Th>직원</Th><Th align="right">금액</Th><Th>비고</Th></tr></thead>
             <tbody>
-              {(loans || []).flatMap(l => (l.repayments || []).map((r, i) => ({ ...r, name: l.name, k: l.id + i }))).sort((a, b) => String(b.date).localeCompare(String(a.date))).map(r => (
-                <tr key={r.k}><Td>{r.date}</Td><Td>{r.name}</Td><Td align="right" mono>{fmtMoney(r.amount)}</Td><Td style={{ color: T.textMute }}>{r.note}</Td></tr>
+              {(loans || []).flatMap(l => (Array.isArray(l.repayments) ? l.repayments : []).map((r, i) => ({ ...(r || {}), name: l.name, k: String(l.id) + '-' + i }))).sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).map(r => (
+                <tr key={r.k}><Td>{r.date || '-'}</Td><Td>{r.name}</Td><Td align="right" mono>{fmtMoney(Number(r.amount) || 0)}</Td><Td style={{ color: T.textMute }}>{r.note || ''}</Td></tr>
               ))}
             </tbody>
           </table>
@@ -8641,7 +8660,7 @@ function MonthCloseView({ projects, employees, bulkUpsertProjects, bulkUpsertOve
 }
 
 
-function ManagementReportView({ user, projects, proposals, overheads, employees, empLedger, setEmpLedger, currentYear, policy }) {
+function ManagementReportView({ user, projects, proposals, overheads, employees, empLedger, setEmpLedger, currentYear, policy, receivables, cashCfg, setCashCfg }) {
   const canEditLedger = !!setEmpLedger && user.role === 'admin';
   const [ledgerForm, setLedgerForm] = React.useState(null); // {name, empId, card, newOrder}
   const removeLedger = (row) => {
@@ -9348,6 +9367,137 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
       )}
 
       {/* 8. 위험요소 진단 */}
+      <H n="8+" icon={TrendingUp}>자금흐름 예측 시나리오 (12개월)</H>
+      {(() => {
+        const cfg = cashCfg || {};
+        const up = (k, v) => setCashCfg && setCashCfg(prev => ({ ...prev, [k]: Number(v) || 0 }));
+        const now = new Date(); const y0 = now.getFullYear(), m0 = now.getMonth(); // 이번 달부터 12개월
+        const months = Array.from({ length: 12 }, (_, i) => { const d = new Date(y0, m0 + i, 1); return { y: d.getFullYear(), m: d.getMonth() + 1, key: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), label: (d.getMonth() + 1) + '월' }; });
+        const idxOf = (yy, mm) => (yy - y0) * 12 + (mm - 1 - m0);
+        const parsePeriod = (p) => { const m = String(p || '').match(/(\d{4})[.\-\/](\d{1,2})\s*~\s*(\d{4})[.\-\/](\d{1,2})/); return m ? { sy: +m[1], sm: +m[2], ey: +m[3], em: +m[4] } : null; };
+        const advRates = cfg.advRates || {};
+        const advOf = (pid) => ((advRates[pid] != null && advRates[pid] !== '') ? Number(advRates[pid]) : Number(cfg.advRate) || 0) / 100;
+        const inc = Array(12).fill(0); const incNote = Array.from({ length: 12 }, () => []);
+        const covered = new Set();
+        // ① 수금 관리 등록분 (미입금) — 가장 확정적
+        (receivables || []).filter(r => !r.paidDate && r.dueDate && Number(r.amount) > 0).forEach(r => {
+          const d = new Date(r.dueDate); if (isNaN(d)) return;
+          const i = idxOf(d.getFullYear(), d.getMonth() + 1);
+          const at = i < 0 ? 0 : i;   // 연체분은 이번 달 수금 가정
+          if (at < 12) { inc[at] += Number(r.amount); incNote[at].push((r.project || '수금') + (i < 0 ? '(연체)' : '')); if (r.project) covered.add(String(r.project).trim()); }
+        });
+        // ② 진행 사업: 선급금(착수월) + 잔금(종료 익월) — 수금관리에 등록된 사업은 제외(중복 방지)
+        (projects || []).filter(p => !isEtcProject(p) && p.status !== 'completed' && Number(p.revenue) > 0 && !covered.has(String(p.name || '').trim())).forEach(p => {
+          const pr = parsePeriod(p.period); if (!pr) return;
+          const adv = advOf(p.id);
+          const si = idxOf(pr.sy, pr.sm), eiRaw = idxOf(pr.ey, pr.em) + 1; // 잔금 = 검수 익월
+          if (si >= 0 && si < 12 && adv > 0) { inc[si] += p.revenue * adv; incNote[si].push(p.id + ' 선급'); }
+          const ei = eiRaw < 0 ? 0 : eiRaw; // 이미 종료됐는데 미수금 → 이번 달 수금 가정
+          if (ei < 12) { const rem = p.revenue * (si >= 0 ? (1 - adv) : 1); inc[ei] += rem; incNote[ei].push(p.id + ' 잔금' + (eiRaw < 0 ? '(지연)' : '')); }
+        });
+        // ③ 파이프라인 시나리오: 미수주 제안이 수주된다고 가정 (계약 익월 선급, +6개월 잔금)
+        const incS = inc.slice();
+        (proposals || []).filter(p => p.status !== '수주' && Number(p.budget) > 0).forEach(p => {
+          const bm = String(p.bidDate || '').match(/(\d{4})[.\-\/](\d{1,2})/);
+          let start = bm ? idxOf(+bm[1], +bm[2]) + 1 : 2;
+          if (start < 1) start = 1;
+          const advP = (Number(cfg.advRate) || 0) / 100;
+          if (start < 12 && advP > 0) incS[start] += p.budget * advP;
+          const end = start + 6; if (end < 12) incS[end] += p.budget * (1 - advP);
+        });
+        // 지출: 인건비 + 운영경비 + 세금(부가세 1·4·7·10월, 법인세 3월)
+        const exp = months.map(mo => (Number(cfg.monthlyLabor) || 0) + (Number(cfg.monthlyOpex) || 0) + ([1, 4, 7, 10].includes(mo.m) ? (Number(cfg.vatQ) || 0) : 0) + (mo.m === 3 ? (Number(cfg.corpTax) || 0) : 0));
+        let bal = Number(cfg.balance) || 0, balS = Number(cfg.balance) || 0;
+        const rows = months.map((mo, i) => { bal += inc[i] - exp[i]; balS += incS[i] - exp[i]; return { ...mo, inc: inc[i], incS: incS[i], exp: exp[i], bal, balS, notes: incNote[i].slice(0, 3).join(', ') }; });
+        const safety = Number(cfg.safety) || 0;
+        const danger = rows.find(r => r.bal < safety);
+        const minRow = rows.reduce((a, r) => r.bal < a.bal ? r : a, rows[0]);
+        const inp = (label, k, step) => (
+          <div key={k}>
+            <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>{label}</div>
+            <input type="number" step={step || 1000000} value={cfg[k] ?? 0} onChange={ev => up(k, ev.target.value)} style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: 'ui-monospace, monospace' }} />
+          </div>
+        );
+        const chartData = rows.map(r => ({ name: r.label, 잔고: Math.round(r.bal / 1000000), '잔고(파이프라인 포함)': Math.round(r.balS / 1000000), 안전선: Math.round(safety / 1000000) }));
+        return (
+          <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[5], marginTop: S[3] }}>
+            {/* 설정 입력 */}
+            <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: S[3], marginBottom: S[4], background: T.surfaceAlt, borderRadius: 8, padding: S[4] }}>
+              {inp('법인통장 잔고(원·이번 달 초)', 'balance')}
+              {inp('월 인건비(원)', 'monthlyLabor')}
+              {inp('월 운영경비(원)', 'monthlyOpex')}
+              {inp('분기 부가세(1·4·7·10월)', 'vatQ')}
+              {inp('법인세(3월)', 'corpTax')}
+              {inp('선급금 비율(%)', 'advRate', 5)}
+              {inp('안전 잔고 경고선(원)', 'safety')}
+            </div>
+            {(Number(cfg.balance) || 0) === 0 && <div style={{ fontSize: 12, color: T.warning, marginBottom: S[3] }}>⚠ 법인통장 잔고를 입력하면 예측이 시작됩니다 (입력값은 자동 저장).</div>}
+            <details className="no-print" style={{ marginBottom: S[3] }}>
+              <summary style={{ fontSize: 12, fontWeight: 700, color: T.brand, cursor: 'pointer' }}>사업별 선급금 비율 설정 (기본 {cfg.advRate}% · 사업마다 다르면 개별 입력)</summary>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: S[2], marginTop: S[2], background: T.surfaceAlt, borderRadius: 8, padding: S[3] }}>
+                {(projects || []).filter(p => !isEtcProject(p) && p.status !== 'completed' && Number(p.revenue) > 0).map(p => (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ flex: 1, fontSize: 11, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={p.name}>{p.id} {p.name}</div>
+                    <input type="number" min="0" max="100" step="5" placeholder={String(cfg.advRate)} value={(cfg.advRates || {})[p.id] ?? ''}
+                      onChange={ev => setCashCfg(prev => ({ ...prev, advRates: { ...(prev.advRates || {}), [p.id]: ev.target.value === '' ? '' : Number(ev.target.value) } }))}
+                      style={{ width: 58, padding: '4px 6px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, textAlign: 'right' }} />
+                    <span style={{ fontSize: 10.5, color: T.textMute }}>%</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+            {/* 위험 신호 */}
+            {danger ? (
+              <div style={{ background: 'rgba(180,35,24,0.07)', border: `1px solid ${T.danger}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12.5 }}>
+                <strong style={{ color: T.danger }}>🚨 위험 신호</strong> — <strong>{danger.y}년 {danger.label}</strong> 잔고가 안전선 아래로 내려갑니다 (예상 {fmtMoney(danger.bal)}원). 최저점: {minRow.y}년 {minRow.label} {fmtMoney(minRow.bal)}원. 수금 앞당기기·지출 이연·단기 자금 확보를 검토하세요.
+              </div>
+            ) : (
+              <div style={{ background: 'rgba(27,122,67,0.07)', border: `1px solid ${T.success}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12.5 }}>
+                <strong style={{ color: T.success }}>✅ 안정</strong> — 12개월 내 안전선({fmtMoney(safety)}원) 미달 없음. 최저점 {minRow.y}년 {minRow.label} {fmtMoney(minRow.bal)}원 · 12개월 후 예상 잔고 <strong>{fmtMoney(rows[11].bal)}원</strong> — 결산 후 투자·상여 재원 검토 가능.
+              </div>
+            )}
+            {/* 차트 */}
+            <div style={{ height: 220 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 6, right: 12, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} unit="M" />
+                  <Tooltip formatter={(v) => v + '백만원'} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Line type="monotone" dataKey="잔고" stroke={T.brand} strokeWidth={2.5} dot={{ r: 2.5 }} />
+                  <Line type="monotone" dataKey="잔고(파이프라인 포함)" stroke={T.success} strokeWidth={1.8} strokeDasharray="6 3" dot={false} />
+                  <Line type="monotone" dataKey="안전선" stroke={T.danger} strokeWidth={1} strokeDasharray="2 4" dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            {/* 월별 표 */}
+            <div style={{ overflow: 'auto', marginTop: S[3] }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, minWidth: 760 }}>
+                <thead><tr style={{ background: T.surfaceAlt }}>
+                  <Th>월</Th><Th align="right">수입(확정)</Th><Th align="right">지출</Th><Th align="right">잔고</Th><Th align="right">잔고(파이프라인)</Th><Th>수입 내역</Th>
+                </tr></thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={i} style={r.bal < safety ? { background: 'rgba(180,35,24,0.05)' } : undefined}>
+                      <Td>{r.y !== y0 || i === 0 ? `${r.y}.${r.label}` : r.label}</Td>
+                      <Td align="right" mono style={{ color: r.inc > 0 ? T.success : T.textLight }}>{r.inc ? fmtMoney(r.inc) : '-'}</Td>
+                      <Td align="right" mono>{fmtMoney(r.exp)}</Td>
+                      <Td align="right" mono><strong style={{ color: r.bal < 0 ? T.danger : r.bal < safety ? T.warning : T.ink }}>{fmtMoney(r.bal)}</strong></Td>
+                      <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(r.balS)}</Td>
+                      <Td style={{ fontSize: 10.5, color: T.textMute }}>{r.notes}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2], lineHeight: 1.7 }}>
+              수입 = ①수금 관리 등록분(가장 우선) + ②진행 사업 선급금(기본 {cfg.advRate}% · 사업별 개별 설정 가능 · 착수월)과 잔금(종료 익월, 종료 지연분은 이번 달 가정). 파이프라인 라인은 미수주 제안이 전부 수주된다는 가정(마감 익월 선급, +6개월 잔금). <strong>신규 수주 확정 시 자동으로 확정 라인에 반영</strong>됩니다. 지출 = 월 인건비+운영경비+분기 부가세+법인세(예측비용은 위에서 조정). 정확한 수금 일정은 「수금 관리」에 등록할수록 예측이 정밀해집니다.
+            </div>
+          </div>
+        );
+      })()}
+
       <H n="9" icon={ShieldAlert}>위험요소 진단</H>
       {risks.length === 0 ? (
         <div style={{ ...card(), padding: S[6], textAlign: 'center', color: T.success, fontWeight: 600 }}><CheckCircle2 size={20} style={{ verticalAlign: 'middle', marginRight: 6 }} />현재 특이 위험요소가 없습니다.</div>
