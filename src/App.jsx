@@ -60,7 +60,7 @@ const SIDEBAR_W = 240;
 const S = { 1: 4, 2: 8, 3: 12, 4: 16, 5: 20, 6: 24, 7: 32, 8: 40, 9: 48, 10: 64 };
 
 // Typography
-const FONT = '"Pretendard", "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif';
+const FONT = '"Noto Sans KR", "Malgun Gothic", -apple-system, BlinkMacSystemFont, sans-serif';
 const FONT_DISPLAY = '"Cormorant Garamond", "Georgia", serif';
 
 // ============================================================
@@ -702,7 +702,7 @@ function KoitionVisualTrio() {
           <div style={{ 
             fontSize: 9, fontWeight: 700, color: '#D63838', 
             letterSpacing: '0.15em', marginBottom: 6,
-            fontFamily: '"SF Mono", Monaco, monospace'
+            fontFamily: FONT
           }}>
             {item.num}
           </div>
@@ -2440,7 +2440,7 @@ class AppErrorBoundary extends React.Component {
     if (!this.state.error) return this.props.children;
     const err = this.state.error;
     return (
-      <div style={{ minHeight: '100vh', background: '#F5F7FA', fontFamily: "'Pretendard', 'Malgun Gothic', sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ minHeight: '100vh', background: '#F5F7FA', fontFamily: "'Noto Sans KR', 'Malgun Gothic', sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
         <div style={{ maxWidth: 560, width: '100%', background: '#fff', borderRadius: 12, border: '1px solid #E2E8F0', padding: 28, boxShadow: '0 8px 30px rgba(0,0,0,0.08)' }}>
           <div style={{ fontSize: 19, fontWeight: 800, color: '#B42318', marginBottom: 8 }}>⚠ 화면 표시 중 오류가 발생했습니다</div>
           <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.7, marginBottom: 12 }}>
@@ -3201,7 +3201,7 @@ function App() {
 function GlobalStyles() {
   return (
     <style>{`
-      @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+      @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap');
       * { box-sizing: border-box; }
       body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
       button { font-family: inherit; }
@@ -3675,7 +3675,7 @@ function PasswordChangeModal({ user, onChangePassword, onChangeUsername, onClose
             <code style={{ 
               fontSize: 14, fontWeight: 700, color: T.brand, 
               background: T.surface, padding: '4px 10px', borderRadius: 4,
-              fontFamily: '"SF Mono", Monaco, monospace'
+              fontFamily: FONT
             }}>
               {user.username}
             </code>
@@ -3723,7 +3723,7 @@ function PasswordChangeModal({ user, onChangePassword, onChangeUsername, onClose
               style={{ 
                 width: '100%', padding: '10px 14px', 
                 border: `1px solid ${newUsername && !usernameValid ? T.danger : T.border}`, 
-                borderRadius: 6, fontSize: 14, fontFamily: '"SF Mono", Monaco, monospace', 
+                borderRadius: 6, fontSize: 14, fontFamily: FONT, 
                 boxSizing: 'border-box', outline: 'none', letterSpacing: '0.03em'
               }}
             />
@@ -3750,7 +3750,7 @@ function PasswordChangeModal({ user, onChangePassword, onChangeUsername, onClose
               marginBottom: S[4], fontSize: 12, color: T.text
             }}>
               <strong style={{ color: T.success }}>✓ 변경 미리보기</strong>
-              <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: S[2], fontFamily: '"SF Mono", Monaco, monospace', fontSize: 13 }}>
+              <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: S[2], fontFamily: FONT, fontSize: 13 }}>
                 <code style={{ background: T.surface, padding: '3px 8px', borderRadius: 3, color: T.textMute, textDecoration: 'line-through' }}>
                   {user.username}
                 </code>
@@ -3914,7 +3914,7 @@ function AdminPasswordResetModal({ targetUser, onReset, onClose, onSuccess }) {
               style={{ 
                 width: '100%', padding: '10px 14px', 
                 border: `1px solid ${T.border}`, borderRadius: 6,
-                fontSize: 14, fontFamily: '"SF Mono", Monaco, monospace', 
+                fontSize: 14, fontFamily: FONT, 
                 boxSizing: 'border-box', outline: 'none', letterSpacing: '0.05em'
               }}
             />
@@ -3938,7 +3938,7 @@ function AdminPasswordResetModal({ targetUser, onReset, onClose, onSuccess }) {
               style={{ 
                 width: '100%', padding: '10px 14px', 
                 border: `1px solid ${confirmPassword && !passwordsMatch ? T.danger : T.border}`, 
-                borderRadius: 6, fontSize: 14, fontFamily: '"SF Mono", Monaco, monospace', 
+                borderRadius: 6, fontSize: 14, fontFamily: FONT, 
                 boxSizing: 'border-box', outline: 'none', letterSpacing: '0.05em'
               }}
             />
@@ -5209,7 +5209,7 @@ function SelfScoreRowWithGuide({ itemKey, label, weight, desc, value, onChange, 
             width: 90, padding: '10px 12px', border: `1px solid ${T.border}`, borderRadius: 6,
             fontSize: 18, textAlign: 'center', fontWeight: 700, fontVariantNumeric: 'tabular-nums',
             color: T.ink, background: disabled ? T.surfaceAlt : T.surface, outline: 'none',
-            fontFamily: '"SF Mono", Monaco, monospace'
+            fontFamily: FONT
           }}
           onFocus={e => e.target.style.borderColor = T.brand}
           onBlur={e => e.target.style.borderColor = T.border}
@@ -5244,7 +5244,7 @@ function SelfScoreRowWithGuide({ itemKey, label, weight, desc, value, onChange, 
                   <GradeBadge grade={band.grade} size="sm" />
                   <div style={{ 
                     fontSize: 11, fontWeight: 700, color: T.text, 
-                    minWidth: 55, fontFamily: '"SF Mono", Monaco, monospace',
+                    minWidth: 55, fontFamily: FONT,
                     fontVariantNumeric: 'tabular-nums'
                   }}>
                     {band.range}점
@@ -6281,7 +6281,7 @@ function EmployeeDetailPanel({ emp, history, results, currentYear, policy, curre
           <div style={{ display: 'flex', alignItems: 'center', gap: S[3] }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: T.textMute, letterSpacing: '0.1em' }}>계정 정보</div>
             <div style={{ fontSize: 12, color: T.ink }}>
-              <strong>아이디:</strong> <code style={{ background: T.surface, padding: '2px 6px', borderRadius: 3, fontFamily: '"SF Mono", monospace', fontSize: 11 }}>{empAccount.username}</code>
+              <strong>아이디:</strong> <code style={{ background: T.surface, padding: '2px 6px', borderRadius: 3, fontFamily: FONT, fontSize: 11 }}>{empAccount.username}</code>
             </div>
             <div style={{ fontSize: 11, color: T.textMute }}>
               마지막 변경: {empAccount.lastPasswordChange 
@@ -7832,7 +7832,7 @@ function Th({ children, align = 'left' }) {
 }
 
 function Td({ children, align = 'left', mono = false }) {
-  return <td style={{ padding: `${S[3]}px ${S[3]}px`, textAlign: align, fontFamily: mono ? '"SF Mono", Monaco, monospace' : FONT, fontVariantNumeric: mono ? 'tabular-nums' : 'normal', whiteSpace: 'nowrap' }}>{children}</td>;
+  return <td style={{ padding: `${S[3]}px ${S[3]}px`, textAlign: align, fontFamily: FONT, fontVariantNumeric: mono ? 'tabular-nums' : 'normal', whiteSpace: 'nowrap' }}>{children}</td>;
 }
 
 // ============================================================
@@ -9433,7 +9433,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const inp = (label, k, step) => (
           <div key={k}>
             <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>{label}</div>
-            <input inputMode="numeric" value={fmtInput(cfg[k] ?? 0)} onChange={ev => up(k, parseInput(ev.target.value))} style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: 'ui-monospace, monospace' }} />
+            <input inputMode="numeric" value={fmtInput(cfg[k] ?? 0)} onChange={ev => up(k, parseInput(ev.target.value))} style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }} />
           </div>
         );
         const chartData = rows.map(r => ({ name: r.label, 잔고: Math.round(r.bal / 1000000), '잔고(파이프라인 포함)': Math.round(r.balS / 1000000), 안전선: Math.round(safety / 1000000) }));
@@ -12122,7 +12122,7 @@ function KPIMetricCard({ metric, index, accent }) {
             <div style={{ 
               fontSize: 12, color: T.text, padding: '8px 12px', 
               background: T.surfaceAlt, borderRadius: 4,
-              fontFamily: '"SF Mono", Monaco, monospace', lineHeight: 1.5
+              fontFamily: FONT, lineHeight: 1.5
             }}>
               {metric.formula}
             </div>
@@ -12541,7 +12541,7 @@ function CoverImageEditor({ policy, setPolicy }) {
               style={{ 
                 width: '100%', padding: '10px 14px', border: `1px solid ${T.border}`, borderRadius: 6,
                 fontSize: 13, background: T.surface, boxSizing: 'border-box', 
-                fontFamily: '"SF Mono", Monaco, monospace', outline: 'none', color: T.ink
+                fontFamily: FONT, outline: 'none', color: T.ink
               }}
               onFocus={e => e.target.style.borderColor = T.brand}
               onBlur={e => e.target.style.borderColor = T.border}
@@ -12768,7 +12768,7 @@ function PromotionPolicyEditor({ policy, setPolicy }) {
                 style={{ 
                   width: 80, padding: '6px 10px', border: `1px solid ${T.border}`, borderRadius: 4,
                   fontSize: 13, textAlign: 'center', background: T.surface,
-                  fontFamily: '"SF Mono", Monaco, monospace', fontWeight: 600, color: T.ink, outline: 'none'
+                  fontFamily: FONT, fontWeight: 600, color: T.ink, outline: 'none'
                 }}
               />
               <span style={{ fontSize: 11, color: T.textMute }}>× 종합점수</span>
@@ -12816,7 +12816,7 @@ function PromotionPolicyEditor({ policy, setPolicy }) {
                               style={{ 
                                 width: 50, padding: '5px 6px', border: `1px solid ${T.border}`, borderRadius: 4,
                                 fontSize: 12, textAlign: 'center', background: T.surface,
-                                fontFamily: '"SF Mono", Monaco, monospace', fontWeight: 600, color: T.ink, outline: 'none'
+                                fontFamily: FONT, fontWeight: 600, color: T.ink, outline: 'none'
                               }}
                             />
                             <span style={{ fontSize: 10, color: T.textMute }}>년</span>
@@ -12835,7 +12835,7 @@ function PromotionPolicyEditor({ policy, setPolicy }) {
                               style={{ 
                                 width: 60, padding: '5px 6px', border: `1px solid ${T.border}`, borderRadius: 4,
                                 fontSize: 12, textAlign: 'center', background: T.surface,
-                                fontFamily: '"SF Mono", Monaco, monospace', fontWeight: 600, color: T.ink, outline: 'none'
+                                fontFamily: FONT, fontWeight: 600, color: T.ink, outline: 'none'
                               }}
                             />
                             <span style={{ fontSize: 10, color: T.textMute }}>점</span>
@@ -12854,7 +12854,7 @@ function PromotionPolicyEditor({ policy, setPolicy }) {
                               style={{ 
                                 width: 60, padding: '5px 6px', border: `1px solid ${T.accent}`, borderRadius: 4,
                                 fontSize: 12, textAlign: 'center', background: T.surface,
-                                fontFamily: '"SF Mono", Monaco, monospace', fontWeight: 700, color: T.accent, outline: 'none'
+                                fontFamily: FONT, fontWeight: 700, color: T.accent, outline: 'none'
                               }}
                               onFocus={e => e.target.style.borderWidth = '2px'}
                               onBlur={e => e.target.style.borderWidth = '1px'}
@@ -12935,10 +12935,10 @@ function printEvaluationPDF(emp, result, scores, comments, policy, year, userRol
   // userRole이 전달되지 않으면 기본 안전 모드로 인건비 숨김
   const canIncludeSalary = userRole === 'admin' || userRole === 'manager';
   const html = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>인사평가서 - ${emp.name}</title>
-<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: 'Pretendard', sans-serif; color: #2C3540; padding: 40px 50px; line-height: 1.6; }
+body { font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; color: #2C3540; padding: 40px 50px; line-height: 1.6; }
 @media print { body { padding: 20px 30px; } .no-print { display: none !important; } @page { size: A4; margin: 15mm; } }
 .header { border-bottom: 3px solid #1B3A6F; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: flex-end; }
 .logo { display: flex; align-items: center; gap: 14px; }
