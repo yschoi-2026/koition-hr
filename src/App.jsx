@@ -970,6 +970,7 @@ const ECOUNT_HR_COLUMNS = [
   { key: 'level',      label: '직무레벨',   required: false, desc: 'L1/L2/L3/L4' },
   { key: 'group',      label: '직무군',     required: false, desc: 'Archive/Tech/Biz/PM' },
   { key: 'hireDate',   label: '입사일',     required: false, desc: 'YYYY/MM/DD' },
+  { key: 'gradeDate',  label: '직급부여일', required: false, desc: 'YYYY/MM/DD (승진·승급일, 없으면 입사일 기준)' },
   { key: 'baseSalary', label: '기본급',     required: false, desc: '월 기본급(원)' },
   { key: 'allowance',  label: '제수당',     required: false, desc: '월 수당(원)' },
   { key: 'mealCar',    label: '식대차량',   required: false, desc: '식대+차량유지(원)' },
@@ -1370,8 +1371,8 @@ function calcPromotionStatus(emp, policy, totalScore) {
   const tier = findPromotionTier(emp.position, policy.promotion.tiers);
   if (!tier) return null;
   
-  // 체류 연한 (입사일 기준)
-  const tenure = calcTenureYears(emp.hireDate);
+  // 체류 연한 — 현 직급 부여일(gradeDate) 기준, 없으면 입사일로 폴백
+  const tenure = calcTenureYears(emp.gradeDate || emp.hireDate);
   
   // 경영진 의사결정 등급
   if (tier.years === null) {
@@ -6306,6 +6307,17 @@ function EmployeeDetailPanel({ emp, history, results, currentYear, policy, curre
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[3], fontSize: 12 }}>
               <DetailItem label="입사일" value={emp.hireDate} />
               <DetailItem label="근속 기간" value={calcTenure()} />
+              <DetailItem label="현 직급 체류" value={(() => {
+                const base = emp.gradeDate || emp.hireDate;
+                if (!base) return '-';
+                const yrs = calcTenureYears(base);
+                const fy = Math.floor(yrs), mo = Math.floor((yrs - fy) * 12);
+                const tier = findPromotionTier(emp.position, (policy?.promotion?.tiers) || []);
+                const req = tier && tier.years != null ? tier.years : null;
+                const label = `${fy}년 ${mo}개월` + (emp.gradeDate ? '' : ' (입사일 기준)');
+                if (req == null) return label;
+                return label + (yrs >= req ? ` · ✅ 승진연한 충족(${req}년)` : ` · 승진까지 ${Math.max(0, Math.ceil((req - yrs) * 12))}개월 (기준 ${req}년)`);
+              })()} />
               <DetailItem label="직무레벨" value={<Badge color={T.brand} variant="outline" size="sm">{emp.level}</Badge>} />
               <DetailItem label="직무군" value={<Badge color={groupColor(emp.group)} variant="solid" size="sm">{emp.group}</Badge>} />
               <DetailItem label="담당 역할" value={emp.role || '-'} />
@@ -7681,6 +7693,9 @@ function EmployeeModal({ target, existingIds, onSave, onClose }) {
             </Field>
             <Field label="입사일">
               <ModalInput value={form.hireDate} onChange={v => set('hireDate', v)} placeholder="예) 2026/04/01" />
+            </Field>
+            <Field label="직급부여일 (승진·승급일)">
+              <ModalInput value={form.gradeDate} onChange={v => set('gradeDate', v)} placeholder="예) 2024/01/01 · 비우면 입사일 기준" />
             </Field>
             <Field label="이메일">
               <ModalInput value={form.email} onChange={v => set('email', v)} placeholder="예) hong@koition.com" />
