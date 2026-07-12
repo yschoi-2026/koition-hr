@@ -9888,18 +9888,27 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             {(Number(cfg.balance) || 0) === 0 && <div style={{ fontSize: 12, color: T.warning, marginBottom: S[3] }}>⚠ 법인통장 잔고를 입력하면 예측이 시작됩니다 (입력값은 자동 저장).</div>}
             <details className="no-print" style={{ marginBottom: S[3] }}>
               <summary style={{ fontSize: 12, fontWeight: 700, color: T.brand, cursor: 'pointer' }}>사업별 기간·선급금 비율 편집 (기간·비율 수정 시 예측 즉시 반영 · 기본 선급률 {cfg.advRate}%)</summary>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: S[2], marginTop: S[2], background: T.surfaceAlt, borderRadius: 8, padding: S[3] }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: S[3], marginTop: S[2], background: T.surfaceAlt, borderRadius: 8, padding: S[3] }}>
                 {(projects || []).filter(p => !isEtcProject(p) && p.status !== 'completed' && Number(p.revenue) > 0).map(p => (
-                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <div style={{ flex: 1, fontSize: 11, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={p.name}>{p.id} {p.name}</div>
-                    {upsertProject && <input placeholder="기간 2026.01~2026.12" value={p.period || ''}
-                      onChange={ev => upsertProject({ ...p, period: ev.target.value })}
-                      title="사업 기간 — 선급금(착수월)·잔금(종료 익월) 시점이 이 기간으로 계산됩니다"
-                      style={{ width: 128, padding: '4px 6px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 10.5 }} />}
-                    <input type="number" min="0" max="100" step="5" placeholder={String(cfg.advRate)} value={(cfg.advRates || {})[p.id] ?? ''}
-                      onChange={ev => setCashCfg(prev => ({ ...prev, advRates: { ...(prev.advRates || {}), [p.id]: ev.target.value === '' ? '' : Number(ev.target.value) } }))}
-                      style={{ width: 58, padding: '4px 6px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, textAlign: 'right' }} />
-                    <span style={{ fontSize: 10.5, color: T.textMute }}>%</span>
+                  <div key={p.id} style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 8, padding: S[3] }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 2, lineHeight: 1.4 }}>{p.name}</div>
+                    <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: S[2] }}>{p.id} · {p.client || '발주처 미상'} · 계약 {fmtMoney(p.revenue)}원</div>
+                    <div style={{ display: 'flex', gap: S[2], flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                      {upsertProject && <div style={{ flex: 1, minWidth: 140 }}>
+                        <div style={{ fontSize: 10, color: T.textMute, marginBottom: 2 }}>사업 기간</div>
+                        <input placeholder="2026.01~2026.12" value={p.period || ''}
+                          onChange={ev => upsertProject({ ...p, period: ev.target.value })}
+                          title="선급금(착수월)·잔금(종료 익월) 시점이 이 기간으로 계산됩니다"
+                          style={{ width: '100%', padding: '5px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11, boxSizing: 'border-box' }} />
+                      </div>}
+                      <div style={{ width: 90 }}>
+                        <div style={{ fontSize: 10, color: T.textMute, marginBottom: 2 }}>선급률(%)</div>
+                        <input type="number" min="0" max="100" step="5" placeholder={String(cfg.advRate)} value={(cfg.advRates || {})[p.id] ?? ''}
+                          onChange={ev => setCashCfg(prev => ({ ...prev, advRates: { ...(prev.advRates || {}), [p.id]: ev.target.value === '' ? '' : Number(ev.target.value) } }))}
+                          title={`비우면 기본 ${cfg.advRate}% 적용`}
+                          style={{ width: '100%', padding: '5px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, textAlign: 'right', boxSizing: 'border-box' }} />
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
