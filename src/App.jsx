@@ -2316,8 +2316,113 @@ function calcSupportScore(name, companyScore) {
   return { score: Math.round(cs * 0.4 + mbo * 0.6), mbo, company: cs };
 }
 
+// ── 경영회계 엑셀 → CMS 데이터 파서 (파일명·내용 키워드 기반 자동 인식) ──
+async function parseFinanceExcel(arrayBuffer, fileName) {
+  const XLSX = await loadXLSXLib();
+  const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+  const num = (x) => { const n = Number(String(x == null ? '' : x).replace(/[^\d.-]/g, '')); return isNaN(n) ? 0 : n; };
+  const grid = (name) => { const ws = wb.Sheets[name]; return XLSX.utils.sheet_to_json(ws, { header: 1, defval: null }); };
+  const fn = String(fileName || '');
+  const patch = {}; const notes = [];
+
+  // (A) 월계표/일계표 → 손익·판관비·세무
+  if (/월계표|일계표|일월계표/.test(fn) || wb.SheetNames.some(n => /월계표|일계표/.test(n))) {
+    const sheet = wb.SheetNames.find(n => /월계표|일계표/.test(n)) || wb.SheetNames[0];
+    const rows = grid(sheet);
+    const sga = {}; let vatOut = 0, vatIn = 0, net = 0, svc = 0, goods = 0, interest = 0, subsidy = 0;
+    rows.forEach(r => {
+      if (!r) return;
+      // 계정명 열 탐색 (문자열 셀 중 계정 키워드)
+      const nmeIdx = r.findIndex(c => typeof c === 'string' && c.trim());
+      const nm = nmeIdx >= 0 ? String(r[nmeIdx]).trim() : '';
+      if (!nm) return;
+      const nums = r.map(num).filter(v => v !== 0);
+      const debit = nums.length ? nums[0] : 0;         // 통상 차변이 앞
+      const credit = nums.length ? nums[nums.length - 1] : 0;
+      if (nm.includes('용역매출')) svc = Math.max(svc, credit, debit);
+      else if (nm.includes('상품매출') && !nm.includes('원가')) goods = Math.max(goods, credit, debit);
+      else if (nm === '부가세예수금' || nm.includes('부가세예수')) vatOut = Math.max(vatOut, credit, debit);
+      else if (nm === '부가세대급금' || nm.includes('부가세대급')) vatIn = Math.max(vatIn, credit, debit);
+      else if (nm.includes('당기순이익')) net = Math.max(net, credit, debit);
+      else if (nm.includes('이자비용')) interest = Math.max(interest, debit, credit);
+      else if (nm.includes('국고보조금')) subsidy = Math.max(subsidy, credit, debit);
+      else if (nm.includes('(판)')) { const v = debit || credit; if (v > 0) sga[nm.replace('(판)', '')] = v; }
+    });
+    if (svc || goods) patch.sales = { 용역: svc, 상품: goods };
+    if (Object.keys(sga).length) patch.sga = sga;
+    patch.etc = { 이자비용: interest, 국고보조금: subsidy };
+    patch.tax = { vatOutCum: vatOut, vatInCum: vatIn, netIncomeCum: net };
+    notes.push('월계표: 매출·판관비·세무 반영');
+  }
+
+  // (B) 월별매출집계표 → 월별 매출 + 거래처
+  else if (/월별매출|매출집계/.test(fn) || wb.SheetNames.some(n => /매출집계|월별매출/.test(n))) {
+    const sheet = wb.SheetNames.find(n => /매출집계|월별매출/.test(n)) || wb.SheetNames[0];
+    const rows = grid(sheet);
+    const hdrIdx = rows.findIndex(r => r && r.some(c => /2026[.\-]?\d/.test(String(c || ''))));
+    const hdr = (hdrIdx >= 0 ? rows[hdrIdx] : rows[1]) || [];
+    const monthCols = []; hdr.forEach((c, i) => { if (/2026[.\-]?\d/.test(String(c || ''))) monthCols.push(i); });
+    const clients = []; const msum = [];
+    rows.forEach((r, ri) => {
+      if (!r || ri <= hdrIdx) return;   // 헤더행 이하만
+      const nmIdx = r.findIndex(c => typeof c === 'string' && c.trim() && !/합계|소계|거래처코드|거래처명|코드|구분|번호/.test(c));
+      if (nmIdx < 0) return;
+      const nm = String(r[nmIdx]).trim();
+      const vals = monthCols.map(ci => num(r[ci]));
+      const tot = vals.reduce((a, b) => a + b, 0);
+      if (tot > 10000 && !/합계|소계|코드/.test(nm)) {
+        clients.push({ n: nm, t: tot });
+        vals.forEach((v, i) => { msum[i] = (msum[i] || 0) + v; });
+      }
+    });
+    if (clients.length) { patch.clients = clients.sort((a, b) => b.t - a.t).slice(0, 12); patch.salesMonthly = msum; }
+    notes.push('매출집계표: 월별매출·거래처 반영');
+  }
+
+  // (C) 급여 (임직원/계약) → 인건비 (지급총액 + 회사부담 4대보험)
+  else if (/급여|임직원|계약근로/.test(fn) || wb.SheetNames.some(n => /급여/.test(n))) {
+    const sheet = wb.SheetNames.find(n => /급여/.test(n)) || wb.SheetNames[0];
+    const rows = grid(sheet);
+    // 헤더행에서 열 위치 탐색
+    let hi = rows.findIndex(r => r && r.some(c => String(c || '').includes('지급총액')));
+    if (hi < 0) hi = 1;
+    const hdr = rows[hi] || [];
+    const col = (kw) => hdr.findIndex(c => String(c || '').replace(/\s/g, '').includes(kw));
+    const cGross = col('지급총액'), cNp = col('국민연금'), cHi = col('건강보험'), cEi = col('고용보험');
+    let sum = 0, n = 0;
+    for (let i = hi + 1; i < rows.length; i++) {
+      const r = rows[i]; if (!r) continue;
+      const g = cGross >= 0 ? num(r[cGross]) : 0;
+      if (g <= 0) continue;
+      const burden = (cNp >= 0 ? num(r[cNp]) : 0) + (cHi >= 0 ? num(r[cHi]) : 0) + (cEi >= 0 ? num(r[cEi]) : 0);
+      sum += g + burden; n++;
+    }
+    const isReg = /임직원|정규/.test(fn);
+    patch.__salary = { kind: isReg ? 'reg' : 'con', sum: Math.round(sum), n };
+    notes.push((isReg ? '정규직' : '계약직') + ` 급여 ${n}명 반영`);
+  }
+
+  // (D) 통장/입출금 → 현재 잔고
+  else if (/입출금|계좌|통장|잔액/.test(fn) || wb.SheetNames.some(n => /입출금|계좌|잔액/.test(n))) {
+    const sheet = wb.SheetNames.find(n => /입출금|계좌|잔액/.test(n)) || wb.SheetNames[0];
+    const rows = grid(sheet);
+    let bal = 0;
+    // '잔액' 헤더 열 우선 탐색
+    let hi = rows.findIndex(r => r && r.some(c => /잔액|원화잔액|잔고/.test(String(c || ''))));
+    if (hi >= 0) {
+      const hdr = rows[hi]; const bc = hdr.findIndex(c => /잔액|원화잔액|잔고/.test(String(c || '')));
+      for (let i = hi + 1; i < rows.length; i++) { const v = num(rows[i] && rows[i][bc]); if (v > 100000 && v < 100000000000) { bal = v; break; } }
+    }
+    if (!bal) { for (const r of rows) { if (!r) continue; const vals = r.map(num).filter(v => v > 100000 && v < 100000000000); if (vals.length) { bal = vals[vals.length - 1]; break; } } }
+    if (bal) patch.bankBalance = bal;
+    notes.push('통장 잔고 반영');
+  }
+
+  return { patch, notes };
+}
+
 // ── 경영회계 CMS 초기 데이터 (회계 원장·매출·급여 실적 반영) ──
-const INITIAL_FIN = {"period": "2026-06", "sales": {"용역": 1376809157.0, "상품": 9527273.0}, "salesMonthly": [146622070.0, 107737340.0, 10685040.0, 551286540.0, 608339540.0, 298790540.0, 0], "salesMonths": ["2026.1", "2026.2", "2026.3", "2026.4", "2026.5", "2026.6", "2026.7"], "sga": {"직원급여": 110187850.0, "잡급": 58009600.0, "퇴직급여": 8263728.0, "복리후생비": 81444494.0, "여비교통비": 12516672.0, "접대비-카드": 5189744.0, "접대비-일반": 3000000.0, "통신비": 3341872.0, "소모품비": 98889334.0, "세금과공과금": 81840846.0, "지급임차료": 32935754.0, "수선비": 260000.0, "보험료": 25219686.0, "차량유지비": 10884095.0, "사무용품비": 670515.0, "수도광열비": 653735.0, "지급수수료": 17035255.0, "도서인쇄비": 12717545.0, "외주용역비": 297297935.0, "건물관리비": 24450813.0, "운반비": 2035000.0}, "etc": {"이자비용": 14718707.0, "국고보조금": 9684592.0}, "salaryReg": 93844670, "salaryCon": 88379060, "clients": [{"n": "행정안전부 국가기록원", "t": 394562000.0}, {"n": "병무청", "t": 337324000.0}, {"n": "해군본부", "t": 241290000.0}, {"n": "강원특별자치도", "t": 136586800.0}, {"n": "서울대학교 기록관", "t": 123480000.0}, {"n": "국방과학연구소", "t": 120800000.0}, {"n": "제천시청", "t": 100831500.0}, {"n": "행정안전부 대통령기록관", "t": 76500000.0}, {"n": "여주시청", "t": 75383000.0}, {"n": "(주)오늘소프트", "t": 42750000.0}, {"n": "주시회사 라온투비", "t": 26400000.0}, {"n": "대전광역시 중구청", "t": 20960000.0}]};
+const INITIAL_FIN = {"period": "2026-06", "sales": {"용역": 1376809157.0, "상품": 9527273.0}, "salesMonthly": [146622070.0, 107737340.0, 10685040.0, 551286540.0, 608339540.0, 298790540.0, 0], "salesMonths": ["2026.1", "2026.2", "2026.3", "2026.4", "2026.5", "2026.6", "2026.7"], "sga": {"직원급여": 110187850.0, "잡급": 58009600.0, "퇴직급여": 8263728.0, "복리후생비": 81444494.0, "여비교통비": 12516672.0, "접대비-카드": 5189744.0, "접대비-일반": 3000000.0, "통신비": 3341872.0, "소모품비": 98889334.0, "세금과공과금": 81840846.0, "지급임차료": 32935754.0, "수선비": 260000.0, "보험료": 25219686.0, "차량유지비": 10884095.0, "사무용품비": 670515.0, "수도광열비": 653735.0, "지급수수료": 17035255.0, "도서인쇄비": 12717545.0, "외주용역비": 297297935.0, "건물관리비": 24450813.0, "운반비": 2035000.0}, "etc": {"이자비용": 14718707.0, "국고보조금": 9684592.0}, "salaryReg": 93844670, "salaryCon": 88379060, "clients": [{"n": "행정안전부 국가기록원", "t": 394562000.0}, {"n": "병무청", "t": 337324000.0}, {"n": "해군본부", "t": 241290000.0}, {"n": "강원특별자치도", "t": 136586800.0}, {"n": "서울대학교 기록관", "t": 123480000.0}, {"n": "국방과학연구소", "t": 120800000.0}, {"n": "제천시청", "t": 100831500.0}, {"n": "행정안전부 대통령기록관", "t": 76500000.0}, {"n": "여주시청", "t": 75383000.0}, {"n": "(주)오늘소프트", "t": 42750000.0}, {"n": "주시회사 라온투비", "t": 26400000.0}, {"n": "대전광역시 중구청", "t": 20960000.0}], "bankBalance": 649129752.0, "actualBalances": {}, "tax": {"vatOutCum": 156678275, "vatInCum": 45334127, "netIncomeCum": 403548449, "corpTaxRate": 9, "vatPaidQ": []}};
 
 // ── 서버 저장 동기화 (api/store.js + Upstash Redis) ──
 const SERVER_URL = '/api/store';
@@ -2410,7 +2515,7 @@ const INITIAL_PROJECTS = [
 class AppErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { error: null }; }
   static getDerivedStateFromError(error) { return { error }; }
-  componentDidCatch(error, info) { console.error('앱 오류:', error, info); }
+  componentDidCatch(error, info) { console.error('앱 오류:', error, info); try { this.setState({ stack: (info && info.componentStack || '').split('\n').slice(0, 4).join('\n') }); } catch (e) {} }
   backup = () => {
     try {
       const keys = ['koition_hr_v6', 'koition_hr_users', 'koition_hr_last_backup'];
@@ -2452,6 +2557,7 @@ class AppErrorBoundary extends React.Component {
           </div>
           <div style={{ background: '#FBEDEC', border: '1px solid #F1C3C0', borderRadius: 8, padding: '10px 12px', fontSize: 11.5, color: '#7A2E28', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', marginBottom: 16, maxHeight: 120, overflow: 'auto' }}>
             {String(err && (err.message || err))}
+            {this.state.stack ? '\n─ 발생 위치 ─\n' + this.state.stack : ''}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button onClick={this.backup} style={{ padding: '10px 14px', borderRadius: 8, border: 'none', background: '#1B3A6F', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>① 백업 다운로드</button>
@@ -4332,11 +4438,13 @@ function LoansView({ loans, setLoans, employees }) {
 
 // 모바일 감지 훅
 function useIsMobile() {
-  const [m, setM] = React.useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+  const get = () => { try { return typeof window !== 'undefined' && window.innerWidth < 768; } catch (e) { return false; } };
+  const [m, setM] = React.useState(get);
   React.useEffect(() => {
-    const onR = () => setM(window.innerWidth < 768);
+    const onR = () => setM(get());
     window.addEventListener('resize', onR);
-    return () => window.removeEventListener('resize', onR);
+    window.addEventListener('orientationchange', onR);
+    return () => { window.removeEventListener('resize', onR); window.removeEventListener('orientationchange', onR); };
   }, []);
   return m;
 }
@@ -8055,7 +8163,7 @@ function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal, upda
 
       <div style={{ ...card(), padding: S[6], marginBottom: S[5] }}>
         <SectionTitle>제안 → 수주 파이프라인 (예산 기준)</SectionTitle>
-        <ResponsiveContainer width="100%" height={220}>
+        <ResponsiveContainer width="100%" height={220} minWidth={0}>
           <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 20, left: 40, bottom: 10 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={T.divider} horizontal={false} />
             <XAxis type="number" tick={{ fontSize: 11, fill: T.textMute }} tickFormatter={(v) => fmtMoney(v)} />
@@ -8288,7 +8396,7 @@ function ProjectAnalytics({ projects, employees, cfg, targets, allProjects }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[5], marginBottom: S[5] }}>
         <div style={{ ...card(), padding: S[6] }}>
           <SectionTitle>지출 구성 (작업자·관리자·제경비)</SectionTitle>
-          <ResponsiveContainer width="100%" height={280}>
+          <ResponsiveContainer width="100%" height={280} minWidth={0}>
             <PieChart>
               <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} innerRadius={55}
                 label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
@@ -8300,7 +8408,7 @@ function ProjectAnalytics({ projects, employees, cfg, targets, allProjects }) {
         </div>
         <div style={{ ...card(), padding: S[6] }}>
           <SectionTitle>사업비 대비 제경비 %</SectionTitle>
-          <ResponsiveContainer width="100%" height={280}>
+          <ResponsiveContainer width="100%" height={280} minWidth={0}>
             <BarChart data={rows} margin={{ top: 10, right: 16, left: -10, bottom: 60 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
               <XAxis dataKey="name" angle={-30} textAnchor="end" height={70} tick={{ fontSize: 10, fill: T.textMute }} interval={0} />
@@ -8316,7 +8424,7 @@ function ProjectAnalytics({ projects, employees, cfg, targets, allProjects }) {
 
       <div style={{ ...card(), padding: S[6], marginBottom: S[5] }}>
         <SectionTitle>조직별 매출 · 원가 · 영업이익 (수익 롤업)</SectionTitle>
-        <ResponsiveContainer width="100%" height={320}>
+        <ResponsiveContainer width="100%" height={320} minWidth={0}>
           <BarChart data={orgData} margin={{ top: 10, right: 16, left: 10, bottom: 60 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
             <XAxis dataKey="name" angle={-25} textAnchor="end" height={70} tick={{ fontSize: 11, fill: T.textMute }} interval={0} />
@@ -8339,7 +8447,7 @@ function ProjectAnalytics({ projects, employees, cfg, targets, allProjects }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[5], marginBottom: S[5] }}>
           <div style={{ ...card(), padding: S[6] }}>
             <SectionTitle>연도별 매출·원가·영업이익 추세</SectionTitle>
-            <ResponsiveContainer width="100%" height={280}>
+            <ResponsiveContainer width="100%" height={280} minWidth={0}>
               <BarChart data={yearData} margin={{ top: 10, right: 16, left: 10, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
                 <XAxis dataKey="year" tick={{ fontSize: 12, fill: T.textMute }} />
@@ -8356,7 +8464,7 @@ function ProjectAnalytics({ projects, employees, cfg, targets, allProjects }) {
           </div>
           <div style={{ ...card(), padding: S[6] }}>
             <SectionTitle>연도별 수익률·제경비 비중 추세</SectionTitle>
-            <ResponsiveContainer width="100%" height={280}>
+            <ResponsiveContainer width="100%" height={280} minWidth={0}>
               <BarChart data={yearData} margin={{ top: 10, right: 16, left: -10, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
                 <XAxis dataKey="year" tick={{ fontSize: 12, fill: T.textMute }} />
@@ -8383,7 +8491,7 @@ function ProjectAnalytics({ projects, employees, cfg, targets, allProjects }) {
               ))}
             </div>
           )}
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={300} minWidth={0}>
             <BarChart data={planRows} margin={{ top: 10, right: 16, left: 10, bottom: 70 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
               <XAxis dataKey="name" angle={-30} textAnchor="end" height={80} tick={{ fontSize: 10, fill: T.textMute }} interval={0} />
@@ -8404,7 +8512,7 @@ function ProjectAnalytics({ projects, employees, cfg, targets, allProjects }) {
 
       <div style={{ ...card(), padding: S[6] }}>
         <SectionTitle>프로젝트별 지출 분포 (작업자/관리자 인건비 · 제경비)</SectionTitle>
-        <ResponsiveContainer width="100%" height={360}>
+        <ResponsiveContainer width="100%" height={360} minWidth={0}>
           <BarChart data={rows} margin={{ top: 10, right: 16, left: 10, bottom: 80 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
             <XAxis dataKey="name" angle={-30} textAnchor="end" height={90} tick={{ fontSize: 10, fill: T.textMute }} interval={0} />
@@ -8688,6 +8796,41 @@ function MonthCloseView({ projects, employees, bulkUpsertProjects, bulkUpsertOve
 
 function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
   const [edit, setEdit] = React.useState(false);
+  const [uploadMsg, setUploadMsg] = React.useState('');
+  const upRef = React.useRef(null);
+  const handleFinUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploadMsg('분석 중...');
+    const allNotes = [];
+    let merged = {};
+    for (const file of files) {
+      try {
+        const buf = await file.arrayBuffer();
+        const { patch, notes } = await parseFinanceExcel(buf, file.name);
+        allNotes.push(...notes);
+        // 급여는 별도 병합(정규/계약 각각)
+        if (patch.__salary) {
+          if (patch.__salary.kind === 'reg') merged.salaryReg = patch.__salary.sum;
+          else merged.salaryCon = patch.__salary.sum;
+          delete patch.__salary;
+        }
+        merged = { ...merged, ...patch, sga: { ...(merged.sga || {}), ...(patch.sga || {}) }, sales: { ...(merged.sales || {}), ...(patch.sales || {}) }, etc: { ...(merged.etc || {}), ...(patch.etc || {}) }, tax: { ...(merged.tax || {}), ...(patch.tax || {}) } };
+      } catch (err) { allNotes.push(file.name + ': 인식 실패'); }
+    }
+    setFin(prev => {
+      const n = { ...prev };
+      Object.keys(merged).forEach(k => {
+        if (k === 'sga' || k === 'sales' || k === 'etc' || k === 'tax') n[k] = { ...(prev[k] || {}), ...merged[k] };
+        else n[k] = merged[k];
+      });
+      n.period = '2026-' + String(new Date().getMonth() + 1).padStart(2, '0');
+      return n;
+    });
+    setUploadMsg('반영 완료: ' + (allNotes.join(' · ') || '인식된 데이터 없음'));
+    if (upRef.current) upRef.current.value = '';
+    setTimeout(() => setUploadMsg(''), 8000);
+  };
   const f = fin || {};
   const salesTotal = (f.sales?.용역 || 0) + (f.sales?.상품 || 0);
   const sgaEntries = Object.entries(f.sga || {}).sort((a, b) => b[1] - a[1]);
@@ -8717,8 +8860,15 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
 
   return (
     <div>
-      <PageHeader eyebrow="Management Accounting" title="경영회계 CMS" subtitle={`회계 실적 통합 대시보드 · 기준 ${f.period || '-'} 누계`}
-        action={canEdit && <Button variant={edit ? 'primary' : 'outline'} size="sm" icon={edit ? CheckCircle2 : Settings} onClick={() => setEdit(e => !e)}>{edit ? '편집 완료' : '데이터 편집'}</Button>} />
+      <PageHeader eyebrow="Management Accounting" title="경영회계 CMS" subtitle={`회계 실적 통합 대시보드 · 기준 ${f.period || '-'} 누계 · [회계 엑셀 업로드]로 월별 갱신`}
+        action={canEdit && (
+          <span style={{ display: 'inline-flex', gap: S[2], alignItems: 'center', flexWrap: 'wrap' }}>
+            <Button variant="secondary" size="sm" icon={Upload} onClick={() => upRef.current && upRef.current.click()}>회계 엑셀 업로드</Button>
+            <input ref={upRef} type="file" accept=".xlsx,.xls" multiple onChange={handleFinUpload} style={{ display: 'none' }} />
+            <Button variant={edit ? 'primary' : 'outline'} size="sm" icon={edit ? CheckCircle2 : Settings} onClick={() => setEdit(e => !e)}>{edit ? '편집 완료' : '데이터 편집'}</Button>
+          </span>
+        )} />
+      {uploadMsg && <div style={{ background: uploadMsg.startsWith('반영') ? 'rgba(27,122,67,0.08)' : T.surfaceAlt, border: `1px solid ${uploadMsg.startsWith('반영') ? T.success : T.border}`, borderRadius: 8, padding: '9px 13px', marginBottom: S[3], fontSize: 12 }}>{uploadMsg}</div>}
 
       {/* 핵심 KPI */}
       <div style={{ display: 'flex', gap: S[3], flexWrap: 'wrap', marginBottom: S[4] }}>
@@ -8733,7 +8883,7 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
       <div style={{ ...card(), padding: S[4], marginBottom: S[4] }}>
         <SectionTitle>월별 매출 추이 (백만원)</SectionTitle>
         <div style={{ height: 200, marginTop: S[2] }}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <BarChart data={monthlyChart} margin={{ top: 8, right: 10, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
@@ -8818,6 +8968,89 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
         )}
         <div style={{ fontSize: 11, color: T.textMute, marginTop: S[3], lineHeight: 1.7 }}>
           회계 원장(월계표)·매출집계표·급여대장에서 추출한 6월 누계 실적입니다. [데이터 편집]으로 수치를 조정하면 즉시 반영·저장됩니다. 매출총이익률 {opMargin.toFixed(1)}%는 {opMargin >= 20 ? '양호' : opMargin >= 10 ? '보통' : '개선 필요'} 수준이며, 판관비 중 외주용역비·인건비 비중이 가장 큽니다. 인사평가의 전사 성과지표는 이 손익을 기준으로 연동됩니다.
+        </div>
+      </div>
+
+      {/* 세무 자동계산 (부가세·법인세) */}
+      <div style={{ ...card({ borderLeft: `4px solid ${T.gold || '#B8892B'}` }), padding: S[4], marginTop: S[4] }}>
+        <SectionTitle>세무 자동계산 (부가세 · 법인세 추정)</SectionTitle>
+        {(() => {
+          const tax = f.tax || {};
+          const vatOut = Number(tax.vatOutCum) || 0;   // 매출세액(누계)
+          const vatIn = Number(tax.vatInCum) || 0;     // 매입세액(누계)
+          const vatPayableCum = vatOut - vatIn;        // 납부할 부가세(누계)
+          const monthsElapsed2 = (() => { const m = String(f.period || '').match(/-(\d{2})/); return m ? Number(m[1]) : 6; })();
+          // 분기 부가세 추정: 누계 납부세액 ÷ 경과월 × 3
+          const vatPerQuarter = monthsElapsed2 ? Math.round(vatPayableCum / monthsElapsed2 * 3) : 0;
+          // 법인세: 연간 추정 과세표준(순이익 누계 ÷ 경과월 × 12)에 누진세율
+          const netCum = Number(tax.netIncomeCum) || 0;
+          const annualBase = monthsElapsed2 ? Math.round(netCum / monthsElapsed2 * 12) : 0;
+          const corpTax = annualBase <= 200000000
+            ? Math.round(annualBase * 0.09)
+            : Math.round(200000000 * 0.09 + (Math.min(annualBase, 20000000000) - 200000000) * 0.19);
+          const localTax = Math.round(corpTax * 0.1);   // 지방소득세 10%
+          const effRate = annualBase ? ((corpTax + localTax) / annualBase * 100) : 0;
+          const upTax = (k, v) => setFin(prev => ({ ...prev, tax: { ...((prev || {}).tax || {}), [k]: v === '' ? '' : Number(String(v).replace(/[^\d.]/g, '')) } }));
+          const box = (label, val, sub, tone) => (
+            <div style={{ ...card(), padding: S[3], flex: 1, minWidth: 160 }}>
+              <div style={{ fontSize: 11, color: T.textMute, marginBottom: 3 }}>{label}</div>
+              <div style={{ fontSize: 17, fontWeight: 800, color: tone || T.ink, fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(val)}</div>
+              {sub && <div style={{ fontSize: 10, color: T.textMute, marginTop: 2 }}>{sub}</div>}
+            </div>
+          );
+          return (
+            <div>
+              <div style={{ display: 'flex', gap: S[3], flexWrap: 'wrap', marginBottom: S[3] }}>
+                {box('부가세 (분기 예상)', vatPerQuarter, `누계 납부세액 ${fmtMoney(vatPayableCum)} ÷ ${monthsElapsed2}개월 × 3`, T.brand)}
+                {box('법인세 (연간 추정)', corpTax, `추정 과세표준 ${fmtMoney(annualBase)} 기준`, T.gold || '#B8892B')}
+                {box('지방소득세 (법인세 10%)', localTax, '법인세분', T.textMute)}
+                {box('법인세+지방세 합계', corpTax + localTax, `실효세율 약 ${effRate.toFixed(1)}%`, T.danger)}
+              </div>
+              <div style={{ background: T.surfaceAlt, borderRadius: 8, padding: S[3], display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: S[3] }}>
+                {[['매출세액 누계(부가세예수금)', 'vatOutCum'], ['매입세액 누계(부가세대급금)', 'vatInCum'], ['당기순이익 누계', 'netIncomeCum']].map(([label, key]) => (
+                  <div key={key}>
+                    <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>{label}</div>
+                    <input inputMode="numeric" value={fmtInput(tax[key] ?? 0)} onChange={e => upTax(key, e.target.value)} style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }} />
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: T.textMute, marginTop: S[3], lineHeight: 1.7 }}>
+                부가세 = 매출세액 − 매입세액 (분기 예상은 누계를 경과월로 나눠 환산). 법인세는 순이익을 연환산한 과세표준에 누진세율(2억 이하 9%, 초과분 19%)을 적용한 <strong>추정치</strong>이며, 세무조정 전 참고용입니다. 이 값은 아래 자금흐름 예측의 세금 지출로 자동 반영됩니다.
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* 월별 실제 통장잔고 (예측 대비용) */}
+      <div style={{ ...card(), padding: S[4], marginTop: S[4] }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <SectionTitle>월별 실제 통장잔고 (자금흐름 예측 대비용)</SectionTitle>
+          <div style={{ fontSize: 11.5, color: T.textMute }}>현재 통장잔고: <strong style={{ color: T.brand }}>{fmtMoney(f.bankBalance || 0)}원</strong></div>
+        </div>
+        <div style={{ fontSize: 11.5, color: T.textMute, margin: `4px 0 ${S[3]}px`, lineHeight: 1.6 }}>
+          매월 말 실제 통장잔고를 입력하면, 경영보고서의 자금흐름 예측 차트에 <strong>실제 잔고 라인</strong>이 겹쳐 표시되어 예측 정확도를 확인할 수 있습니다.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: S[3] }}>
+          {(() => {
+            const yr = 2026; const now = new Date();
+            const upTo = (now.getFullYear() === yr) ? now.getMonth() + 1 : 12;
+            const cur = (finPatch, mk, v) => setFin(prev => ({ ...prev, actualBalances: { ...((prev || {}).actualBalances || {}), [mk]: v === '' ? '' : Number(String(v).replace(/[^\d]/g, '')) } }));
+            return Array.from({ length: upTo }, (_, i) => {
+              const mk = yr + '-' + String(i + 1).padStart(2, '0');
+              const val = (f.actualBalances || {})[mk];
+              return (
+                <div key={mk}>
+                  <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>{i + 1}월 말 잔고</div>
+                  <input inputMode="numeric" placeholder="미입력" value={fmtInput(val ?? '')} onChange={e => cur(null, mk, e.target.value)}
+                    style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }} />
+                </div>
+              );
+            });
+          })()}
+        </div>
+        <div style={{ fontSize: 11, color: T.textMute, marginTop: S[3] }}>
+          팁: 현재 통장잔고를 이번 달 칸에 입력하고, 경영보고서 자금흐름 예측의 "법인통장 잔고"에도 같은 값을 넣으면 예측 시작점이 실제와 일치합니다.
         </div>
       </div>
     </div>
@@ -9146,7 +9379,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         <div style={{ ...card(), padding: S[5] }}>
           <SectionTitle>프로젝트별 매출·원가 (상위 8)</SectionTitle>
           <div style={{ height: 260, marginTop: S[3] }}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <BarChart data={revBar} margin={{ top: 8, right: 8, left: 0, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
                 <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textMute }} angle={-30} textAnchor="end" height={60} interval={0} />
@@ -9213,7 +9446,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
       <div style={{ ...card(), padding: S[5] }}>
         <SectionTitle>본부별 손익 비교</SectionTitle>
         <div style={{ height: 260, marginTop: S[3] }}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <BarChart data={orgBar} margin={{ top: 8, right: 8, left: 0, bottom: 30 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
               <XAxis dataKey="name" tick={{ fontSize: 11, fill: T.textMute }} interval={0} />
@@ -9247,7 +9480,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         <div style={{ ...card(), padding: S[5] }}>
           <SectionTitle>월별 집행원가 추이 <span style={{ fontWeight: 400, color: T.textMute }}>(직접원가 + 공통비)</span></SectionTitle>
           <div style={{ height: 240, marginTop: S[3] }}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <ComposedChart data={trendData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
                 <XAxis dataKey="month" tick={{ fontSize: 11, fill: T.textMute }} />
@@ -9446,7 +9679,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           <SectionTitle>총원가 구성</SectionTitle>
           <div style={{ height: 230, marginTop: S[2] }}>
             {costMix.length > 0 && (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <PieChart>
                   <Pie data={costMix} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} innerRadius={45} paddingAngle={2}>
                     {costMix.map((e, i) => <Cell key={i} fill={e.color} />)}
@@ -9547,6 +9780,16 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const opexCum = sgaVals.filter(([k]) => !laborLike.some(l => k.includes(l))).reduce((a, [, v]) => a + v, 0);
         const actualOpexMonthly = monthsElapsed ? Math.round(opexCum / monthsElapsed) : 0;
         const cmsLinked = !!(finData.salaryReg || finData.salaryCon || sgaTotalCms);
+        // 세무 자동계산 → 예측 세금 지출 연동
+        const taxD = finData.tax || {};
+        const vatPayableCum2 = (Number(taxD.vatOutCum) || 0) - (Number(taxD.vatInCum) || 0);
+        const cmsVatQ = monthsElapsed ? Math.round(vatPayableCum2 / monthsElapsed * 3) : 0;
+        const annualBase2 = monthsElapsed ? Math.round((Number(taxD.netIncomeCum) || 0) / monthsElapsed * 12) : 0;
+        const cmsCorpTax = annualBase2 <= 200000000 ? Math.round(annualBase2 * 0.09) : Math.round(200000000 * 0.09 + (Math.min(annualBase2, 20000000000) - 200000000) * 0.19);
+        const cmsCorpTaxTotal = cmsCorpTax + Math.round(cmsCorpTax * 0.1);  // 지방세 포함
+        const taxLinked = !!(taxD.vatOutCum || taxD.netIncomeCum);
+        const useVatQ = (cfg.taxFromCms !== false && taxLinked && cmsVatQ) ? cmsVatQ : (Number(cfg.vatQ) || 0);
+        const useCorpTax = (cfg.taxFromCms !== false && taxLinked && cmsCorpTaxTotal) ? cmsCorpTaxTotal : (Number(cfg.corpTax) || 0);
         // 사용값: cashCfg에 수동입력이 있으면 우선, 없으면 CMS 실적 자동 적용
         const useLabor = (cfg.laborFromCms !== false && actualLaborMonthly) ? actualLaborMonthly : (Number(cfg.monthlyLabor) || 0);
         const useOpex = (cfg.opexFromCms !== false && actualOpexMonthly) ? actualOpexMonthly : (Number(cfg.monthlyOpex) || 0);
@@ -9585,7 +9828,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           const end = start + 6; if (end < 12) incS[end] += p.budget * (1 - advP);
         });
         // 지출: 인건비 + 운영경비 + 세금(부가세 1·4·7·10월, 법인세 3월)
-        const exp = months.map(mo => useLabor + useOpex + ([1, 4, 7, 10].includes(mo.m) ? (Number(cfg.vatQ) || 0) : 0) + (mo.m === 3 ? (Number(cfg.corpTax) || 0) : 0));
+        const exp = months.map(mo => useLabor + useOpex + ([1, 4, 7, 10].includes(mo.m) ? useVatQ : 0) + (mo.m === 3 ? useCorpTax : 0));
         let bal = Number(cfg.balance) || 0, balS = Number(cfg.balance) || 0;
         const rows = months.map((mo, i) => { bal += inc[i] - exp[i]; balS += incS[i] - exp[i]; return { ...mo, inc: inc[i], incS: incS[i], exp: exp[i], bal, balS, notes: incNote[i].slice(0, 3).join(', ') }; });
         const safety = Number(cfg.safety) || 0;
@@ -9597,16 +9840,24 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             <input inputMode="numeric" value={fmtInput(cfg[k] ?? 0)} onChange={ev => up(k, parseInput(ev.target.value))} style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }} />
           </div>
         );
-        const chartData = rows.map(r => ({ name: r.label, 잔고: Math.round(r.bal / 1000000), '잔고(파이프라인 포함)': Math.round(r.balS / 1000000), 안전선: Math.round(safety / 1000000) }));
+        const actualBal = (finData.actualBalances) || {};
+        const chartData = rows.map(r => {
+          const mk = r.y + '-' + String(r.m).padStart(2, '0');
+          const av = actualBal[mk];
+          const d = { name: r.label, 예측잔고: Math.round(r.bal / 1000000), '예측(파이프라인)': Math.round(r.balS / 1000000), 안전선: Math.round(safety / 1000000) };
+          if (av != null && av !== '') d['실제잔고'] = Math.round(Number(av) / 1000000);
+          return d;
+        });
+        const hasActual = Object.keys(actualBal).some(k => actualBal[k] != null && actualBal[k] !== '');
         return (
           <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[5], marginTop: S[3] }}>
             {/* CMS 실적 연동 배너 */}
             {cmsLinked && (
               <div style={{ background: '#EEF3FA', border: `1px solid ${T.brand}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12 }}>
                 <strong style={{ color: T.brand }}>🔗 경영회계 CMS 실적 연동</strong> — 예측 지출이 실제 회계 실적 기준으로 자동 설정됩니다:
-                월 인건비 <strong>{fmtMoney(actualLaborMonthly)}원</strong> (CMS 급여), 월 운영경비 <strong>{fmtMoney(actualOpexMonthly)}원</strong> ({monthsElapsed}개월 판관비 ÷ 경과월).
+                월 인건비 <strong>{fmtMoney(actualLaborMonthly)}원</strong> (CMS 급여), 월 운영경비 <strong>{fmtMoney(actualOpexMonthly)}원</strong> ({monthsElapsed}개월 판관비 ÷ 경과월){taxLinked ? `, 분기 부가세 ${fmtMoney(cmsVatQ)}원 · 연 법인세 ${fmtMoney(cmsCorpTaxTotal)}원(세무 자동계산)` : ''}.
                 <label style={{ marginLeft: 10, fontSize: 11.5, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={cfg.laborFromCms !== false && cfg.opexFromCms !== false} onChange={e => setCashCfg(prev => ({ ...prev, laborFromCms: e.target.checked, opexFromCms: e.target.checked }))} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+                  <input type="checkbox" checked={cfg.laborFromCms !== false && cfg.opexFromCms !== false && cfg.taxFromCms !== false} onChange={e => setCashCfg(prev => ({ ...prev, laborFromCms: e.target.checked, opexFromCms: e.target.checked, taxFromCms: e.target.checked }))} style={{ marginRight: 4, verticalAlign: 'middle' }} />
                   실적 자동 적용
                 </label>
                 <span style={{ color: T.textMute, marginLeft: 6 }}>(해제 시 아래 수동 입력값 사용)</span>
@@ -9623,8 +9874,14 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>월 운영경비(원){cfg.opexFromCms !== false && actualOpexMonthly ? ' · CMS연동' : ''}</div>
                 <input inputMode="numeric" disabled={cfg.opexFromCms !== false && !!actualOpexMonthly} value={fmtInput(useOpex)} onChange={ev => up('monthlyOpex', parseInput(ev.target.value))} style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', background: (cfg.opexFromCms !== false && actualOpexMonthly) ? T.surfaceAlt : '#fff', color: (cfg.opexFromCms !== false && actualOpexMonthly) ? T.textMute : T.ink }} />
               </div>
-              {inp('분기 부가세(1·4·7·10월)', 'vatQ')}
-              {inp('법인세(3월)', 'corpTax')}
+              <div>
+                <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>분기 부가세(1·4·7·10월){cfg.taxFromCms !== false && taxLinked && cmsVatQ ? ' · CMS연동' : ''}</div>
+                <input inputMode="numeric" disabled={cfg.taxFromCms !== false && taxLinked && !!cmsVatQ} value={fmtInput(useVatQ)} onChange={ev => up('vatQ', parseInput(ev.target.value))} style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', background: (cfg.taxFromCms !== false && taxLinked && cmsVatQ) ? T.surfaceAlt : '#fff', color: (cfg.taxFromCms !== false && taxLinked && cmsVatQ) ? T.textMute : T.ink }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>법인세(3월){cfg.taxFromCms !== false && taxLinked && cmsCorpTaxTotal ? ' · CMS연동' : ''}</div>
+                <input inputMode="numeric" disabled={cfg.taxFromCms !== false && taxLinked && !!cmsCorpTaxTotal} value={fmtInput(useCorpTax)} onChange={ev => up('corpTax', parseInput(ev.target.value))} style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', background: (cfg.taxFromCms !== false && taxLinked && cmsCorpTaxTotal) ? T.surfaceAlt : '#fff', color: (cfg.taxFromCms !== false && taxLinked && cmsCorpTaxTotal) ? T.textMute : T.ink }} />
+              </div>
               {inp('선급금 비율(%)', 'advRate', 5)}
               {inp('안전 잔고 경고선(원)', 'safety')}
             </div>
@@ -9659,19 +9916,34 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             )}
             {/* 차트 */}
             <div style={{ height: 220 }}>
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <LineChart data={chartData} margin={{ top: 6, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
                   <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                   <YAxis tick={{ fontSize: 10 }} unit="M" />
                   <Tooltip formatter={(v) => v + '백만원'} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Line type="monotone" dataKey="잔고" stroke={T.brand} strokeWidth={2.5} dot={{ r: 2.5 }} />
-                  <Line type="monotone" dataKey="잔고(파이프라인 포함)" stroke={T.success} strokeWidth={1.8} strokeDasharray="6 3" dot={false} />
+                  <Line type="monotone" dataKey="예측잔고" stroke={T.brand} strokeWidth={2.5} dot={{ r: 2.5 }} />
+                  <Line type="monotone" dataKey="예측(파이프라인)" stroke={T.success} strokeWidth={1.8} strokeDasharray="6 3" dot={false} />
+                  {hasActual && <Line type="monotone" dataKey="실제잔고" stroke={T.gold || '#B8892B'} strokeWidth={2.5} dot={{ r: 3.5 }} connectNulls />}
                   <Line type="monotone" dataKey="안전선" stroke={T.danger} strokeWidth={1} strokeDasharray="2 4" dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
+            {/* 예측 vs 실제 정확도 */}
+            {hasActual && (() => {
+              const diffs = rows.map(r => { const mk = r.y + '-' + String(r.m).padStart(2, '0'); const av = actualBal[mk]; return (av != null && av !== '') ? { label: r.label, pred: r.bal, act: Number(av), diff: r.bal - Number(av) } : null; }).filter(Boolean);
+              if (!diffs.length) return null;
+              const last = diffs[diffs.length - 1];
+              const mape = Math.round(diffs.reduce((a, d) => a + Math.abs(d.diff) / Math.max(1, Math.abs(d.act)), 0) / diffs.length * 100);
+              return (
+                <div style={{ background: T.surfaceAlt, borderRadius: 8, padding: '10px 14px', margin: `${S[3]}px 0`, fontSize: 12 }}>
+                  <strong style={{ color: T.brand }}>📊 예측 정확도</strong> — 실제 입력 {diffs.length}개월 기준 평균 오차율 <strong>{mape}%</strong>.
+                  최근({last.label}) 예측 {fmtMoney(last.pred)} vs 실제 {fmtMoney(last.act)} · 차이 <strong style={{ color: Math.abs(last.diff) > safety ? T.danger : T.textMute }}>{last.diff >= 0 ? '+' : ''}{fmtMoney(last.diff)}원</strong>
+                  {Math.abs(last.diff) > safety ? ' — 예측 가정(선급률·수금시점·경비)을 재점검하세요.' : ' — 예측이 실제와 잘 맞습니다.'}
+                </div>
+              );
+            })()}
             {/* 월별 표 */}
             <div style={{ overflow: 'auto', marginTop: S[3] }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, minWidth: 760 }}>
@@ -9693,7 +9965,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               </table>
             </div>
             <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2], lineHeight: 1.7 }}>
-              수입 = ①수금 관리 등록분(가장 우선) + ②진행 사업 선급금(기본 {cfg.advRate}% · 사업별 개별 설정 가능 · 착수월)과 잔금(종료 익월, 종료 지연분은 이번 달 가정). 파이프라인 라인은 미수주 제안이 전부 수주된다는 가정(마감 익월 선급, +6개월 잔금). <strong>신규 수주 확정 시 자동으로 확정 라인에 반영</strong>됩니다. 지출 = 월 인건비+운영경비+분기 부가세+법인세. 인건비·운영경비는 경영회계 CMS의 실제 실적(급여대장·판관비)에서 자동 산출되며, 체크 해제 시 수동 입력으로 전환됩니다. 정확한 수금 일정은 「수금 관리」에 등록할수록 예측이 정밀해집니다.
+              수입 = ①수금 관리 등록분(가장 우선) + ②진행 사업 선급금(기본 {cfg.advRate}% · 사업별 개별 설정 가능 · 착수월)과 잔금(종료 익월, 종료 지연분은 이번 달 가정). 파이프라인 라인은 미수주 제안이 전부 수주된다는 가정(마감 익월 선급, +6개월 잔금). <strong>신규 수주 확정 시 자동으로 확정 라인에 반영</strong>됩니다. 지출 = 월 인건비+운영경비+분기 부가세+법인세. 인건비·운영경비는 경영회계 CMS의 실제 실적(급여대장·판관비)에서 자동 산출되며, 체크 해제 시 수동 입력으로 전환됩니다. 정확한 수금 일정은 「수금 관리」에 등록할수록 예측이 정밀해집니다. 실제 통장잔고를 경영회계 CMS에 월별 입력하면 위 차트에 금색 실선(실제)이 겹쳐 예측 정확도를 확인할 수 있습니다.
             </div>
           </div>
         );
@@ -11544,7 +11816,7 @@ function AnalyticsView({ employees, results, policy, stats }) {
         <div style={{ ...card(), padding: S[6] }}>
           <SectionTitle>등급 분포</SectionTitle>
           {gradePieData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={280}>
+            <ResponsiveContainer width="100%" height={280} minWidth={0}>
               <PieChart>
                 <Pie data={gradePieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} 
                   label={({ name, value }) => `${name} · ${value}명`}>
@@ -11559,7 +11831,7 @@ function AnalyticsView({ employees, results, policy, stats }) {
         <div style={{ ...card(), padding: S[6] }}>
           <SectionTitle>부서별 평균 점수</SectionTitle>
           {deptData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={280}>
+            <ResponsiveContainer width="100%" height={280} minWidth={0}>
               <BarChart data={deptData} margin={{ top: 20, right: 20, left: -10, bottom: 60 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
                 <XAxis dataKey="name" angle={-25} textAnchor="end" height={70} tick={{ fontSize: 11, fill: T.textMute }} />
@@ -11575,7 +11847,7 @@ function AnalyticsView({ employees, results, policy, stats }) {
       <div style={{ ...card(), padding: S[6] }}>
         <SectionTitle>부서별 등급 분포</SectionTitle>
         {deptData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={320}>
+          <ResponsiveContainer width="100%" height={320} minWidth={0}>
             <BarChart data={deptData} margin={{ top: 20, right: 20, left: -10, bottom: 60 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
               <XAxis dataKey="name" angle={-25} textAnchor="end" height={70} tick={{ fontSize: 11, fill: T.textMute }} />
@@ -11641,7 +11913,7 @@ function HistoryView({ history, employees, results, currentYear, highlight }) {
       <div style={{ ...card(), padding: S[6], marginBottom: S[5] }}>
         <SectionTitle>연도별 등급 분포 추이</SectionTitle>
         {trendData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={320}>
+          <ResponsiveContainer width="100%" height={320} minWidth={0}>
             <BarChart data={trendData} margin={{ top: 20, right: 20, left: -10, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={T.divider} vertical={false} />
               <XAxis dataKey="year" tick={{ fontSize: 12, fill: T.textMute }} />
