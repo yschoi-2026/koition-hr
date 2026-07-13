@@ -2422,7 +2422,7 @@ async function parseFinanceExcel(arrayBuffer, fileName) {
 }
 
 // ── 경영회계 CMS 초기 데이터 (회계 원장·매출·급여 실적 반영) ──
-const INITIAL_FIN = {"period": "2026-06", "sales": {"용역": 1376809157.0, "상품": 9527273.0}, "salesMonthly": [146622070.0, 107737340.0, 10685040.0, 551286540.0, 608339540.0, 298790540.0, 0], "salesMonths": ["2026.1", "2026.2", "2026.3", "2026.4", "2026.5", "2026.6", "2026.7"], "sga": {"직원급여": 110187850.0, "잡급": 58009600.0, "퇴직급여": 8263728.0, "복리후생비": 81444494.0, "여비교통비": 12516672.0, "접대비-카드": 5189744.0, "접대비-일반": 3000000.0, "통신비": 3341872.0, "소모품비": 98889334.0, "세금과공과금": 81840846.0, "지급임차료": 32935754.0, "수선비": 260000.0, "보험료": 25219686.0, "차량유지비": 10884095.0, "사무용품비": 670515.0, "수도광열비": 653735.0, "지급수수료": 17035255.0, "도서인쇄비": 12717545.0, "외주용역비": 297297935.0, "건물관리비": 24450813.0, "운반비": 2035000.0}, "etc": {"이자비용": 14718707.0, "국고보조금": 9684592.0}, "salaryReg": 93844670, "salaryCon": 88379060, "clients": [{"n": "행정안전부 국가기록원", "t": 394562000.0}, {"n": "병무청", "t": 337324000.0}, {"n": "해군본부", "t": 241290000.0}, {"n": "강원특별자치도", "t": 136586800.0}, {"n": "서울대학교 기록관", "t": 123480000.0}, {"n": "국방과학연구소", "t": 120800000.0}, {"n": "제천시청", "t": 100831500.0}, {"n": "행정안전부 대통령기록관", "t": 76500000.0}, {"n": "여주시청", "t": 75383000.0}, {"n": "(주)오늘소프트", "t": 42750000.0}, {"n": "주시회사 라온투비", "t": 26400000.0}, {"n": "대전광역시 중구청", "t": 20960000.0}], "bankBalance": 649129752.0, "actualBalances": {}, "tax": {"vatOutCum": 156678275, "vatInCum": 45334127, "netIncomeCum": 403548449, "corpTaxRate": 9, "vatPaidQ": []}};
+const INITIAL_FIN = {"period": "2026-06", "sales": {"용역": 1376809157.0, "상품": 9527273.0}, "salesMonthly": [146622070.0, 107737340.0, 10685040.0, 551286540.0, 608339540.0, 298790540.0, 0], "salesMonths": ["2026.1", "2026.2", "2026.3", "2026.4", "2026.5", "2026.6", "2026.7"], "sga": {"직    원     급    여": 110027950.0, "잡                 급": 58009600.0, "퇴    직     급    여": 8263728.0, "복  리   후   생   비": 81444494.0, "여  비   교   통   비": 12516672.0, "카   드   접   대  비": 5189744.0, "접       대        비": 3000000.0, "통       신        비": 3341872.0, "소    모     품    비": 98889334.0, "세 금  과  공  과  금": 81840846.0, "지  급   임   차   료": 32935754.0, "수       선        비": 260000.0, "보       험        료": 24847966.0, "차  량   유   지   비": 10884095.0, "사  무   용   품   비": 670515.0, "수  도   광   열   비": 653735.0, "지  급   수   수   료": 17035255.0, "도  서   인   쇄   비": 12717545.0, "외  주   용   역   비": 297297935.0, "건  물   관   리   비": 24450813.0, "운       반        비": 2035000.0}, "etc": {"이자비용": 14718707.0, "국고보조금": 9684592.0}, "salaryReg": 93844670, "salaryCon": 88379060, "clients": [{"n": "행정안전부 국가기록원", "t": 394562000.0}, {"n": "병무청", "t": 337324000.0}, {"n": "해군본부", "t": 241290000.0}, {"n": "강원특별자치도", "t": 136586800.0}, {"n": "서울대학교 기록관", "t": 123480000.0}, {"n": "국방과학연구소", "t": 120800000.0}, {"n": "제천시청", "t": 100831500.0}, {"n": "행정안전부 대통령기록관", "t": 76500000.0}, {"n": "여주시청", "t": 75383000.0}, {"n": "(주)오늘소프트", "t": 42750000.0}, {"n": "주시회사 라온투비", "t": 26400000.0}, {"n": "대전광역시 중구청", "t": 20960000.0}], "bankBalance": 1386783461, "actualBalances": {}, "tax": {"vatOutCum": 156678275, "vatInCum": 45334127, "netIncomeCum": 310169299.0, "corpTaxRate": 9, "vatPaidQ": []}, "cogs": 184999761.0, "opProfitBook": 315023816.0, "receivable": 492394726, "payable": 756757348, "projCost": [{"id": "2026-001", "name": "박물관 스마트뮤지엄시스템 개발 및 소장품 기", "rev": 42750000, "cost": 140128370, "profit": -97378370}, {"id": "2026-002", "name": "2025년 기록물 정리 및 목록화 용역", "rev": 123480000, "cost": 90906050, "profit": 32573950}, {"id": "2026-003", "name": "제천시 구 건축물대장 전산화 사업 용역", "rev": 100831500, "cost": 28809000, "profit": 72022500}, {"id": "2026-004", "name": "건축물카드대장 전산화사업", "rev": 75383000, "cost": 0, "profit": 75383000}, {"id": "2026-005", "name": "23년 인삼 전자지도 시스템(G_MAP) 개", "rev": 5500000, "cost": 0, "profit": 5500000}, {"id": "2026-006", "name": "대전 중구청 구전자문서(OPT파일) 변환 사", "rev": 20960000, "cost": 16500000, "profit": 4460000}, {"id": "2026-007", "name": "2026년 영구보존 대상 병적기록물 전수조사", "rev": 337324000, "cost": 169342770, "profit": 167981230}, {"id": "2026-008", "name": "2026년 역사기록물 콘텐츠 서비스 기반 구", "rev": 98962000, "cost": 49171870, "profit": 49790130}, {"id": "2026-010", "name": "2026년도 기록물 색인목록 DB 구축", "rev": 120800000, "cost": 59999920, "profit": 60800080}, {"id": "2026-011", "name": "대통령기록물 공개재분류 관련 연구용역(202", "rev": 19800000, "cost": 0, "profit": 19800000}, {"id": "2026-012", "name": "2026년 학교급식·먹거리 통합시스템 운영 ", "rev": 136586800, "cost": 0, "profit": 136586800}, {"id": "2026-014", "name": "26-N-영구보존기록물 DB 구축 용역", "rev": 241290000, "cost": 23177570, "profit": 218112430}, {"id": "2026-016", "name": "2026년 국가기록물 정리사업", "rev": 322000000, "cost": 118028480, "profit": 203971520}, {"id": "2026-017", "name": "2026년 대통령기록관 소장기록물 정리, 기", "rev": 56700000, "cost": 0, "profit": 56700000}, {"id": "2026-018", "name": "나주학생독립운동기념관 소장자료 디지털 아카이", "rev": 0, "cost": 8894420, "profit": -8894420}]};
 
 // ── 서버 저장 동기화 (api/store.js + Upstash Redis) ──
 const SERVER_URL = '/api/store';
@@ -8836,11 +8836,11 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
   const sgaEntries = Object.entries(f.sga || {}).sort((a, b) => b[1] - a[1]);
   const sgaTotal = sgaEntries.reduce((s, [, v]) => s + v, 0);
   const etcExp = (f.etc?.이자비용 || 0);
-  const opProfit = salesTotal - sgaTotal;
+  const opProfit = salesTotal - (f.cogs || 0) - sgaTotal;   // 매출 - 매출원가 - 판관비
   const netProfit = opProfit - etcExp + (f.etc?.국고보조금 || 0);
   const opMargin = salesTotal ? (opProfit / salesTotal * 100) : 0;
   const salaryTotal = (f.salaryReg || 0) + (f.salaryCon || 0);
-  const monthlyChart = (f.salesMonths || []).map((m, i) => ({ name: String(m).replace('2026.', '') + '월', 매출: Math.round((f.salesMonthly?.[i] || 0) / 1000000) }));
+  const monthlyChart = (f.salesMonths || []).map((m, i) => ({ name: String(m).replace('2026.', '') + '월', 매출: Math.round((f.salesMonthly?.[i] || 0) / 1000000), 매입: Math.round((f.purchaseMonthly?.[i] || 0) / 1000000) }));
   const upNum = (path, v) => setFin(prev => {
     const n = JSON.parse(JSON.stringify(prev || {}));
     const ks = path.split('.'); let o = n;
@@ -8881,7 +8881,7 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
 
       {/* 월별 매출 추이 */}
       <div style={{ ...card(), padding: S[4], marginBottom: S[4] }}>
-        <SectionTitle>월별 매출 추이 (백만원)</SectionTitle>
+        <SectionTitle>월별 매출·매입 추이 (백만원)</SectionTitle>
         <div style={{ height: 200, marginTop: S[2] }}>
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <BarChart data={monthlyChart} margin={{ top: 8, right: 10, left: 0, bottom: 0 }}>
@@ -8889,7 +8889,9 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 10 }} unit="M" />
               <Tooltip formatter={(v) => v.toLocaleString() + '백만원'} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
               <Bar dataKey="매출" fill={T.brand} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="매입" fill={T.gold || '#B8892B'} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -8932,19 +8934,54 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
         </div>
       </div>
 
+      {/* 사업별 원가·수익성 (지출정리 + 계약직 인건비) */}
+      {(f.projCost && f.projCost.length > 0) && (
+        <div style={{ ...card(), padding: S[4], marginTop: S[4] }}>
+          <SectionTitle>사업별 원가·수익성 (매출 − 외주·경비·인건비)</SectionTitle>
+          <div style={{ fontSize: 11, color: T.textMute, marginBottom: S[2] }}>지출정리(외주매입·직접경비)와 계약직 인건비(회사부담 포함) 6월 누계 기준. 진행 사업은 매출 인식 시점차로 일시 적자 표시될 수 있습니다.</div>
+          <div style={{ overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, minWidth: 560 }}>
+              <thead><tr style={{ background: T.surfaceAlt }}><Th>사업</Th><Th align="right">매출</Th><Th align="right">총원가</Th><Th align="right">손익</Th><Th align="right">이익률</Th></tr></thead>
+              <tbody>
+                {[...f.projCost].sort((a, b) => b.profit - a.profit).map(p => {
+                  const margin = p.rev ? (p.profit / p.rev * 100) : 0;
+                  return (
+                    <tr key={p.id}>
+                      <Td><span style={{ fontSize: 10, color: T.textMute }}>{p.id}</span> {p.name}</Td>
+                      <Td align="right" mono>{fmtMoney(p.rev)}</Td>
+                      <Td align="right" mono>{fmtMoney(p.cost)}</Td>
+                      <Td align="right" mono style={{ color: p.profit >= 0 ? T.success : T.danger, fontWeight: 700 }}>{fmtMoney(p.profit)}</Td>
+                      <Td align="right" style={{ color: p.rev ? (margin >= 0 ? T.textMute : T.danger) : T.textLight }}>{p.rev ? margin.toFixed(0) + '%' : '-'}</Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* 손익 요약 + 편집 */}
       <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[4], marginTop: S[4] }}>
         <SectionTitle>손익 요약 (Income Statement)</SectionTitle>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: S[2] }}>
           <tbody>
-            {[
-              ['매출액', salesTotal, false],
-              ['(−) 판매관리비', sgaTotal, false],
-              ['영업이익', opProfit, true],
-              ['(−) 이자비용', etcExp, false],
-              ['(+) 국고보조금', f.etc?.국고보조금 || 0, false],
-              ['당기순이익(추정)', netProfit, true],
-            ].map(([label, val, bold], i) => (
+            {(() => {
+              const cogs = f.cogs || 0;
+              const grossProfit = salesTotal - cogs;
+              const op = grossProfit - sgaTotal;
+              const net = op - etcExp + (f.etc?.국고보조금 || 0);
+              return [
+                ['매출액', salesTotal, false],
+                ['(−) 매출원가', cogs, false],
+                ['매출총이익', grossProfit, true],
+                ['(−) 판매관리비', sgaTotal, false],
+                ['영업이익', op, true],
+                ['(−) 이자비용', etcExp, false],
+                ['(+) 국고보조금', f.etc?.국고보조금 || 0, false],
+                ['당기순이익', net, true],
+              ];
+            })().map(([label, val, bold], i) => (
               <tr key={i} style={bold ? { borderTop: `1px solid ${T.border}`, background: T.surfaceAlt } : undefined}>
                 <Td style={{ fontWeight: bold ? 700 : 400 }}>{label}</Td>
                 <Td align="right" mono style={{ fontWeight: bold ? 800 : 400, color: bold && val < 0 ? T.danger : bold ? T.brand : T.ink }}>{fmtMoney(val)}</Td>
