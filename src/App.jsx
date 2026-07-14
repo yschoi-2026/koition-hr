@@ -10217,6 +10217,13 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
         eyebrow="Project Profitability"
         title="프로젝트 수익성"
         subtitle="프로젝트 종료·연말에 프로젝트별 매출·인건비·제경비를 입력하면 수익률이 자동 산정되고, 투입 직원의 업적평가 '프로젝트 기여도' 점수로 연계됩니다. (경영지원부 소관)"
+        action={canEdit && (
+          <div style={{ display: 'flex', gap: S[2] }}>
+            <Button variant="secondary" size="sm" icon={FileSpreadsheet} onClick={() => setSagwanOpen(true)}>사업관리 엑셀 업로드</Button>
+            <Button variant="outline" size="sm" icon={Upload} onClick={() => setImportOpen(true)}>CSV 업로드</Button>
+            <Button variant="primary" size="sm" icon={Plus} onClick={() => setEditing('new')}>프로젝트 추가</Button>
+          </div>
+        )}
       />
       {/* ── 사업별 손익 분석 패널 ── */}
       <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[4], marginBottom: S[4] }}>
@@ -10314,15 +10321,6 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
         })()}
         {!analId && <div style={{ fontSize: 12, color: T.textMute, marginTop: 6 }}>사업을 선택하면 선급금·잔금·계약기간과 4대 원가(작업자·관리자·제경비·간접경비 배부)를 한 화면에서 보고 ✏ 편집할 수 있습니다. 수정은 자동 저장되며 수익성·기여도·자금예측에 즉시 반영됩니다.</div>}
       </div>
-      <div style={{ display: 'none' }}
-        action={canEdit && (
-          <div style={{ display: 'flex', gap: S[2] }}>
-            <Button variant="secondary" size="sm" icon={FileSpreadsheet} onClick={() => setSagwanOpen(true)}>사업관리 엑셀 업로드</Button>
-            <Button variant="outline" size="sm" icon={Upload} onClick={() => setImportOpen(true)}>CSV 업로드</Button>
-            <Button variant="primary" size="sm" icon={Plus} onClick={() => setEditing('new')}>프로젝트 추가</Button>
-          </div>
-        )}
-      />
 
       {!canEdit && (
         <div style={{ ...card({ borderLeft: `3px solid ${T.info}` }), padding: `${S[3]}px ${S[4]}px`, marginBottom: S[5], fontSize: 12, color: T.text, display: 'flex', gap: S[2], alignItems: 'center' }}>
