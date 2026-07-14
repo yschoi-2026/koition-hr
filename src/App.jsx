@@ -2422,7 +2422,7 @@ async function parseFinanceExcel(arrayBuffer, fileName) {
 }
 
 // ── 경영회계 CMS 초기 데이터 (회계 원장·매출·급여 실적 반영) ──
-const INITIAL_FIN = {"period": "2026-06", "sales": {"용역": 1376809157.0, "상품": 9527273.0}, "salesMonthly": [146622070, 107737340, 10685040, 551286540, 608339540, 298790540, 0], "salesMonths": ["2026.1", "2026.2", "2026.3", "2026.4", "2026.5", "2026.6", "2026.7"], "sga": {"직    원     급    여": 110027950.0, "잡                 급": 58009600.0, "퇴    직     급    여": 8263728.0, "복  리   후   생   비": 81444494.0, "여  비   교   통   비": 12516672.0, "카   드   접   대  비": 5189744.0, "접       대        비": 3000000.0, "통       신        비": 3341872.0, "소    모     품    비": 98889334.0, "세 금  과  공  과  금": 81840846.0, "지  급   임   차   료": 32935754.0, "수       선        비": 260000.0, "보       험        료": 24847966.0, "차  량   유   지   비": 10884095.0, "사  무   용   품   비": 670515.0, "수  도   광   열   비": 653735.0, "지  급   수   수   료": 17035255.0, "도  서   인   쇄   비": 12717545.0, "외  주   용   역   비": 297297935.0, "건  물   관   리   비": 24450813.0, "운       반        비": 2035000.0}, "etc": {"이자비용": 14718707.0, "국고보조금": 9684592.0}, "salaryReg": 93844670, "salaryCon": 178065480, "clients": [{"n": "행정안전부 국가기록원", "t": 394562000.0}, {"n": "병무청", "t": 337324000.0}, {"n": "해군본부", "t": 241290000.0}, {"n": "강원특별자치도", "t": 136586800.0}, {"n": "서울대학교 기록관", "t": 123480000.0}, {"n": "국방과학연구소", "t": 120800000.0}, {"n": "제천시청", "t": 100831500.0}, {"n": "행정안전부 대통령기록관", "t": 76500000.0}, {"n": "여주시청", "t": 75383000.0}, {"n": "(주)오늘소프트", "t": 42750000.0}, {"n": "주시회사 라온투비", "t": 26400000.0}, {"n": "대전광역시 중구청", "t": 20960000.0}], "bankBalance": 1386783461, "actualBalances": {}, "tax": {"vatOutCum": 156678275, "vatInCum": 45334127, "netIncomeCum": 310169299.0, "corpTaxRate": 9, "vatPaidQ": []}, "cogs": 184999761.0, "opProfitBook": 315023816.0, "receivable": 492394726, "payable": 756757348, "projCost": [{"id": "2026-001", "name": "박물관 스마트뮤지엄시스템 개발 및 소장품 기", "rev": 42750000, "cost": 140128370, "profit": -97378370}, {"id": "2026-002", "name": "2025년 기록물 정리 및 목록화 용역", "rev": 123480000, "cost": 90906050, "profit": 32573950}, {"id": "2026-003", "name": "제천시 구 건축물대장 전산화 사업 용역", "rev": 100831500, "cost": 28809000, "profit": 72022500}, {"id": "2026-004", "name": "건축물카드대장 전산화사업", "rev": 75383000, "cost": 0, "profit": 75383000}, {"id": "2026-005", "name": "23년 인삼 전자지도 시스템(G_MAP) 개", "rev": 5500000, "cost": 0, "profit": 5500000}, {"id": "2026-006", "name": "대전 중구청 구전자문서(OPT파일) 변환 사", "rev": 20960000, "cost": 16500000, "profit": 4460000}, {"id": "2026-007", "name": "2026년 영구보존 대상 병적기록물 전수조사", "rev": 337324000, "cost": 169342770, "profit": 167981230}, {"id": "2026-008", "name": "2026년 역사기록물 콘텐츠 서비스 기반 구", "rev": 98962000, "cost": 49171870, "profit": 49790130}, {"id": "2026-010", "name": "2026년도 기록물 색인목록 DB 구축", "rev": 120800000, "cost": 59999920, "profit": 60800080}, {"id": "2026-011", "name": "대통령기록물 공개재분류 관련 연구용역(202", "rev": 19800000, "cost": 0, "profit": 19800000}, {"id": "2026-012", "name": "2026년 학교급식·먹거리 통합시스템 운영 ", "rev": 136586800, "cost": 0, "profit": 136586800}, {"id": "2026-014", "name": "26-N-영구보존기록물 DB 구축 용역", "rev": 241290000, "cost": 23177570, "profit": 218112430}, {"id": "2026-016", "name": "2026년 국가기록물 정리사업", "rev": 322000000, "cost": 118028480, "profit": 203971520}, {"id": "2026-017", "name": "2026년 대통령기록관 소장기록물 정리, 기", "rev": 56700000, "cost": 0, "profit": 56700000}, {"id": "2026-018", "name": "나주학생독립운동기념관 소장자료 디지털 아카이", "rev": 0, "cost": 8894420, "profit": -8894420}], "purchaseMonthly": [171785681, 14050043, 14885351, 66168818, 115985590, 116637660, 0], "salaryConNote": "6월 사업별 급여목록 기준(4대보험 계약직+사업소득자 포함)", "opexCash": 38729969, "opexPurchase": 99597356};
+const INITIAL_FIN = {"period": "2026-06", "sales": {"용역": 1376809157.0, "상품": 9527273.0}, "salesMonthly": [146622070, 107737340, 10685040, 551286540, 608339540, 298790540, 0], "salesMonths": ["2026.1", "2026.2", "2026.3", "2026.4", "2026.5", "2026.6", "2026.7"], "sga": {"직    원     급    여": 110027950.0, "잡                 급": 58009600.0, "퇴    직     급    여": 8263728.0, "복  리   후   생   비": 81444494.0, "여  비   교   통   비": 12516672.0, "카   드   접   대  비": 5189744.0, "접       대        비": 3000000.0, "통       신        비": 3341872.0, "소    모     품    비": 98889334.0, "세 금  과  공  과  금": 81840846.0, "지  급   임   차   료": 32935754.0, "수       선        비": 260000.0, "보       험        료": 24847966.0, "차  량   유   지   비": 10884095.0, "사  무   용   품   비": 670515.0, "수  도   광   열   비": 653735.0, "지  급   수   수   료": 17035255.0, "도  서   인   쇄   비": 12717545.0, "외  주   용   역   비": 297297935.0, "건  물   관   리   비": 24450813.0, "운       반        비": 2035000.0}, "etc": {"이자비용": 14718707.0, "국고보조금": 9684592.0}, "salaryReg": 93844670, "salaryCon": 178065480, "clients": [{"n": "행정안전부 국가기록원", "t": 394562000.0}, {"n": "병무청", "t": 337324000.0}, {"n": "해군본부", "t": 241290000.0}, {"n": "강원특별자치도", "t": 136586800.0}, {"n": "서울대학교 기록관", "t": 123480000.0}, {"n": "국방과학연구소", "t": 120800000.0}, {"n": "제천시청", "t": 100831500.0}, {"n": "행정안전부 대통령기록관", "t": 76500000.0}, {"n": "여주시청", "t": 75383000.0}, {"n": "(주)오늘소프트", "t": 42750000.0}, {"n": "주시회사 라온투비", "t": 26400000.0}, {"n": "대전광역시 중구청", "t": 20960000.0}], "bankBalance": 1386783461, "actualBalances": {}, "tax": {"vatOutCum": 156678275, "vatInCum": 45334127, "netIncomeCum": 310169299.0, "corpTaxRate": 9, "vatPaidQ": []}, "cogs": 184999761.0, "opProfitBook": 315023816.0, "receivable": 492394726, "payable": 756757348, "projCost": [{"id": "2026-001", "name": "박물관 스마트뮤지엄시스템 개발 및 소장품 기", "rev": 42750000, "cost": 140128370, "profit": -97378370}, {"id": "2026-002", "name": "2025년 기록물 정리 및 목록화 용역", "rev": 123480000, "cost": 90906050, "profit": 32573950}, {"id": "2026-003", "name": "제천시 구 건축물대장 전산화 사업 용역", "rev": 100831500, "cost": 28809000, "profit": 72022500}, {"id": "2026-004", "name": "건축물카드대장 전산화사업", "rev": 75383000, "cost": 0, "profit": 75383000}, {"id": "2026-005", "name": "23년 인삼 전자지도 시스템(G_MAP) 개", "rev": 5500000, "cost": 0, "profit": 5500000}, {"id": "2026-006", "name": "대전 중구청 구전자문서(OPT파일) 변환 사", "rev": 20960000, "cost": 16500000, "profit": 4460000}, {"id": "2026-007", "name": "2026년 영구보존 대상 병적기록물 전수조사", "rev": 337324000, "cost": 169342770, "profit": 167981230}, {"id": "2026-008", "name": "2026년 역사기록물 콘텐츠 서비스 기반 구", "rev": 98962000, "cost": 49171870, "profit": 49790130}, {"id": "2026-010", "name": "2026년도 기록물 색인목록 DB 구축", "rev": 120800000, "cost": 59999920, "profit": 60800080}, {"id": "2026-011", "name": "대통령기록물 공개재분류 관련 연구용역(202", "rev": 19800000, "cost": 0, "profit": 19800000}, {"id": "2026-012", "name": "2026년 학교급식·먹거리 통합시스템 운영 ", "rev": 136586800, "cost": 0, "profit": 136586800}, {"id": "2026-014", "name": "26-N-영구보존기록물 DB 구축 용역", "rev": 241290000, "cost": 23177570, "profit": 218112430}, {"id": "2026-016", "name": "2026년 국가기록물 정리사업", "rev": 322000000, "cost": 118028480, "profit": 203971520}, {"id": "2026-017", "name": "2026년 대통령기록관 소장기록물 정리, 기", "rev": 56700000, "cost": 0, "profit": 56700000}, {"id": "2026-018", "name": "나주학생독립운동기념관 소장자료 디지털 아카이", "rev": 0, "cost": 8894420, "profit": -8894420}], "purchaseMonthly": [171785681, 14050043, 14885351, 66168818, 115985590, 116637660, 0], "salaryConNote": "6월 사업별 급여목록 기준(4대보험 계약직+사업소득자 포함)", "opexCash": 38729969, "opexPurchase": 99597356, "_v": 2};
 
 // ── 서버 저장 동기화 (api/store.js + Upstash Redis) ──
 const SERVER_URL = '/api/store';
@@ -2825,7 +2825,13 @@ function App() {
         if (data.loans) setLoans(data.loans);
         if (data.receivables) setReceivables(data.receivables);
         if (data.cashCfg) setCashCfg(prev => ({ ...prev, ...data.cashCfg }));
-        if (data.fin) setFin(data.fin);
+        if (data.fin) {
+          const f = data.fin;
+          if (!f._v || f._v < 2) {
+            // v2 마이그레이션: 검증된 인건비(사업소득 포함)·운영경비 분해값 반영 (사용자 편집분은 보존)
+            setFin({ ...INITIAL_FIN, ...f, salaryCon: INITIAL_FIN.salaryCon, salaryConNote: INITIAL_FIN.salaryConNote, opexCash: INITIAL_FIN.opexCash, opexPurchase: INITIAL_FIN.opexPurchase, _v: 2 });
+          } else setFin(f);
+        }
         if (data.history) setHistory(data.history);
       }
     } catch (e) {}
@@ -2950,7 +2956,13 @@ function App() {
         if (data.loans) setLoans(data.loans);
         if (data.receivables) setReceivables(data.receivables);
         if (data.cashCfg) setCashCfg(prev => ({ ...prev, ...data.cashCfg }));
-        if (data.fin) setFin(data.fin);
+        if (data.fin) {
+          const f = data.fin;
+          if (!f._v || f._v < 2) {
+            // v2 마이그레이션: 검증된 인건비(사업소득 포함)·운영경비 분해값 반영 (사용자 편집분은 보존)
+            setFin({ ...INITIAL_FIN, ...f, salaryCon: INITIAL_FIN.salaryCon, salaryConNote: INITIAL_FIN.salaryConNote, opexCash: INITIAL_FIN.opexCash, opexPurchase: INITIAL_FIN.opexPurchase, _v: 2 });
+          } else setFin(f);
+        }
         if (data.history) setHistory(data.history);
         showToast('데이터를 불러왔습니다');
       } catch (err) { showToast('파일 형식이 올바르지 않습니다', 'error'); }
@@ -9171,15 +9183,40 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   const revAch = targets.revenue > 0 ? pct(T0.revenue, targets.revenue) : null;
   const profAch = targets.profit > 0 ? pct(full, targets.profit) : null;
 
-  // ---- 조직·본부별 손익 롤업 ----
+  // ---- 조직·팀별 손익 롤업 (프로젝트 참여 기여도 배분 기준) ----
+  // 각 프로젝트의 매출·원가를 참여인력 기여도(%)로 배분한 뒤, 인력의 소속 팀(부서)으로 합산.
+  // 프로젝트에 dept가 지정돼 있으면 그 조직에 100% 귀속(우선), 참여인력이 없으면 '미배정'.
   const orgMap = {};
-  rows.forEach(r => {
-    const k = r.dept;
-    if (!orgMap[k]) orgMap[k] = { name: k, revenue: 0, labor: 0, worker: 0, mgr: 0, overhead: 0, cost: 0, alloc: 0, cnt: 0 };
+  const deptOfEmp = (id) => {
+    const e = (employees || []).find(x => x.id === id);
+    const d = e ? String(e.dept || '').split('/')[0].trim() : '';
+    return d || '미지정';
+  };
+  const addOrg = (k, m, share, allocShare, countProj) => {
+    if (!orgMap[k]) orgMap[k] = { name: k, revenue: 0, labor: 0, worker: 0, mgr: 0, overhead: 0, cost: 0, alloc: 0, cnt: 0, _projs: new Set() };
     const o = orgMap[k];
-    o.revenue += r.m.revenue; o.labor += r.m.labor; o.worker += r.m.worker; o.mgr += r.m.mgr;
-    o.overhead += r.m.overhead; o.cost += r.m.cost; o.alloc += (allocMap[r.id] || 0); o.cnt++;
+    o.revenue += m.revenue * share; o.labor += m.labor * share; o.worker += m.worker * share; o.mgr += m.mgr * share;
+    o.overhead += m.overhead * share; o.cost += m.cost * share; o.alloc += allocShare;
+    if (countProj) o._projs.add(countProj);
+  };
+  rows.forEach(r => {
+    const alloc = allocMap[r.id] || 0;
+    if (r.dept && r.dept !== '미지정') {   // 프로젝트에 조직 지정 시 그대로
+      addOrg(r.dept, r.m, 1, alloc, r.id);
+      return;
+    }
+    const mem = (r.p.members || []).filter(m2 => (Number(m2.contribution) || 0) > 0);
+    const tot = mem.reduce((a, m2) => a + Number(m2.contribution), 0);
+    if (tot > 0) {
+      mem.forEach(m2 => {
+        const share = Number(m2.contribution) / tot;
+        addOrg(deptOfEmp(m2.empId), r.m, share, alloc * share, r.id);
+      });
+    } else {
+      addOrg('미배정(참여인력 미입력)', r.m, 1, alloc, r.id);
+    }
   });
+  Object.values(orgMap).forEach(o => { o.cnt = o._projs.size; delete o._projs; });
   const empActive = (employees || []).filter(e => (e.status ? e.status === 'active' : true));
   const headOf = (orgName) => {
     if (!orgName || orgName === '미지정') return 0;
@@ -9449,11 +9486,14 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
       <Note>{`상위 3개 사업이 매출의 ${pct(byRev.slice(0, 3).reduce((s, r) => s + r.m.revenue, 0), T0.revenue).toFixed(0)}%를 차지합니다. ${topShare > 40 ? '특정 사업 편중이 높아 수주 다변화가 필요합니다.' : '매출이 비교적 분산되어 있습니다.'} 파이프라인(${won(pipeAmt)})은 현 매출의 ${pct(pipeAmt, T0.revenue).toFixed(0)}% 수준으로, ${pipeAmt >= T0.revenue * 0.5 ? '차기 수주 여력이 양호' : '추가 수주 발굴이 필요'}합니다.`}</Note>
 
       {/* 3. 조직·본부별 손익 */}
-      <H n="3" icon={Building2}>조직·본부별 손익</H>
+      <H n="3" icon={Building2}>조직·팀별 손익</H>
+      <div style={{ fontSize: 11.5, color: T.textMute, margin: `-4px 0 ${S[3]}px`, lineHeight: 1.6 }}>
+        각 프로젝트의 매출·원가를 <strong>참여인력 기여도(%)</strong>에 따라 배분한 뒤 인력의 소속 팀(부서)으로 합산했습니다. 여러 팀이 함께한 사업은 기여도만큼 각 팀에 나뉘어 반영되며, 참여인력이 미입력된 사업은 '미배정'으로 표시됩니다 (프로젝트 수익성에서 인력을 입력하면 자동 반영).
+      </div>
       <div style={{ ...card(), padding: 0, overflow: 'auto', marginBottom: S[3] }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 820 }}>
           <thead><tr style={{ background: T.surfaceAlt }}>
-            <Th>본부·조직</Th><Th align="center">사업</Th><Th align="center">인원</Th><Th align="right">매출</Th><Th align="right">인건비</Th><Th align="right">사업경비</Th><Th align="right">공헌이익</Th><Th align="right">배부공통비</Th><Th align="right">완전이익</Th><Th align="right">이익률</Th>
+            <Th>팀(부서)</Th><Th align="center">참여사업</Th><Th align="center">인원</Th><Th align="right">매출</Th><Th align="right">인건비</Th><Th align="right">사업경비</Th><Th align="right">공헌이익</Th><Th align="right">배부공통비</Th><Th align="right">완전이익</Th><Th align="right">이익률</Th>
           </tr></thead>
           <tbody>
             {orgRows.map((o, i) => (
@@ -9481,7 +9521,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         </table>
       </div>
       <div style={{ ...card(), padding: S[5] }}>
-        <SectionTitle>본부별 손익 비교</SectionTitle>
+        <SectionTitle>팀별 손익 비교</SectionTitle>
         <div style={{ height: 260, marginTop: S[3] }}>
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <BarChart data={orgBar} margin={{ top: 8, right: 8, left: 0, bottom: 30 }}>
