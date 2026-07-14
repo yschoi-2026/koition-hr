@@ -1269,6 +1269,19 @@ const INITIAL_EMPLOYEES = [
 ];
 
 const INITIAL_POLICY = {
+  // 사업명 매핑표 — 급여·지출 파일의 사업명 키워드 ↔ 사업번호 (월 실적 자동반영에 사용)
+  projMap: [
+    { kw: '스마트뮤지엄', id: '2026-001' }, { kw: '강원랜드', id: '2026-001' },
+    { kw: '기록물 정리 및 목록화', id: '2026-002' }, { kw: '서울대', id: '2026-002' }, { kw: '원문DB', id: '2026-002' },
+    { kw: '학교급식', id: '2026-003' }, { kw: '한국학술지', id: '2026-004' }, { kw: 'KCI', id: '2026-004' },
+    { kw: '비전자기록물관리시스템 유지', id: '2026-005' }, { kw: '구전자문서', id: '2026-006' }, { kw: 'OPT', id: '2026-006' },
+    { kw: '병적', id: '2026-007' }, { kw: '역사기록물 콘텐츠', id: '2026-008' }, { kw: '국가기록원_성남', id: '2026-008' },
+    { kw: '서고관리시스템 유지', id: '2026-009' }, { kw: '색인목록', id: '2026-010' }, { kw: '공개재분류', id: '2026-011' },
+    { kw: '제천', id: '2026-012' }, { kw: '보유목록시스템', id: '2026-013' },
+    { kw: '26-N', id: '2026-014' }, { kw: '영구보존기록물 DB', id: '2026-014' },
+    { kw: '건축물카드대장', id: '2026-015' }, { kw: '국가기록물 정리', id: '2026-016' }, { kw: '국가기록원_대전', id: '2026-016' },
+    { kw: '대통령기록관 소장', id: '2026-017' }, { kw: '나주', id: '2026-018' },
+  ],
   // 조직(팀) 목록 — 정책 설정에서 추가·수정·삭제. nonPL=비매출(지원) 조직: 팀 손익 배분 제외
   orgs: [
     { name: '공공사업본부', nonPL: false }, { name: '사업관리부', nonPL: false }, { name: '기록연구부', nonPL: false },
@@ -2323,6 +2336,49 @@ function calcSupportScore(name, companyScore) {
   return { score: Math.round(cs * 0.4 + mbo * 0.6), mbo, company: cs };
 }
 
+// ── 월 실적 자동반영 파서: 급여·지출·인력운영 원본 → 사업별 원가 (누계 기준 대체) ──
+async function parseMonthlyActuals(buf, fname, mapFn) {
+  const XLSX = await loadXLSXLib();
+  const wb = XLSX.read(buf, { type: 'array' });
+  const num = (x) => { const n = Number(String(x == null ? '' : x).replace(/[^\d.-]/g, '')); return isNaN(n) ? 0 : n; };
+  const grid = (n) => XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: null });
+  const out = { worker: {}, mgr: {}, oh: {} }; const un = new Set(); let kind = null;
+  const monthSheets = wb.SheetNames.filter(n => /^\d{1,2}월$/.test(n));
+  if (monthSheets.length) {           // (A) 계약직 통합본 → 작업자인건비
+    kind = '계약직 인건비';
+    monthSheets.forEach(sn => {
+      const rows = grid(sn); const hdr = rows[1] || [];
+      const col = (kw) => hdr.findIndex(c => String(c || '').replace(/\s/g, '').includes(kw));
+      const cG = col('지급총액'), cN = col('국민연금'), cH = col('건강보험'), cE = col('고용보험'), cP = col('프로젝트');
+      rows.slice(2).forEach(r => {
+        if (!r) return; const g = cG >= 0 ? num(r[cG]) : 0; if (g <= 0) return;
+        const nm = String((cP >= 0 && r[cP]) || '').trim(); if (!nm || nm.includes('#')) return;
+        const pid = mapFn(nm); const v = g + (cN >= 0 ? num(r[cN]) : 0) + (cH >= 0 ? num(r[cH]) : 0) + (cE >= 0 ? num(r[cE]) : 0);
+        if (pid) out.worker[pid] = (out.worker[pid] || 0) + v; else un.add(nm);
+      });
+    });
+  } else if (wb.SheetNames.includes('프로젝트별 집계')) {   // (B) 지출정리 → 제경비
+    kind = '사업경비(외주·직접)';
+    grid('프로젝트별 집계').slice(3).forEach(r => {
+      if (!r || !r[0]) return; const nm = String(r[0]).trim();
+      if (['프로젝트', '참고', '관련사업명', '합계'].includes(nm)) return;
+      const v = num(r[2]) + num(r[3]) + num(r[4]); if (v <= 0) return;
+      const pid = mapFn(nm); if (pid) out.oh[pid] = (out.oh[pid] || 0) + v; else un.add(nm);
+    });
+  } else if (wb.SheetNames.includes('인력운영현황')) {       // (C) 관리자 인건비
+    kind = '관리자 인건비';
+    const rows = grid('인력운영현황'); let cur = '';
+    rows.slice(2).forEach(r => {
+      if (!r) return; if (r[5]) cur = String(r[5]);
+      if (String(r[6] || '').includes('수행별인건비')) {
+        const v = r.slice(8, 8 + Math.min(12, new Date().getMonth() + 1)).reduce((a, c) => a + num(c), 0); if (v <= 0) return;   // 경과월까지만 합산(미래 계획 제외)
+        const pid = mapFn(cur); if (pid) out.mgr[pid] = (out.mgr[pid] || 0) + v; else un.add(cur.slice(0, 30));
+      }
+    });
+  }
+  return { kind, out, unmatched: [...un] };
+}
+
 // ── 경영회계 엑셀 → CMS 데이터 파서 (파일명·내용 키워드 기반 자동 인식) ──
 async function parseFinanceExcel(arrayBuffer, fileName) {
   const XLSX = await loadXLSXLib();
@@ -2808,6 +2864,7 @@ function App() {
         if (data.policy) {
           // 기존 정책에 coverStats/coverImage/promotion/orgs가 없으면 기본값 보충 (마이그레이션)
           if (!data.policy.orgs) data.policy.orgs = INITIAL_POLICY.orgs;
+          if (!data.policy.projMap) data.policy.projMap = INITIAL_POLICY.projMap;
           const migrated = { 
             ...INITIAL_POLICY,               // 구조 키(grades·등급기준 등) 기본 보존
             ...data.policy, 
@@ -10141,6 +10198,33 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
 function ProjectProfitView({ user, employees, projects, proposals, overheads, upsertProject, deleteProject, bulkUpsertProjects, bulkUpsertProposals, deleteProposal, winProposal, updateProposal, upsertOverhead, deleteOverhead, bulkUpsertOverheads, bulkSetEmpLedger, currentYear, policy, setPolicy, cashCfg, setCashCfg }) {
   const [analId, setAnalId] = React.useState('');
   const [analEdit, setAnalEdit] = React.useState(false);
+  const actRef = React.useRef(null);
+  const handleActuals = async (e) => {
+    const files = Array.from(e.target.files || []); if (!files.length) return;
+    const pm = (policy && policy.projMap) || [];
+    const mapFn = (nm) => { const hit = pm.find(m => m.kw && String(nm).includes(m.kw)); return hit ? hit.id : null; };
+    const acc = { worker: {}, mgr: {}, oh: {} }; const kinds = []; let unAll = [];
+    for (const f of files) {
+      try {
+        const { kind, out, unmatched } = await parseMonthlyActuals(await f.arrayBuffer(), f.name, mapFn);
+        if (!kind) { unAll.push(f.name + ': 양식 인식 실패'); continue; }
+        kinds.push(kind); unAll = unAll.concat(unmatched);
+        ['worker', 'mgr', 'oh'].forEach(k => Object.entries(out[k]).forEach(([pid, v]) => { acc[k][pid] = (acc[k][pid] || 0) + v; }));
+      } catch (err) { unAll.push(f.name + ': 오류'); }
+    }
+    const touched = new Set([...Object.keys(acc.worker), ...Object.keys(acc.mgr), ...Object.keys(acc.oh)]);
+    if (!touched.size) { alert('반영할 데이터를 찾지 못했습니다.\n' + unAll.join('\n')); if (actRef.current) actRef.current.value = ''; return; }
+    const updated = (projects || []).filter(p => touched.has(p.id)).map(p => ({
+      ...p,
+      ...(acc.worker[p.id] != null ? { workerLabor: Math.round(acc.worker[p.id]) } : {}),
+      ...(acc.mgr[p.id] != null ? { mgrLabor: Math.round(acc.mgr[p.id]) } : {}),
+      ...(acc.oh[p.id] != null ? { overhead: Math.round(acc.oh[p.id]) } : {}),
+    }));
+    bulkUpsertProjects(updated);
+    alert('월 실적 반영 완료 (누계 기준 대체)\n· ' + kinds.join('\n· ') + '\n· 사업 ' + touched.size + '건 갱신 — 수익성·기여도·자금예측에 즉시 반영'
+      + (unAll.length ? '\n\n⚠ 미매핑(정책 설정→사업명 매핑표에 추가):\n' + unAll.slice(0, 8).join('\n') : ''));
+    if (actRef.current) actRef.current.value = '';
+  };
   const canEdit = user.role === 'admin' || user.deptScope === '경영지원부';
   const cfg = (policy && policy.diag) || {};
   const pmFloor = cfg.pmFloor ?? PM_MIN_CONTRIBUTION;
@@ -10219,6 +10303,8 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
         subtitle="프로젝트 종료·연말에 프로젝트별 매출·인건비·제경비를 입력하면 수익률이 자동 산정되고, 투입 직원의 업적평가 '프로젝트 기여도' 점수로 연계됩니다. (경영지원부 소관)"
         action={canEdit && (
           <div style={{ display: 'flex', gap: S[2] }}>
+            <Button variant="primary" size="sm" icon={Upload} onClick={() => actRef.current && actRef.current.click()}>월 실적 반영</Button>
+            <input ref={actRef} type="file" accept=".xlsx,.xls" multiple style={{ display: 'none' }} onChange={handleActuals} />
             <Button variant="secondary" size="sm" icon={FileSpreadsheet} onClick={() => setSagwanOpen(true)}>사업관리 엑셀 업로드</Button>
             <Button variant="outline" size="sm" icon={Upload} onClick={() => setImportOpen(true)}>CSV 업로드</Button>
             <Button variant="primary" size="sm" icon={Plus} onClick={() => setEditing('new')}>프로젝트 추가</Button>
@@ -12344,6 +12430,22 @@ function PolicyView({ policy, setPolicy }) {
         </div>
         <div style={{ marginTop: S[3] }}>
           <Button variant="outline" size="sm" onClick={() => setPolicy(prev => ({ ...prev, orgs: [...(prev.orgs || []), { name: '새 조직', nonPL: false }] }))}>+ 조직 추가</Button>
+        </div>
+        <div style={{ borderTop: `1px solid ${T.border}`, marginTop: S[4], paddingTop: S[4] }}>
+          <SectionTitle>사업명 매핑표 (월 실적 자동반영용)</SectionTitle>
+          <div style={{ fontSize: 11.5, color: T.textMute, margin: `4px 0 ${S[2]}px` }}>급여·지출 파일의 사업명에 <strong>키워드</strong>가 포함되면 해당 사업번호로 원가가 자동 배분됩니다. 새 사업 수주 시 한 줄 추가하세요.</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 6 }}>
+            {(policy.projMap || []).map((m, i) => (
+              <div key={i} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                <input value={m.kw} onChange={e => setPolicy(prev => ({ ...prev, projMap: prev.projMap.map((x, idx) => idx === i ? { ...x, kw: e.target.value } : x) }))} placeholder="키워드" style={{ flex: 1, padding: '4px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, minWidth: 0, fontFamily: FONT }} />
+                <input value={m.id} onChange={e => setPolicy(prev => ({ ...prev, projMap: prev.projMap.map((x, idx) => idx === i ? { ...x, id: e.target.value } : x) }))} placeholder="2026-0NN" style={{ width: 82, padding: '4px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, fontFamily: FONT }} />
+                <button onClick={() => setPolicy(prev => ({ ...prev, projMap: prev.projMap.filter((_, idx) => idx !== i) }))} style={{ border: 'none', background: 'transparent', color: T.danger, cursor: 'pointer', fontSize: 13 }}>🗑</button>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: S[2] }}>
+            <Button variant="outline" size="sm" onClick={() => setPolicy(prev => ({ ...prev, projMap: [...(prev.projMap || []), { kw: '', id: '' }] }))}>+ 매핑 추가</Button>
+          </div>
         </div>
       </div>
       
