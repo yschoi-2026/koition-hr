@@ -2422,7 +2422,7 @@ async function parseFinanceExcel(arrayBuffer, fileName) {
 }
 
 // ── 경영회계 CMS 초기 데이터 (회계 원장·매출·급여 실적 반영) ──
-const INITIAL_FIN = {"period": "2026-06", "sales": {"용역": 1376809157.0, "상품": 9527273.0}, "salesMonthly": [146622070.0, 107737340.0, 10685040.0, 551286540.0, 608339540.0, 298790540.0, 0], "salesMonths": ["2026.1", "2026.2", "2026.3", "2026.4", "2026.5", "2026.6", "2026.7"], "sga": {"직    원     급    여": 110027950.0, "잡                 급": 58009600.0, "퇴    직     급    여": 8263728.0, "복  리   후   생   비": 81444494.0, "여  비   교   통   비": 12516672.0, "카   드   접   대  비": 5189744.0, "접       대        비": 3000000.0, "통       신        비": 3341872.0, "소    모     품    비": 98889334.0, "세 금  과  공  과  금": 81840846.0, "지  급   임   차   료": 32935754.0, "수       선        비": 260000.0, "보       험        료": 24847966.0, "차  량   유   지   비": 10884095.0, "사  무   용   품   비": 670515.0, "수  도   광   열   비": 653735.0, "지  급   수   수   료": 17035255.0, "도  서   인   쇄   비": 12717545.0, "외  주   용   역   비": 297297935.0, "건  물   관   리   비": 24450813.0, "운       반        비": 2035000.0}, "etc": {"이자비용": 14718707.0, "국고보조금": 9684592.0}, "salaryReg": 93844670, "salaryCon": 88379060, "clients": [{"n": "행정안전부 국가기록원", "t": 394562000.0}, {"n": "병무청", "t": 337324000.0}, {"n": "해군본부", "t": 241290000.0}, {"n": "강원특별자치도", "t": 136586800.0}, {"n": "서울대학교 기록관", "t": 123480000.0}, {"n": "국방과학연구소", "t": 120800000.0}, {"n": "제천시청", "t": 100831500.0}, {"n": "행정안전부 대통령기록관", "t": 76500000.0}, {"n": "여주시청", "t": 75383000.0}, {"n": "(주)오늘소프트", "t": 42750000.0}, {"n": "주시회사 라온투비", "t": 26400000.0}, {"n": "대전광역시 중구청", "t": 20960000.0}], "bankBalance": 1386783461, "actualBalances": {}, "tax": {"vatOutCum": 156678275, "vatInCum": 45334127, "netIncomeCum": 310169299.0, "corpTaxRate": 9, "vatPaidQ": []}, "cogs": 184999761.0, "opProfitBook": 315023816.0, "receivable": 492394726, "payable": 756757348, "projCost": [{"id": "2026-001", "name": "박물관 스마트뮤지엄시스템 개발 및 소장품 기", "rev": 42750000, "cost": 140128370, "profit": -97378370}, {"id": "2026-002", "name": "2025년 기록물 정리 및 목록화 용역", "rev": 123480000, "cost": 90906050, "profit": 32573950}, {"id": "2026-003", "name": "제천시 구 건축물대장 전산화 사업 용역", "rev": 100831500, "cost": 28809000, "profit": 72022500}, {"id": "2026-004", "name": "건축물카드대장 전산화사업", "rev": 75383000, "cost": 0, "profit": 75383000}, {"id": "2026-005", "name": "23년 인삼 전자지도 시스템(G_MAP) 개", "rev": 5500000, "cost": 0, "profit": 5500000}, {"id": "2026-006", "name": "대전 중구청 구전자문서(OPT파일) 변환 사", "rev": 20960000, "cost": 16500000, "profit": 4460000}, {"id": "2026-007", "name": "2026년 영구보존 대상 병적기록물 전수조사", "rev": 337324000, "cost": 169342770, "profit": 167981230}, {"id": "2026-008", "name": "2026년 역사기록물 콘텐츠 서비스 기반 구", "rev": 98962000, "cost": 49171870, "profit": 49790130}, {"id": "2026-010", "name": "2026년도 기록물 색인목록 DB 구축", "rev": 120800000, "cost": 59999920, "profit": 60800080}, {"id": "2026-011", "name": "대통령기록물 공개재분류 관련 연구용역(202", "rev": 19800000, "cost": 0, "profit": 19800000}, {"id": "2026-012", "name": "2026년 학교급식·먹거리 통합시스템 운영 ", "rev": 136586800, "cost": 0, "profit": 136586800}, {"id": "2026-014", "name": "26-N-영구보존기록물 DB 구축 용역", "rev": 241290000, "cost": 23177570, "profit": 218112430}, {"id": "2026-016", "name": "2026년 국가기록물 정리사업", "rev": 322000000, "cost": 118028480, "profit": 203971520}, {"id": "2026-017", "name": "2026년 대통령기록관 소장기록물 정리, 기", "rev": 56700000, "cost": 0, "profit": 56700000}, {"id": "2026-018", "name": "나주학생독립운동기념관 소장자료 디지털 아카이", "rev": 0, "cost": 8894420, "profit": -8894420}]};
+const INITIAL_FIN = {"period": "2026-06", "sales": {"용역": 1376809157.0, "상품": 9527273.0}, "salesMonthly": [146622070, 107737340, 10685040, 551286540, 608339540, 298790540, 0], "salesMonths": ["2026.1", "2026.2", "2026.3", "2026.4", "2026.5", "2026.6", "2026.7"], "sga": {"직    원     급    여": 110027950.0, "잡                 급": 58009600.0, "퇴    직     급    여": 8263728.0, "복  리   후   생   비": 81444494.0, "여  비   교   통   비": 12516672.0, "카   드   접   대  비": 5189744.0, "접       대        비": 3000000.0, "통       신        비": 3341872.0, "소    모     품    비": 98889334.0, "세 금  과  공  과  금": 81840846.0, "지  급   임   차   료": 32935754.0, "수       선        비": 260000.0, "보       험        료": 24847966.0, "차  량   유   지   비": 10884095.0, "사  무   용   품   비": 670515.0, "수  도   광   열   비": 653735.0, "지  급   수   수   료": 17035255.0, "도  서   인   쇄   비": 12717545.0, "외  주   용   역   비": 297297935.0, "건  물   관   리   비": 24450813.0, "운       반        비": 2035000.0}, "etc": {"이자비용": 14718707.0, "국고보조금": 9684592.0}, "salaryReg": 93844670, "salaryCon": 178065480, "clients": [{"n": "행정안전부 국가기록원", "t": 394562000.0}, {"n": "병무청", "t": 337324000.0}, {"n": "해군본부", "t": 241290000.0}, {"n": "강원특별자치도", "t": 136586800.0}, {"n": "서울대학교 기록관", "t": 123480000.0}, {"n": "국방과학연구소", "t": 120800000.0}, {"n": "제천시청", "t": 100831500.0}, {"n": "행정안전부 대통령기록관", "t": 76500000.0}, {"n": "여주시청", "t": 75383000.0}, {"n": "(주)오늘소프트", "t": 42750000.0}, {"n": "주시회사 라온투비", "t": 26400000.0}, {"n": "대전광역시 중구청", "t": 20960000.0}], "bankBalance": 1386783461, "actualBalances": {}, "tax": {"vatOutCum": 156678275, "vatInCum": 45334127, "netIncomeCum": 310169299.0, "corpTaxRate": 9, "vatPaidQ": []}, "cogs": 184999761.0, "opProfitBook": 315023816.0, "receivable": 492394726, "payable": 756757348, "projCost": [{"id": "2026-001", "name": "박물관 스마트뮤지엄시스템 개발 및 소장품 기", "rev": 42750000, "cost": 140128370, "profit": -97378370}, {"id": "2026-002", "name": "2025년 기록물 정리 및 목록화 용역", "rev": 123480000, "cost": 90906050, "profit": 32573950}, {"id": "2026-003", "name": "제천시 구 건축물대장 전산화 사업 용역", "rev": 100831500, "cost": 28809000, "profit": 72022500}, {"id": "2026-004", "name": "건축물카드대장 전산화사업", "rev": 75383000, "cost": 0, "profit": 75383000}, {"id": "2026-005", "name": "23년 인삼 전자지도 시스템(G_MAP) 개", "rev": 5500000, "cost": 0, "profit": 5500000}, {"id": "2026-006", "name": "대전 중구청 구전자문서(OPT파일) 변환 사", "rev": 20960000, "cost": 16500000, "profit": 4460000}, {"id": "2026-007", "name": "2026년 영구보존 대상 병적기록물 전수조사", "rev": 337324000, "cost": 169342770, "profit": 167981230}, {"id": "2026-008", "name": "2026년 역사기록물 콘텐츠 서비스 기반 구", "rev": 98962000, "cost": 49171870, "profit": 49790130}, {"id": "2026-010", "name": "2026년도 기록물 색인목록 DB 구축", "rev": 120800000, "cost": 59999920, "profit": 60800080}, {"id": "2026-011", "name": "대통령기록물 공개재분류 관련 연구용역(202", "rev": 19800000, "cost": 0, "profit": 19800000}, {"id": "2026-012", "name": "2026년 학교급식·먹거리 통합시스템 운영 ", "rev": 136586800, "cost": 0, "profit": 136586800}, {"id": "2026-014", "name": "26-N-영구보존기록물 DB 구축 용역", "rev": 241290000, "cost": 23177570, "profit": 218112430}, {"id": "2026-016", "name": "2026년 국가기록물 정리사업", "rev": 322000000, "cost": 118028480, "profit": 203971520}, {"id": "2026-017", "name": "2026년 대통령기록관 소장기록물 정리, 기", "rev": 56700000, "cost": 0, "profit": 56700000}, {"id": "2026-018", "name": "나주학생독립운동기념관 소장자료 디지털 아카이", "rev": 0, "cost": 8894420, "profit": -8894420}], "purchaseMonthly": [171785681, 14050043, 14885351, 66168818, 115985590, 116637660, 0], "salaryConNote": "6월 사업별 급여목록 기준(4대보험 계약직+사업소득자 포함)", "opexCash": 38729969, "opexPurchase": 99597356};
 
 // ── 서버 저장 동기화 (api/store.js + Upstash Redis) ──
 const SERVER_URL = '/api/store';
@@ -8876,7 +8876,7 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
         <KPI label="판관비 (누계)" value={eok(sgaTotal)} sub={`${sgaEntries.length}개 계정`} />
         <KPI label="영업이익" value={eok(opProfit)} sub={`영업이익률 ${opMargin.toFixed(1)}%`} tone={opProfit >= 0 ? T.success : T.danger} />
         <KPI label="당기순이익(추정)" value={eok(netProfit)} sub={`이자비용 차감 후`} tone={netProfit >= 0 ? T.success : T.danger} />
-        <KPI label="인건비 (6월/월)" value={eok(salaryTotal)} sub={`정규 ${eok(f.salaryReg || 0)} + 계약 ${eok(f.salaryCon || 0)}`} />
+        <KPI label="인건비 (6월/월)" value={eok(salaryTotal)} sub={`정규 ${eok(f.salaryReg || 0)} + 계약·사업소득 ${eok(f.salaryCon || 0)}`} />
       </div>
 
       {/* 월별 매출 추이 */}
@@ -9815,7 +9815,10 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         // 운영경비(월) = 판관비 누계에서 인건비성 계정 제외 후 ÷ 경과월
         const laborLike = ['직원급여', '잡급', '퇴직급여', '복리후생비'];
         const opexCum = sgaVals.filter(([k]) => !laborLike.some(l => k.includes(l))).reduce((a, [, v]) => a + v, 0);
-        const actualOpexMonthly = monthsElapsed ? Math.round(opexCum / monthsElapsed) : 0;
+        const opexVerified = (finData.opexCash != null || finData.opexPurchase != null);
+        const actualOpexMonthly = opexVerified
+          ? (Number(finData.opexCash) || 0) + (Number(finData.opexPurchase) || 0)
+          : (monthsElapsed ? Math.round(opexCum / monthsElapsed) : 0);
         const cmsLinked = !!(finData.salaryReg || finData.salaryCon || sgaTotalCms);
         // 세무 자동계산 → 예측 세금 지출 연동
         const taxD = finData.tax || {};
@@ -9866,7 +9869,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         });
         // 지출: 인건비 + 운영경비 + 세금(부가세 1·4·7·10월, 법인세 3월)
         const exp = months.map(mo => useLabor + useOpex + ([1, 4, 7, 10].includes(mo.m) ? useVatQ : 0) + (mo.m === 3 ? useCorpTax : 0));
-        let bal = Number(cfg.balance) || 0, balS = Number(cfg.balance) || 0;
+        const startBal = Number(cfg.balance) || Number(finData.bankBalance) || 0;
+        let bal = startBal, balS = startBal;
         const rows = months.map((mo, i) => { bal += inc[i] - exp[i]; balS += incS[i] - exp[i]; return { ...mo, inc: inc[i], incS: incS[i], exp: exp[i], bal, balS, notes: incNote[i].slice(0, 3).join(', ') }; });
         const safety = Number(cfg.safety) || 0;
         const danger = rows.find(r => r.bal < safety);
@@ -9891,8 +9895,12 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             {/* CMS 실적 연동 배너 */}
             {cmsLinked && (
               <div style={{ background: '#EEF3FA', border: `1px solid ${T.brand}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12 }}>
-                <strong style={{ color: T.brand }}>🔗 경영회계 CMS 실적 연동</strong> — 예측 지출이 실제 회계 실적 기준으로 자동 설정됩니다:
-                월 인건비 <strong>{fmtMoney(actualLaborMonthly)}원</strong> (CMS 급여), 월 운영경비 <strong>{fmtMoney(actualOpexMonthly)}원</strong> ({monthsElapsed}개월 판관비 ÷ 경과월){taxLinked ? `, 분기 부가세 ${fmtMoney(cmsVatQ)}원 · 연 법인세 ${fmtMoney(cmsCorpTaxTotal)}원(세무 자동계산)` : ''}.
+                <strong style={{ color: T.brand }}>🔗 경영회계 CMS 실적 연동</strong> — 예측 지출의 산출 근거:
+                <div style={{ marginTop: 4, lineHeight: 1.8 }}>
+                  · 월 인건비 <strong>{fmtMoney(actualLaborMonthly)}원</strong> = 정규직 {fmtMoney(finData.salaryReg || 0)} + 계약직·사업소득 {fmtMoney(finData.salaryCon || 0)} <span style={{ color: T.textMute }}>(최근월 실지급 기준 · 매월 10일 지급)</span><br />
+                  · 월 운영경비 <strong>{fmtMoney(actualOpexMonthly)}원</strong> {opexVerified ? <>= 현금경비 {fmtMoney(finData.opexCash || 0)} <span style={{ color: T.textMute }}>(임차·세금과공과·보험 등 판관비 실적)</span> + 매입지급 {fmtMoney(finData.opexPurchase || 0)} <span style={{ color: T.textMute }}>(외주·소모품 세금계산서, 최근 3개월 평균)</span></> : <span style={{ color: T.textMute }}>({monthsElapsed}개월 판관비 ÷ 경과월)</span>}
+                  {taxLinked ? <><br />· 분기 부가세 <strong>{fmtMoney(cmsVatQ)}원</strong> · 연 법인세 <strong>{fmtMoney(cmsCorpTaxTotal)}원</strong> <span style={{ color: T.textMute }}>(세무 자동계산)</span></> : null}
+                </div>
                 <label style={{ marginLeft: 10, fontSize: 11.5, cursor: 'pointer' }}>
                   <input type="checkbox" checked={cfg.laborFromCms !== false && cfg.opexFromCms !== false && cfg.taxFromCms !== false} onChange={e => setCashCfg(prev => ({ ...prev, laborFromCms: e.target.checked, opexFromCms: e.target.checked, taxFromCms: e.target.checked }))} style={{ marginRight: 4, verticalAlign: 'middle' }} />
                   실적 자동 적용
@@ -9922,7 +9930,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               {inp('선급금 비율(%)', 'advRate', 5)}
               {inp('안전 잔고 경고선(원)', 'safety')}
             </div>
-            {(Number(cfg.balance) || 0) === 0 && <div style={{ fontSize: 12, color: T.warning, marginBottom: S[3] }}>⚠ 법인통장 잔고를 입력하면 예측이 시작됩니다 (입력값은 자동 저장).</div>}
+            {startBal === 0 && <div style={{ fontSize: 12, color: T.warning, marginBottom: S[3] }}>⚠ 법인통장 잔고를 입력하면 예측이 시작됩니다 (입력값은 자동 저장).</div>}
+            {(Number(cfg.balance) || 0) === 0 && startBal > 0 && <div style={{ fontSize: 11.5, color: T.textMute, marginBottom: S[3] }}>ℹ 잔고 미입력 — 경영회계 CMS의 통장잔고 <strong>{fmtMoney(startBal)}원</strong>(자금현황표 기준)을 시작점으로 사용 중. 최신 잔고를 입력하면 그 값이 우선합니다.</div>}
             <details className="no-print" style={{ marginBottom: S[3] }}>
               <summary style={{ fontSize: 12, fontWeight: 700, color: T.brand, cursor: 'pointer' }}>사업별 기간·선급금 비율 편집 (기간·비율 수정 시 예측 즉시 반영 · 기본 선급률 {cfg.advRate}%)</summary>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: S[3], marginTop: S[2], background: T.surfaceAlt, borderRadius: 8, padding: S[3] }}>
@@ -9950,6 +9959,16 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 ))}
               </div>
             </details>
+            {/* 다음 급여일 지급 여력 */}
+            {startBal > 0 && (() => {
+              const gap = startBal - useLabor;
+              const ok = gap >= 0;
+              return (
+                <div style={{ background: ok ? 'rgba(27,122,67,0.06)' : 'rgba(180,35,24,0.07)', border: `1px solid ${ok ? T.success : T.danger}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12.5 }}>
+                  <strong style={{ color: ok ? T.success : T.danger }}>{ok ? '✅' : '🚨'} 다음 급여일(매월 10일) 지급 여력</strong> — 현재 잔고 {fmtMoney(startBal)}원 − 월 인건비 {fmtMoney(useLabor)}원 = <strong style={{ color: ok ? T.success : T.danger }}>{fmtMoney(gap)}원</strong>{ok ? ' (지급 가능)' : ' — 수금 앞당기기·자금 확보 필요!'}
+                </div>
+              );
+            })()}
             {/* 위험 신호 */}
             {danger ? (
               <div style={{ background: 'rgba(180,35,24,0.07)', border: `1px solid ${T.danger}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12.5 }}>
