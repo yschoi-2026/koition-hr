@@ -1269,6 +1269,13 @@ const INITIAL_EMPLOYEES = [
 ];
 
 const INITIAL_POLICY = {
+  // 조직(팀) 목록 — 정책 설정에서 추가·수정·삭제. nonPL=비매출(지원) 조직: 팀 손익 배분 제외
+  orgs: [
+    { name: '공공사업본부', nonPL: false }, { name: '사업관리부', nonPL: false }, { name: '기록연구부', nonPL: false },
+    { name: '아카이브사업팀', nonPL: false }, { name: '데이터큐레이션팀', nonPL: false }, { name: '서비스개발부', nonPL: false },
+    { name: 'PMO', nonPL: false },
+    { name: '경영기획본부', nonPL: true }, { name: '경영지원부', nonPL: true }, { name: '기업부설연구소', nonPL: true },
+  ],
   comp_expert: 35, comp_problem: 30, comp_learn: 15, comp_collab: 20,
   perf_kpi: 35, perf_profit: 30, perf_delivery: 20, perf_customer: 15,
   // 프로젝트 기여 산정 계수 (기여점수 산출 규칙 — 제도 공식화)
@@ -2799,7 +2806,8 @@ function App() {
         const data = JSON.parse(res);
         if (data.employees) setEmployees(data.employees);
         if (data.policy) {
-          // 기존 정책에 coverStats/coverImage/promotion이 없으면 기본값 보충 (마이그레이션)
+          // 기존 정책에 coverStats/coverImage/promotion/orgs가 없으면 기본값 보충 (마이그레이션)
+          if (!data.policy.orgs) data.policy.orgs = INITIAL_POLICY.orgs;
           const migrated = { 
             ...INITIAL_POLICY,               // 구조 키(grades·등급기준 등) 기본 보존
             ...data.policy, 
@@ -6275,6 +6283,7 @@ function EmployeesView({ user, users, employees, addEmployee, updateEmployee, de
           existingIds={employees.map(e => e.id)}
           onSave={handleSaveEmployee} 
           onClose={() => setEditTarget(null)} 
+          policy={policy}
         />
       )}
       
@@ -7731,7 +7740,7 @@ function EcountImportTab({ file, preview, importResult, isLoading, fileInputRef,
 // ============================================================
 // 직원 추가/수정 모달
 // ============================================================
-function EmployeeModal({ target, existingIds, onSave, onClose }) {
+function EmployeeModal({ target, existingIds, onSave, onClose, policy }) {
   const isNew = !!target.__isNew;
   const [form, setForm] = useState(isNew ? {
     id: '', name: '', dept: '', position: '', level: 'L2', group: 'Archive',
@@ -7802,7 +7811,12 @@ function EmployeeModal({ target, existingIds, onSave, onClose }) {
               <ModalInput value={form.name} onChange={v => set('name', v)} placeholder="예) 홍길동" />
             </Field>
             <Field label="부서" required>
-              <ModalInput value={form.dept} onChange={v => set('dept', v)} placeholder="예) 아카이브사업팀" />
+              <input list="org-datalist" value={form.dept || ''} onChange={e => set('dept', e.target.value)} placeholder="목록에서 선택 또는 직접 입력"
+                style={{ width: '100%', padding: '9px 12px', border: `1.5px solid ${T.border}`, borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: FONT }} />
+              <datalist id="org-datalist">
+                {(((policy && policy.orgs) || [])).map(o => <option key={o.name} value={o.name}>{o.nonPL ? o.name + ' (지원)' : o.name}</option>)}
+              </datalist>
+              <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 3 }}>팀 이동 시 여기서 부서만 바꾸면 팀 손익·통계에 즉시 반영됩니다. 겸직은 "주부서/부부서" 형식.</div>
             </Field>
             <Field label="직위">
               <ModalInput value={form.position} onChange={v => set('position', v)} placeholder="예) 대리" />
@@ -9187,6 +9201,9 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   // 각 프로젝트의 매출·원가를 참여인력 기여도(%)로 배분한 뒤, 인력의 소속 팀(부서)으로 합산.
   // 프로젝트에 dept가 지정돼 있으면 그 조직에 100% 귀속(우선), 참여인력이 없으면 '미배정'.
   const orgMap = {};
+  const NON_PL_DEPTS = ((policy && policy.orgs) || []).filter(o => o.nonPL).map(o => o.name);   // 정책 설정의 비매출 조직 — 팀 손익 제외, 기여분 재배분
+  const fallbackNonPL = NON_PL_DEPTS.length ? NON_PL_DEPTS : ['경영지원부', '경영기획본부', '기업부설연구소'];
+  const isNonPL = (d) => fallbackNonPL.some(x => String(d || '').includes(x));
   const deptOfEmp = (id) => {
     const e = (employees || []).find(x => x.id === id);
     const d = e ? String(e.dept || '').split('/')[0].trim() : '';
@@ -9201,17 +9218,20 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   };
   rows.forEach(r => {
     const alloc = allocMap[r.id] || 0;
-    if (r.dept && r.dept !== '미지정') {   // 프로젝트에 조직 지정 시 그대로
+    if (r.dept && r.dept !== '미지정' && !isNonPL(r.dept)) {   // 프로젝트에 매출조직 지정 시 그대로
       addOrg(r.dept, r.m, 1, alloc, r.id);
       return;
     }
-    const mem = (r.p.members || []).filter(m2 => (Number(m2.contribution) || 0) > 0);
+    const memAll = (r.p.members || []).filter(m2 => (Number(m2.contribution) || 0) > 0);
+    const mem = memAll.filter(m2 => !isNonPL(deptOfEmp(m2.empId)));   // 지원조직 인력 제외 → 매출조직끼리 재배분
     const tot = mem.reduce((a, m2) => a + Number(m2.contribution), 0);
     if (tot > 0) {
       mem.forEach(m2 => {
         const share = Number(m2.contribution) / tot;
         addOrg(deptOfEmp(m2.empId), r.m, share, alloc * share, r.id);
       });
+    } else if (memAll.length > 0) {
+      addOrg('미배정(지원조직 단독 수행)', r.m, 1, alloc, r.id);
     } else {
       addOrg('미배정(참여인력 미입력)', r.m, 1, alloc, r.id);
     }
@@ -9488,7 +9508,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
       {/* 3. 조직·본부별 손익 */}
       <H n="3" icon={Building2}>조직·팀별 손익</H>
       <div style={{ fontSize: 11.5, color: T.textMute, margin: `-4px 0 ${S[3]}px`, lineHeight: 1.6 }}>
-        각 프로젝트의 매출·원가를 <strong>참여인력 기여도(%)</strong>에 따라 배분한 뒤 인력의 소속 팀(부서)으로 합산했습니다. 여러 팀이 함께한 사업은 기여도만큼 각 팀에 나뉘어 반영되며, 참여인력이 미입력된 사업은 '미배정'으로 표시됩니다 (프로젝트 수익성에서 인력을 입력하면 자동 반영).
+        각 프로젝트의 매출·원가를 <strong>참여인력 기여도(%)</strong>에 따라 배분한 뒤 인력의 소속 팀(부서)으로 합산했습니다. 여러 팀이 함께한 사업은 기여도만큼 각 팀에 나뉘어 반영되며, 비매출 지원조직({(((policy && policy.orgs) || []).filter(o => o.nonPL).map(o => o.name).join('·')) || '경영지원부 등'})은 손익 배분에서 제외되며, 그 기여분은 같은 사업의 매출조직 인력에게 재배분됩니다. 참여인력이 미입력된 사업은 '미배정'으로 표시됩니다 (프로젝트 수익성에서 인력을 입력하면 자동 반영).
       </div>
       <div style={{ ...card(), padding: 0, overflow: 'auto', marginBottom: S[3] }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 820 }}>
@@ -12202,6 +12222,32 @@ function PolicyView({ policy, setPolicy }) {
   return (
     <div>
       <PageHeader eyebrow="Policy" title="정책 설정" subtitle="평가 가중치, 등급 기준, 보상 정책을 회사 방침에 맞게 조정" />
+
+      {/* ========== 조직(팀) 관리 ========== */}
+      <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[5], marginBottom: S[6] }}>
+        <SectionTitle>조직(팀) 관리</SectionTitle>
+        <div style={{ fontSize: 11.5, color: T.textMute, margin: `4px 0 ${S[3]}px`, lineHeight: 1.6 }}>
+          조직 개편 시 여기서 팀을 추가·수정·삭제하세요. 직원 편집의 부서 선택 목록과 경영보고서 팀별 손익에 즉시 반영됩니다.
+          <strong> 비매출(지원)</strong>에 체크된 조직은 팀 손익 배분에서 제외되고, 그 기여분은 같은 사업의 매출조직에 재배분됩니다.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: S[2] }}>
+          {(policy.orgs || []).map((o, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, background: T.surfaceAlt, borderRadius: 8, padding: '6px 8px' }}>
+              <input value={o.name} onChange={e => setPolicy(prev => ({ ...prev, orgs: prev.orgs.map((x, idx) => idx === i ? { ...x, name: e.target.value } : x) }))}
+                style={{ flex: 1, padding: '5px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, minWidth: 0, fontFamily: FONT }} />
+              <label style={{ fontSize: 10.5, color: o.nonPL ? T.warning : T.textMute, whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                <input type="checkbox" checked={!!o.nonPL} onChange={e => setPolicy(prev => ({ ...prev, orgs: prev.orgs.map((x, idx) => idx === i ? { ...x, nonPL: e.target.checked } : x) }))} style={{ verticalAlign: 'middle', marginRight: 3 }} />
+                비매출
+              </label>
+              <button onClick={() => { if (window.confirm(`'${o.name}' 조직을 삭제할까요? (소속 직원의 부서 표기는 유지되며, 직원 편집에서 새 부서로 옮겨주세요)`)) setPolicy(prev => ({ ...prev, orgs: prev.orgs.filter((_, idx) => idx !== i) })); }}
+                title="삭제" style={{ border: 'none', background: 'transparent', color: T.danger, cursor: 'pointer', fontSize: 14, padding: 2 }}>🗑</button>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: S[3] }}>
+          <Button variant="outline" size="sm" onClick={() => setPolicy(prev => ({ ...prev, orgs: [...(prev.orgs || []), { name: '새 조직', nonPL: false }] }))}>+ 조직 추가</Button>
+        </div>
+      </div>
       
       {/* ========== 평가 척도 기준표 (Rubric) ========== */}
       <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[6], marginBottom: S[6] }}>
