@@ -3239,7 +3239,7 @@ function App() {
               else showToast(`${emp.name}님의 계정을 찾을 수 없습니다`);
             }} />}
             {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} finalizeEval={finalizeEval} projects={projects} proposals={proposals} peerEvals={peerEvals} />}
-            {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} />}
+            {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} cashCfg={cashCfg} setCashCfg={setCashCfg} />}
             {tab === 'cms' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <AccountingCmsView fin={fin} setFin={setFin} projects={projects} cashCfg={cashCfg} canEdit={user.role === 'admin'} />}
             {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} receivables={receivables} cashCfg={cashCfg} setCashCfg={setCashCfg} upsertProject={upsertProject} fin={fin} />}
             {tab === 'loans' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <LoansView loans={loans} setLoans={setLoans} employees={employees} />}
@@ -10138,7 +10138,9 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   );
 }
 
-function ProjectProfitView({ user, employees, projects, proposals, overheads, upsertProject, deleteProject, bulkUpsertProjects, bulkUpsertProposals, deleteProposal, winProposal, updateProposal, upsertOverhead, deleteOverhead, bulkUpsertOverheads, bulkSetEmpLedger, currentYear, policy, setPolicy }) {
+function ProjectProfitView({ user, employees, projects, proposals, overheads, upsertProject, deleteProject, bulkUpsertProjects, bulkUpsertProposals, deleteProposal, winProposal, updateProposal, upsertOverhead, deleteOverhead, bulkUpsertOverheads, bulkSetEmpLedger, currentYear, policy, setPolicy, cashCfg, setCashCfg }) {
+  const [analId, setAnalId] = React.useState('');
+  const [analEdit, setAnalEdit] = React.useState(false);
   const canEdit = user.role === 'admin' || user.deptScope === '경영지원부';
   const cfg = (policy && policy.diag) || {};
   const pmFloor = cfg.pmFloor ?? PM_MIN_CONTRIBUTION;
@@ -10215,6 +10217,104 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
         eyebrow="Project Profitability"
         title="프로젝트 수익성"
         subtitle="프로젝트 종료·연말에 프로젝트별 매출·인건비·제경비를 입력하면 수익률이 자동 산정되고, 투입 직원의 업적평가 '프로젝트 기여도' 점수로 연계됩니다. (경영지원부 소관)"
+      />
+      {/* ── 사업별 손익 분석 패널 ── */}
+      <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[4], marginBottom: S[4] }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: S[3], flexWrap: 'wrap' }}>
+          <SectionTitle>📊 사업별 손익 분석</SectionTitle>
+          <select value={analId} onChange={e => setAnalId(e.target.value)} style={{ padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 7, fontSize: 12.5, fontFamily: FONT, maxWidth: 420 }}>
+            <option value="">분석할 사업 선택…</option>
+            {(projects || []).filter(p => !isEtcProject(p) && Number(p.revenue) > 0).map(p => <option key={p.id} value={p.id}>{p.id} {p.name}</option>)}
+          </select>
+          {analId && <Button variant={analEdit ? 'primary' : 'outline'} size="sm" onClick={() => setAnalEdit(v => !v)}>{analEdit ? '편집 완료 (자동 저장됨)' : '✏ 편집'}</Button>}
+        </div>
+        {analId && (() => {
+          const p = (projects || []).find(x => x.id === analId);
+          if (!p) return null;
+          const num = (x) => Number(x) || 0;
+          const rev = num(p.revenue), wk = num(p.workerLabor), mg = num(p.mgrLabor), oh = num(p.overhead) + num(p.otherCost);
+          const totalRev = (projects || []).filter(x => !isEtcProject(x)).reduce((a, x) => a + num(x.revenue), 0);
+          const pool = (overheads || []).reduce((a, o) => a + num(o.amount), 0);
+          const alloc = totalRev > 0 ? pool * rev / totalRev : 0;   // 간접경비(공통비 매출비중 배부)
+          const cost = wk + mg + oh, fullCost = cost + alloc;
+          const advRate = ((cashCfg && cashCfg.advRates && cashCfg.advRates[p.id]) ?? (cashCfg && cashCfg.advRate) ?? 50);
+          const advAmt = rev * advRate / 100, balAmt = rev - advAmt;
+          const pr = String(p.period || '').match(/(\d{4})[.\-\/](\d{1,2})\s*~\s*(\d{4})[.\-\/](\d{1,2})/);
+          const now = new Date();
+          let progress = null, monthsTotal = null, elapsed = null, startLbl = '-', endLbl = '-';
+          if (pr) {
+            const s0 = new Date(+pr[1], +pr[2] - 1, 1), e0 = new Date(+pr[3], +pr[4] - 1, 1);
+            monthsTotal = (e0.getFullYear() - s0.getFullYear()) * 12 + (e0.getMonth() - s0.getMonth()) + 1;
+            elapsed = Math.min(monthsTotal, Math.max(0, (now.getFullYear() - s0.getFullYear()) * 12 + (now.getMonth() - s0.getMonth()) + 1));
+            progress = monthsTotal > 0 ? elapsed / monthsTotal : null;
+            startLbl = pr[2] + '월'; endLbl = pr[4] + '월(잔금은 익월)';
+          }
+          const estFinalCost = progress && progress > 0.15 ? fullCost / progress : fullCost;   // 진행률 기준 최종원가 추정
+          const estMargin = rev > 0 ? (rev - estFinalCost) / rev * 100 : 0;
+          const curMargin = rev > 0 ? (rev - fullCost) / rev * 100 : 0;
+          const received = progress != null ? (elapsed >= 1 ? advAmt : 0) + (elapsed >= monthsTotal + 1 ? balAmt : 0) : 0;
+          const chart = [];
+          if (monthsTotal) {
+            let recv = 0;
+            for (let m = 1; m <= monthsTotal + 1; m++) {
+              if (m === 1) recv += advAmt;
+              if (m === monthsTotal + 1) recv += balAmt;
+              chart.push({ name: m <= monthsTotal ? m + '개월' : '잔금', 누적원가: Math.round(Math.min(m, monthsTotal) / monthsTotal * estFinalCost / 1000000), 누적수금: Math.round(recv / 1000000) });
+            }
+          }
+          const inp = (label, key, val) => (
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '3px 0' }}>
+              <span style={{ color: T.textMute }}>{label}</span>
+              {analEdit && key ? <input inputMode="numeric" value={fmtInput(val)} onChange={e => upsertProject({ ...p, [key]: parseInput(e.target.value) })} style={{ width: 120, textAlign: 'right', border: `1px solid ${T.border}`, borderRadius: 5, padding: '2px 6px', fontSize: 11.5, fontFamily: FONT }} /> : <strong style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(val)}</strong>}
+            </div>
+          );
+          return (
+            <div style={{ marginTop: S[3] }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: S[4] }}>
+                <div style={{ background: T.surfaceAlt, borderRadius: 8, padding: S[3], fontSize: 12.5 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 6, color: T.brand }}>수입 계획</div>
+                  {inp('계약금액', 'revenue', rev)}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span style={{ color: T.textMute }}>선급금 ({analEdit && setCashCfg ? <input type="number" value={advRate} onChange={e => setCashCfg(prev => ({ ...prev, advRates: { ...(prev.advRates || {}), [p.id]: Number(e.target.value) } }))} style={{ width: 44, border: `1px solid ${T.border}`, borderRadius: 4, fontSize: 11, textAlign: 'right' }} /> : advRate}% · 착수 {startLbl})</span><strong>{fmtMoney(advAmt)}</strong></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span style={{ color: T.textMute }}>잔금 (종료 {endLbl})</span><strong>{fmtMoney(balAmt)}</strong></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderTop: `1px dashed ${T.border}`, marginTop: 4 }}><span style={{ color: T.textMute }}>기간</span>{analEdit ? <input value={p.period || ''} onChange={e => upsertProject({ ...p, period: e.target.value })} placeholder="2026.03~2026.11" style={{ width: 140, border: `1px solid ${T.border}`, borderRadius: 5, padding: '2px 6px', fontSize: 11.5 }} /> : <strong>{p.period || '미입력'}</strong>}</div>
+                </div>
+                <div style={{ background: T.surfaceAlt, borderRadius: 8, padding: S[3], fontSize: 12.5 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 6, color: T.brand }}>원가 (누계 실적)</div>
+                  {inp('작업자인건비', 'workerLabor', wk)}
+                  {inp('관리자인건비', 'mgrLabor', mg)}
+                  {inp('제경비(외주·직접)', 'overhead', num(p.overhead))}
+                  {inp('기타경비', 'otherCost', num(p.otherCost))}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span style={{ color: T.textMute }}>간접경비(공통비 배부)</span><strong>{fmtMoney(alloc)}</strong></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderTop: `1px dashed ${T.border}`, marginTop: 4 }}><span>총원가(완전)</span><strong style={{ color: T.danger }}>{fmtMoney(fullCost)}</strong></div>
+                </div>
+                <div style={{ background: T.surfaceAlt, borderRadius: 8, padding: S[3], fontSize: 12.5 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 6, color: T.brand }}>손익 진단</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span style={{ color: T.textMute }}>진행률(기간 기준)</span><strong>{progress != null ? Math.round(progress * 100) + '%' : '기간 미입력'}</strong></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span style={{ color: T.textMute }}>수령 누계(선급/잔금)</span><strong>{fmtMoney(received)}</strong></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span style={{ color: T.textMute }}>현재 손익(계약-총원가)</span><strong style={{ color: rev - fullCost >= 0 ? T.success : T.danger }}>{fmtMoney(rev - fullCost)} ({curMargin.toFixed(1)}%)</strong></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderTop: `1px dashed ${T.border}`, marginTop: 4 }}><span>예상 최종 수익률</span><strong style={{ fontSize: 15, color: estMargin >= 10 ? T.success : estMargin >= 0 ? T.warning : T.danger }}>{estMargin.toFixed(1)}%</strong></div>
+                  <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 4 }}>최종원가 추정 = 현재 총원가 ÷ 진행률{received < fullCost ? ' · ⚠ 수금보다 원가 선투입 구간 — 자금 주의' : ''}</div>
+                </div>
+              </div>
+              {chart.length > 0 && (
+                <div style={{ height: 180, marginTop: S[3] }}>
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    <ComposedChart data={chart} margin={{ top: 6, right: 10, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
+                      <XAxis dataKey="name" tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 10 }} unit="M" />
+                      <Tooltip formatter={(v) => v + '백만원'} /><Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Area type="monotone" dataKey="누적원가" fill="rgba(180,35,24,0.15)" stroke={T.danger} strokeWidth={2} />
+                      <Line type="stepAfter" dataKey="누적수금" stroke={T.brand} strokeWidth={2.5} dot={{ r: 3 }} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+        {!analId && <div style={{ fontSize: 12, color: T.textMute, marginTop: 6 }}>사업을 선택하면 선급금·잔금·계약기간과 4대 원가(작업자·관리자·제경비·간접경비 배부)를 한 화면에서 보고 ✏ 편집할 수 있습니다. 수정은 자동 저장되며 수익성·기여도·자금예측에 즉시 반영됩니다.</div>}
+      </div>
+      <div style={{ display: 'none' }}
         action={canEdit && (
           <div style={{ display: 'flex', gap: S[2] }}>
             <Button variant="secondary" size="sm" icon={FileSpreadsheet} onClick={() => setSagwanOpen(true)}>사업관리 엑셀 업로드</Button>
