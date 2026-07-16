@@ -847,23 +847,28 @@ function CardStat({ label, value, highlight }) {
 // ============================================================
 const INITIAL_USERS = [
   { username: 'admin', password: 'gsH$w77p', role: 'admin', name: '인사담당자', empId: null, deptScope: '전체' },
-  { username: 'jiy', password: 'S#8pg6zy', role: 'manager', name: '정일영', empId: 'K-140401', deptScope: '전체' },
-  { username: 'cjk', password: '4xb#2krK', role: 'manager', name: '최재교', empId: 'K-140402', deptScope: '전체' },
-  { username: 'sys', password: 'mU&6z2as', role: 'manager', name: '신수호', empId: 'K-140404', deptScope: '사업관리부' },
-  { username: 'ljm', password: 'p8Vun#g8', role: 'manager', name: '이종민', empId: 'K-231001', deptScope: '서비스개발부' },
   { username: 'cys', password: 'uj!5n3Rs', role: 'admin', name: '최영숙', empId: 'K-140403', deptScope: '전체' },
-  { username: 'lwk', password: 'z&yvYu56', role: 'evaluator', name: '이원규', empId: 'K-180501', deptScope: '아카이브사업팀' },
-  { username: 'sdh', password: '6ca6zaK%', role: 'evaluator', name: '심도현', empId: 'K-170801', deptScope: '데이터큐레이션팀' },
-  { username: 'owk', password: 'bgmUk9!3', role: 'employee', name: '오윤경', empId: 'K-220601' },
-  { username: 'whw', password: '#rSva2p7', role: 'employee', name: '원동현', empId: 'K-200501' },
-  { username: 'chy', password: 'm$vv5t4F', role: 'employee', name: '최하연', empId: 'K-240403' },
-  { username: 'jeh', password: '@N6t6ats', role: 'employee', name: '조은희', empId: 'K-240401' },
-  { username: 'gyh', password: 'v#Uemf34', role: 'employee', name: '고영훈', empId: 'K-240202' },
-  { username: 'onr', password: 'ju5m%H2v', role: 'employee', name: '오누리', empId: 'K-260301' },
-  { username: 'ljh', password: '9z$2Wkyt', role: 'employee', name: '임지홍', empId: 'K-260701' },
-  { username: 'chj', password: '9fDe%w5c', role: 'employee', name: '최하진', empId: 'K-260702' },
-  { username: 'csy', password: '*2jbfj7S', role: 'evaluator', name: '최순용', empId: 'K-250601', deptScope: '사업관리부' },
-  { username: 'lhj', password: 'L8qnb&8k', role: 'employee', name: '이흥주', empId: 'K-250602' },
+  { username: 'K-140401', password: 'zLSd83%R', role: 'manager', name: '정일영', empId: 'K-140401', deptScope: '전체' },
+  { username: 'K-140402', password: 'RuBi77!j', role: 'manager', name: '최재교', empId: 'K-140402', deptScope: '전체' },
+  { username: 'K-140403', password: 'zEXm22%G', role: 'admin', name: '최영숙', empId: 'K-140403', deptScope: '전체' },
+  { username: 'K-140404', password: 'gmiX33$e', role: 'evaluator', name: '신수호', empId: 'K-140404', deptScope: '사업관리부' },
+  { username: 'K-231001', password: 'TWUh77#D', role: 'evaluator', name: '이종민', empId: 'K-231001', deptScope: '서비스개발부' },
+  { username: 'K-210505', password: 'zVjX75$s', role: 'evaluator', name: '최경민', empId: 'K-210505', deptScope: '사업관리부' },
+  { username: 'K-240201', password: 'Tets43#s', role: 'evaluator', name: '오창민', empId: 'K-240201', deptScope: '경영기획본부' },
+  { username: 'K-250601', password: 'ekyR68%x', role: 'evaluator', name: '최순용', empId: 'K-250601', deptScope: '사업관리부' },
+  { username: 'K-180501', password: 'QkJd48$f', role: 'evaluator', name: '이원규', empId: 'K-180501', deptScope: '아카이브사업팀' },
+  { username: 'K-180402', password: 'zQpy36$e', role: 'evaluator', name: '김장호', empId: 'K-180402', deptScope: '서비스개발부' },
+  { username: 'K-170801', password: 'hMQn94#N', role: 'evaluator', name: '심도현', empId: 'K-170801', deptScope: '데이터큐레이션팀' },
+  { username: 'K-250602', password: 'gRsm57!z', role: 'evaluator', name: '이흥주', empId: 'K-250602', deptScope: '사업관리부' },
+  { username: 'K-240202', password: 'VWrz44!h', role: 'employee', name: '고영훈', empId: 'K-240202' },
+  { username: 'K-220601', password: 'zLxM66$N', role: 'evaluator', name: '오윤경', empId: 'K-220601', deptScope: '데이터큐레이션팀' },
+  { username: 'K-200501', password: 'WDFv75#R', role: 'evaluator', name: '원동현', empId: 'K-200501', deptScope: '아카이브사업팀' },
+  { username: 'K-241201', password: 'aUCW98@C', role: 'employee', name: '정예람', empId: 'K-241201' },
+  { username: 'K-240403', password: 'easV44#P', role: 'employee', name: '최하연', empId: 'K-240403' },
+  { username: 'K-240401', password: 'tSHB89%R', role: 'employee', name: '조은희', empId: 'K-240401' },
+  { username: 'K-260301', password: 'Rhww29$G', role: 'employee', name: '오누리', empId: 'K-260301' },
+  { username: 'K-260701', password: 'PqZB66!M', role: 'employee', name: '임지홍', empId: 'K-260701' },
+  { username: 'K-260702', password: 'iaEA29%s', role: 'employee', name: '최하진', empId: 'K-260702' },
 ];
 
 // ============================================================
@@ -2730,6 +2735,20 @@ function App() {
             // cys 계정이 삭제된 경우 초기 비밀번호로 복구 생성
             if (!migrated.some(u => u.username === 'cys')) {
               migrated = [...migrated, { username: 'cys', passwordHash: await hashPassword('uj!5n3Rs'), role: 'admin', name: '최영숙', empId: 'K-140403', deptScope: '전체', mustChangePassword: true, lastPasswordChange: null }];
+            }
+            // ★ 사번 아이디 전환 마이그레이션 (1회) — 기존 이니셜 계정을 사번 기준으로 교체.
+            //   admin·cys는 기존 비밀번호/변경분을 그대로 보존하고, 나머지는 INITIAL_USERS(사번)로 재구성.
+            const alreadyEmpId = migrated.some(u => /^K-\d{6}$/.test(u.username));
+            if (!alreadyEmpId) {
+              const keep = migrated.filter(u => u.username === 'cys' || u.username === 'admin');
+              const empAccts = await Promise.all(
+                INITIAL_USERS.filter(u => u.username !== 'cys' && u.username !== 'admin').map(async u => ({
+                  username: u.username, passwordHash: await hashPassword(u.password),
+                  role: u.role, name: u.name, empId: u.empId, deptScope: u.deptScope,
+                  mustChangePassword: true, lastPasswordChange: null,
+                }))
+              );
+              migrated = [...keep, ...empAccts];
             }
             persistUsers(migrated);
             setUsers(migrated);
