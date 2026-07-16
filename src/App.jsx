@@ -3163,6 +3163,10 @@ function App() {
   };
   const deleteProposal = (id) => setProposals(prev => prev.filter(x => x.id !== id));
   const updateProposal = (id, patch) => setProposals(prev => (prev || []).map(x => x.id === id ? { ...x, ...patch } : x));
+  const upsertProposal = (prop) => setProposals(prev => {
+    const exists = (prev || []).some(x => x.id === prop.id);
+    return exists ? prev.map(x => x.id === prop.id ? { ...x, ...prop } : x) : [...(prev || []), prop];
+  });
   // 수주 확정: 제안 → 신규 프로젝트 생성 + 수주 인력 보상(직원별 원장 신규수주 + 수주 기여점수 자동)
   const winProposal = (proposalId) => {
     const p = (proposals || []).find(x => x.id === proposalId);
@@ -3315,7 +3319,7 @@ function App() {
               else showToast(`${emp.name}님의 계정을 찾을 수 없습니다`);
             }} />}
             {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} finalizeEval={finalizeEval} projects={projects} proposals={proposals} peerEvals={peerEvals} />}
-            {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} cashCfg={cashCfg} setCashCfg={setCashCfg} />}
+            {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertProposal={upsertProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} cashCfg={cashCfg} setCashCfg={setCashCfg} />}
             {tab === 'cms' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <AccountingCmsView fin={fin} setFin={setFin} projects={projects} cashCfg={cashCfg} canEdit={user.role === 'admin'} />}
             {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} receivables={receivables} cashCfg={cashCfg} setCashCfg={setCashCfg} upsertProject={upsertProject} fin={fin} />}
             {tab === 'loans' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <LoansView loans={loans} setLoans={setLoans} employees={employees} />}
@@ -8239,72 +8243,95 @@ function OverheadView({ projects, overheads, currentYear, yearFilter, policy, se
 }
 
 // 수주 파이프라인 (사업제안현황 연동)
-function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal, updateProposal }) {
-  const [edit, setEdit] = React.useState(null); // {id, pm, participants, support}
-  if (!proposals || proposals.length === 0) {
-    return <EmptyState icon={TrendingUp} title="제안 데이터가 없습니다" desc="사업관리 엑셀(사업제안현황 시트)을 업로드하면 수주 파이프라인이 표시됩니다" />;
-  }
+function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal, updateProposal, upsertProposal }) {
+  const [edit, setEdit] = React.useState(null); // 인력 편집
+  const [form, setForm] = React.useState(null); // 관심사업 등록/편집
+  const blank = () => ({ id: 'P:' + Date.now(), name: '', client: '', budget: '', bidDate: '', period: '', docs: '', winRate: 50, pm: '', status: '관심', memo: '' });
+  const openNew = () => setForm(blank());
+  const openEdit = (p) => setForm({ ...blank(), ...p, budget: p.budget || '', winRate: p.winRate != null ? p.winRate : 50 });
+  const save = () => {
+    if (!form.name.trim()) { alert('사업명을 입력하세요.'); return; }
+    upsertProposal({ ...form, budget: Number(String(form.budget).replace(/[^\d.-]/g, '')) || 0, winRate: Number(form.winRate) || 0 });
+    setForm(null);
+  };
+  const hasData = proposals && proposals.length > 0;
   const total = proposals.length;
   const won = proposals.filter(p => p.status === '수주').length;
   const convRate = total > 0 ? Math.round(won / total * 100) : 0;
-  const pipelineBudget = proposals.filter(p => p.status !== '수주').reduce((s, p) => s + (p.budget || 0), 0);
+  const openProps = proposals.filter(p => p.status !== '수주');
+  const pipelineBudget = openProps.reduce((s, p) => s + (p.budget || 0), 0);
+  const weightedBudget = openProps.reduce((s, p) => s + (p.budget || 0) * ((p.winRate != null ? p.winRate : 50) / 100), 0);   // 수주율 가중 기대매출
   const wonBudget = proposals.filter(p => p.status === '수주').reduce((s, p) => s + (p.budget || 0), 0);
   const chartData = [
-    { name: '제안중', 금액: pipelineBudget, key: 'p' },
-    { name: '수주', 금액: wonBudget, key: 'w' },
+    { name: '제안중(전액)', 금액: pipelineBudget, key: 'p' },
+    { name: '기대매출(수주율)', 금액: Math.round(weightedBudget), key: 'e' },
+    { name: '수주 확정', 금액: wonBudget, key: 'w' },
   ];
-  const sorted = [...proposals].sort((a, b) => (b.status === '수주' ? 0 : 1) - (a.status === '수주' ? 0 : 1) || (b.budget || 0) - (a.budget || 0));
+  const statusOrder = { '수주': 0, '제안': 1, '입찰예정': 2, '관심': 3 };
+  const sorted = [...proposals].sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9) || (b.budget || 0) - (a.budget || 0));
+  const winColor = (r) => r >= 70 ? T.success : r >= 40 ? T.warning : T.textMute;
   return (
     <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: S[3] }}>
+        {canEdit && <Button variant="primary" size="sm" icon={Plus} onClick={openNew}>관심 사업 등록</Button>}
+      </div>
+      {!hasData ? (
+        <EmptyState icon={TrendingUp} title="제안 데이터가 없습니다" desc="[관심 사업 등록] 버튼으로 직접 추가하거나, 사업관리 엑셀(사업제안현황 시트)을 업로드하세요" />
+      ) : (
+      <>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: S[4], marginBottom: S[5] }}>
-        <MetricCard icon={FileText} label="총 제안" value={total} unit="건" />
-        <MetricCard icon={CheckCircle2} label="수주" value={won} unit="건" color={T.success} sub={`전환율 ${convRate}%`} />
-        <MetricCard icon={TrendingUp} label="예상 매출(제안중)" value={fmtMoney(pipelineBudget)} unit="원" color={T.brand} />
-        <MetricCard icon={Award} label="수주 확정 매출" value={fmtMoney(wonBudget)} unit="원" color={T.success} />
+        <MetricCard icon={FileText} label="총 제안·관심" value={total} unit="건" sub={`수주 ${won}건 · 전환율 ${convRate}%`} />
+        <MetricCard icon={TrendingUp} label="파이프라인(전액)" value={fmtMoney(pipelineBudget)} unit="원" color={T.brand} />
+        <MetricCard icon={Target} label="기대매출(수주율 가중)" value={fmtMoney(Math.round(weightedBudget))} unit="원" color={T.warning} sub="Σ 예산×수주율" />
+        <MetricCard icon={Award} label="수주 확정" value={fmtMoney(wonBudget)} unit="원" color={T.success} />
       </div>
 
       <div style={{ ...card(), padding: S[6], marginBottom: S[5] }}>
-        <SectionTitle>제안 → 수주 파이프라인 (예산 기준)</SectionTitle>
-        <ResponsiveContainer width="100%" height={220} minWidth={0}>
-          <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 20, left: 40, bottom: 10 }}>
+        <SectionTitle>제안 → 기대매출 → 수주 (예산 기준)</SectionTitle>
+        <ResponsiveContainer width="100%" height={200} minWidth={0}>
+          <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 20, left: 60, bottom: 10 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={T.divider} horizontal={false} />
             <XAxis type="number" tick={{ fontSize: 11, fill: T.textMute }} tickFormatter={(v) => fmtMoney(v)} />
-            <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: T.textMute }} width={60} />
+            <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: T.textMute }} width={100} />
             <Tooltip contentStyle={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12 }} formatter={(v) => fmtMoney(v) + '원'} />
             <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
-              <Cell fill="#7FB0E0" /><Cell fill={T.success} />
+              <Cell fill="#7FB0E0" /><Cell fill={T.warning} /><Cell fill={T.success} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
-        <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2] }}>수주 여부는 사업명 자동 매칭 또는 [수주 확정] 버튼으로 처리됩니다. 수주 확정 시 신규 프로젝트가 생성되고, PM·제안참여인력에게 수주 기여점수(인사평가)와 PM 신규수주 실적(직원별 원장)이 자동 반영됩니다.</div>
+        <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2] }}>기대매출 = 각 제안의 예산 × 수주율(%)의 합. 자금흐름 예측의 파이프라인 시나리오와 연동됩니다.</div>
       </div>
 
       <div style={{ ...card(), padding: S[6] }}>
-        <SectionTitle>제안 현황</SectionTitle>
+        <SectionTitle>제안·관심 사업 현황</SectionTitle>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
                 <Th>사업명</Th><Th>주관기관</Th><Th align="right">사업예산</Th>
-                <Th>입찰</Th><Th>PM</Th><Th align="center">상태</Th>
+                <Th>입찰시기</Th><Th>계약기간</Th><Th align="center">수주율</Th><Th>제출서류</Th><Th>PM</Th><Th align="center">상태</Th>
                 {canEdit && <Th align="center">관리</Th>}
               </tr>
             </thead>
             <tbody>
               {sorted.map(p => (
                 <tr key={p.id} style={{ borderBottom: `1px solid ${T.divider}` }}>
-                  <Td><div style={{ whiteSpace: 'normal', maxWidth: 280, fontWeight: 600, color: T.ink }}>{p.name}</div>{p.consortium && <div style={{ fontSize: 10, color: T.textMute }}>{p.consortium}</div>}</Td>
+                  <Td><div style={{ whiteSpace: 'normal', maxWidth: 240, fontWeight: 600, color: T.ink }}>{p.name}</div>{p.consortium && <div style={{ fontSize: 10, color: T.textMute }}>{p.consortium}</div>}</Td>
                   <Td>{p.client}</Td>
                   <Td align="right" mono>{fmtMoney(p.budget)}</Td>
-                  <Td>{p.bidDate}</Td>
-                  <Td>{p.pm}{(p.participants || []).length > 0 && <span title={'제안참여: ' + p.participants.join(', ')} style={{ fontSize: 10, color: T.brand, marginLeft: 4 }}>참여{p.participants.length}</span>}{(p.support || []).length > 0 && <span title={'서류지원: ' + p.support.join(', ')} style={{ fontSize: 10, color: T.textMute, marginLeft: 4 }}>지원{p.support.length}</span>}</Td>
-                  <Td align="center"><Badge color={p.status === '수주' ? T.success : T.textMute} variant={p.status === '수주' ? 'solid' : 'outline'} size="sm">{p.status}</Badge></Td>
+                  <Td style={{ fontSize: 11.5 }}>{p.bidDate || '-'}</Td>
+                  <Td style={{ fontSize: 11.5 }}>{p.period || '-'}</Td>
+                  <Td align="center">{p.status === '수주' ? <Badge color={T.success} size="sm">확정</Badge> : <span style={{ fontWeight: 700, color: winColor(p.winRate != null ? p.winRate : 50) }}>{p.winRate != null ? p.winRate : 50}%</span>}</Td>
+                  <Td style={{ fontSize: 11, color: T.textMute, maxWidth: 160, whiteSpace: 'normal' }}>{p.docs || '-'}</Td>
+                  <Td>{p.pm}{(p.participants || []).length > 0 && <span title={'제안참여: ' + p.participants.join(', ')} style={{ fontSize: 10, color: T.brand, marginLeft: 4 }}>참여{p.participants.length}</span>}</Td>
+                  <Td align="center"><Badge color={p.status === '수주' ? T.success : p.status === '입찰예정' ? T.warning : T.textMute} variant={p.status === '수주' ? 'solid' : 'outline'} size="sm">{p.status}</Badge></Td>
                   {canEdit && <Td align="center">
                     <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
                       {p.status !== '수주' && winProposal && (
-                        <Button size="sm" variant="secondary" icon={Award} onClick={() => winProposal(p.id)}>수주 확정</Button>
+                        <Button size="sm" variant="secondary" icon={Award} onClick={() => winProposal(p.id)}>수주</Button>
                       )}
-                      {updateProposal && <button title="인력 편집 (PM·제안참여·서류지원)" onClick={() => setEdit({ id: p.id, pm: p.pm || '', participants: (p.participants || []).join(', '), support: (p.support || []).join(', ') })} style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.brand }}><Pencil size={14} /></button>}
+                      <button title="사업 정보 편집" onClick={() => openEdit(p)} style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.brand }}><Pencil size={14} /></button>
+                      {updateProposal && <button title="제안 인력 편집 (PM·참여·지원)" onClick={() => setEdit({ id: p.id, pm: p.pm || '', participants: (p.participants || []).join(', '), support: (p.support || []).join(', ') })} style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}><Users size={14} /></button>}
                       <button onClick={() => { if (window.confirm('이 제안을 삭제할까요?')) deleteProposal(p.id); }} style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }} title="삭제"><Trash2 size={14} /></button>
                     </span>
                   </Td>}
@@ -8313,7 +8340,55 @@ function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal, upda
             </tbody>
           </table>
         </div>
+        <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2] }}>수주 확정 시 신규 프로젝트가 생성되고, PM·제안참여인력에게 수주 기여점수(인사평가)가 자동 반영됩니다.</div>
       </div>
+
+      {/* 관심 사업 등록/편집 모달 */}
+      {form && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setForm(null)}>
+          <div style={{ ...card(), padding: S[5], width: 520, maxWidth: '100%', maxHeight: '90vh', overflow: 'auto' }} onClick={ev => ev.stopPropagation()}>
+            <SectionTitle>{proposals.some(p => p.id === form.id) ? '사업 정보 편집' : '관심 사업 등록'}</SectionTitle>
+            <div style={{ display: 'grid', gap: S[3], marginTop: S[3] }}>
+              <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>사업명 *</div>
+                <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="예) 2027년 OO기록물 정리 용역" style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', fontFamily: FONT }} /></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[2] }}>
+                <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>주관기관</div>
+                  <input value={form.client} onChange={e => setForm(f => ({ ...f, client: e.target.value }))} placeholder="예) 국가기록원" style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', fontFamily: FONT }} /></div>
+                <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>사업예산(원)</div>
+                  <input inputMode="numeric" value={fmtInput(form.budget)} onChange={e => setForm(f => ({ ...f, budget: parseInput(e.target.value) }))} placeholder="500,000,000" style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }} /></div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[2] }}>
+                <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>입찰시기</div>
+                  <input value={form.bidDate} onChange={e => setForm(f => ({ ...f, bidDate: e.target.value }))} placeholder="2026.09 또는 2026.09.15" style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', fontFamily: FONT }} /></div>
+                <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>계약기간</div>
+                  <input value={form.period} onChange={e => setForm(f => ({ ...f, period: e.target.value }))} placeholder="2026.11~2027.10" style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', fontFamily: FONT }} /></div>
+              </div>
+              <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>수주율 {form.winRate}%</div>
+                <input type="range" min="0" max="100" step="5" value={form.winRate} onChange={e => setForm(f => ({ ...f, winRate: Number(e.target.value) }))} style={{ width: '100%' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, color: T.textMute }}><span>낮음</span><span>보통</span><span>유력</span></div>
+              </div>
+              <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>제출서류 (준비 항목)</div>
+                <textarea value={form.docs} onChange={e => setForm(f => ({ ...f, docs: e.target.value }))} placeholder="예) 제안서, 사업수행계획서, 참여인력 이력, 유사실적증명, 재무제표" rows={2} style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, resize: 'vertical' }} /></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[2] }}>
+                <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>PM</div>
+                  <input value={form.pm} onChange={e => setForm(f => ({ ...f, pm: e.target.value }))} placeholder="예) 오창민" style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', fontFamily: FONT }} /></div>
+                <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>상태</div>
+                  <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', fontFamily: FONT }}>
+                    <option value="관심">관심</option><option value="입찰예정">입찰예정</option><option value="제안">제안(제출)</option><option value="수주">수주</option>
+                  </select></div>
+              </div>
+              <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>메모</div>
+                <input value={form.memo} onChange={e => setForm(f => ({ ...f, memo: e.target.value }))} placeholder="비고" style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', fontFamily: FONT }} /></div>
+              <div style={{ display: 'flex', gap: S[2], justifyContent: 'flex-end' }}>
+                <Button variant="ghost" onClick={() => setForm(null)}>취소</Button>
+                <Button variant="primary" onClick={save}>저장</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      </>
+      )}
       {edit && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setEdit(null)}>
           <div style={{ ...card(), padding: S[5], width: 440, maxWidth: '100%' }} onClick={ev => ev.stopPropagation()}>
@@ -10001,15 +10076,23 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           const ei = eiRaw < 0 ? 0 : eiRaw; // 이미 종료됐는데 미수금 → 이번 달 수금 가정
           if (ei < 12) { const rem = p.revenue * (si >= 0 ? (1 - adv) : 1); inc[ei] += rem; incNote[ei].push(p.id + ' 잔금' + (eiRaw < 0 ? '(지연)' : '')); }
         });
-        // ③ 파이프라인 시나리오: 미수주 제안이 수주된다고 가정 (계약 익월 선급, +6개월 잔금)
+        // ③ 파이프라인 시나리오: 미수주 제안을 수주율(%)로 가중해 반영 (계약기간 시작월 선급, +6개월 잔금)
+        //    cfg.pipeline[id]={on,month,rate}: 개별 포함여부·예상 계약월·선급률. 기대금액 = 예산 × 수주율.
+        const pipeCfg = cfg.pipeline || {};
         const incS = inc.slice();
         (proposals || []).filter(p => p.status !== '수주' && Number(p.budget) > 0).forEach(p => {
-          const bm = String(p.bidDate || '').match(/(\d{4})[.\-\/](\d{1,2})/);
-          let start = bm ? idxOf(+bm[1], +bm[2]) + 1 : 2;
+          const pc = pipeCfg[p.id] || {};
+          if (pc.on === false) return;
+          const winW = (p.winRate != null ? Number(p.winRate) : 50) / 100;   // 수주율 가중
+          const expBudget = p.budget * winW;
+          let start = null;
+          if (pc.month) { const mm = String(pc.month).match(/(\d{4})[.\-\/](\d{1,2})/); start = mm ? idxOf(+mm[1], +mm[2]) : null; }
+          if (start == null && p.period) { const pm = parsePeriod(p.period); if (pm) start = idxOf(pm.sy, pm.sm); }
+          if (start == null) { const bm = String(p.bidDate || '').match(/(\d{4})[.\-\/](\d{1,2})/); start = bm ? idxOf(+bm[1], +bm[2]) + 1 : 2; }
           if (start < 1) start = 1;
-          const advP = (Number(cfg.advRate) || 0) / 100;
-          if (start < 12 && advP > 0) incS[start] += p.budget * advP;
-          const end = start + 6; if (end < 12) incS[end] += p.budget * (1 - advP);
+          const advP = ((pc.rate != null && pc.rate !== '') ? Number(pc.rate) : (Number(cfg.advRate) || 0)) / 100;
+          if (start < 12 && advP > 0) incS[start] += expBudget * advP;
+          const end = start + 6; if (end < 12) incS[end] += expBudget * (1 - advP);
         });
         // 지출: 인건비 + 운영경비 + 세금(부가세 1·4·7·10월, 법인세 3월)
         const laborOf = (mo) => { const v = laborByMonth[mo.key]; return (v != null && v !== '') ? Number(v) : useLabor; };
@@ -10298,7 +10381,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   );
 }
 
-function ProjectProfitView({ user, employees, projects, proposals, overheads, upsertProject, deleteProject, bulkUpsertProjects, bulkUpsertProposals, deleteProposal, winProposal, updateProposal, upsertOverhead, deleteOverhead, bulkUpsertOverheads, bulkSetEmpLedger, currentYear, policy, setPolicy, cashCfg, setCashCfg }) {
+function ProjectProfitView({ user, employees, projects, proposals, overheads, upsertProject, deleteProject, bulkUpsertProjects, bulkUpsertProposals, deleteProposal, winProposal, updateProposal, upsertProposal, upsertOverhead, deleteOverhead, bulkUpsertOverheads, bulkSetEmpLedger, currentYear, policy, setPolicy, cashCfg, setCashCfg }) {
   const [analId, setAnalId] = React.useState('');
   const [analEdit, setAnalEdit] = React.useState(false);
   const actRef = React.useRef(null);
@@ -10627,7 +10710,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
       </div>
 
       {view === 'pipeline' ? (
-        <ProjectPipeline proposals={proposals || []} canEdit={canEdit} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} />
+        <ProjectPipeline proposals={proposals || []} canEdit={canEdit} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertProposal={upsertProposal} />
       ) : view === 'overhead' ? (
         <OverheadView projects={shown} overheads={overheads || []} currentYear={currentYear} yearFilter={yearFilter}
           policy={policy} setPolicy={setPolicy} canEdit={canEdit}
