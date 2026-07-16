@@ -2271,6 +2271,20 @@ function evalProjectScore(p, mm) {
   return rateToScore(r);
 }
 
+// 투입인원 가중치: 투입기간(개월)×참여율(%) → 인·월(person-month). 미입력 시 기존 기여도(%)로 폴백.
+function memberWeight(m) {
+  if (!m) return 0;
+  const mo = Number(m.months);
+  const rt = Number(m.rate);
+  if (mo > 0 && rt > 0) return mo * (rt / 100);   // 인·월
+  return Math.max(0, Number(m.contribution) || 0); // 폴백: 기여도%
+}
+// 사업 내 멤버들의 정규화 기여도(%) — 투입기간×참여율(또는 기여도%) 기준
+function normalizedContribution(members) {
+  const ws = (members || []).map(m => ({ m, w: memberWeight(m) }));
+  const tot = ws.reduce((a, x) => a + x.w, 0);
+  return ws.map(x => ({ ...x.m, _pct: tot > 0 ? x.w / tot * 100 : 0, _w: x.w }));
+}
 function calcContributionScore(empId, projects, year) {
   const mine = (projects || []).filter(p =>
     !isEtcProject(p) &&
@@ -2285,11 +2299,14 @@ function calcContributionScore(empId, projects, year) {
     const mm = projectMetrics(p);
     const ps = evalProjectScore(p, mm);   // 완료=확정, 진행중=진행기준 수익률 점수
     if (ps == null) return;
-    const w = Math.max(0, Number(m.contribution) || 0);
+    // 정규화 기여도(%) — 투입기간×참여율 기준(미입력 시 기여도% 폴백)
+    const norm = normalizedContribution(p.members);
+    const me = norm.find(x => x.empId === empId);
+    const w = me ? me._pct : Math.max(0, Number(m.contribution) || 0);
     if (w < EVAL_CFG.coreMin) return;   // 소액 참여(제안서지원 등)는 수행 기여에서 제외(기준: 정책설정)
     wsum += w;
     ssum += ps * w;
-    breakdown.push({ project: p, member: m, metrics: mm, weight: w });
+    breakdown.push({ project: p, member: m, metrics: mm, weight: Math.round(w) });
   });
   if (wsum === 0) return null;
   const score = Math.round(ssum / wsum);
@@ -9373,12 +9390,12 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
       addOrg(r.dept, r.m, 1, alloc, r.id);
       return;
     }
-    const memAll = (r.p.members || []).filter(m2 => (Number(m2.contribution) || 0) > 0);
+    const memAll = (r.p.members || []).filter(m2 => memberWeight(m2) > 0);
     const mem = memAll.filter(m2 => !isNonPL(deptOfEmp(m2.empId)));   // 지원조직 인력 제외 → 매출조직끼리 재배분
-    const tot = mem.reduce((a, m2) => a + Number(m2.contribution), 0);
+    const tot = mem.reduce((a, m2) => a + memberWeight(m2), 0);
     if (tot > 0) {
       mem.forEach(m2 => {
-        const share = Number(m2.contribution) / tot;
+        const share = memberWeight(m2) / tot;
         addOrg(deptOfEmp(m2.empId), r.m, share, alloc * share, r.id);
       });
     } else if (memAll.length > 0) {
@@ -10588,47 +10605,76 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
                   </ResponsiveContainer>
                 </div>
               )}
-              {/* 투입인원 기여도 × 수익률 환산 */}
+              {/* 투입인원 기여도 × 수익률 환산 + 투입기간·참여율 입력 */}
               {(() => {
                 const mm2 = projectMetrics(p);
                 const ps = evalProjectScore(p, mm2);   // 이 사업의 수익률 점수(0~100)
-                const mem = (p.members || []).filter(m => (Number(m.contribution) || 0) > 0).sort((a, b) => (b.contribution || 0) - (a.contribution || 0));
+                const rawMem = (p.members || []);
                 const empName2 = (id) => { const e = (employees || []).find(x => x.id === id); return e ? e.name : id; };
                 const empDept2 = (id) => { const e = (employees || []).find(x => x.id === id); return e ? String(e.dept || '').split('/')[0] : ''; };
-                const csum = mem.reduce((a, m) => a + Number(m.contribution || 0), 0);
+                const norm = normalizedContribution(rawMem);   // _pct(정규화 기여%), _w(인·월)
+                const withPct = rawMem.map((m, idx) => ({ ...m, _pct: norm[idx] ? norm[idx]._pct : 0, _w: norm[idx] ? norm[idx]._w : 0 }))
+                  .filter(m => m._pct > 0 || (analEdit)).sort((a, b) => b._pct - a._pct);
+                const pctSum = Math.round(norm.reduce((a, x) => a + x._pct, 0));
+                const totMonths = norm.reduce((a, x) => a + x._w, 0);   // 총 인·월
+                const usesPeriod = rawMem.some(m => Number(m.months) > 0 && Number(m.rate) > 0);
+                const updM = (idx, key, val) => {
+                  const arr = (p.members || []).map((x, j) => j === idx ? { ...x, [key]: (val === '' ? '' : Number(val)) } : x);
+                  // 관리자 인건비 자동 산출: 정규직 참여자의 (월인건비 × 투입기간 × 참여율) 합 — 입력 시 엑셀보다 우선
+                  const regStatus = (e) => e && (e.status === 'active') && !['freelancer', 'advisor'].includes(e.status);
+                  let mgrDerived = 0, anyPeriod = false;
+                  arr.forEach(mb => {
+                    const e = (employees || []).find(x => x.id === mb.empId);
+                    const mo = Number(mb.months), rt = Number(mb.rate);
+                    if (e && regStatus(e) && mo > 0 && rt > 0) {
+                      const monthly = (Number(e.baseSalary) || 0) + (Number(e.allowance) || 0) + (Number(e.mealCar) || 0) + (Number(e.qualif) || 0);
+                      const burden = Math.round(monthly * 1.1);   // 회사부담(4대보험 등) 약 10% 가산
+                      mgrDerived += burden * mo * (rt / 100);
+                      anyPeriod = true;
+                    }
+                  });
+                  const patch = { ...p, members: arr };
+                  if (anyPeriod) patch.mgrLabor = Math.round(mgrDerived);   // 참여율 입력이 있으면 관리자 인건비 override
+                  upsertProject(patch);
+                };
                 return (
                   <div style={{ marginTop: S[4], background: T.surfaceAlt, borderRadius: 8, padding: S[3] }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
                       <div style={{ fontWeight: 700, color: T.brand, fontSize: 12.5 }}>투입인원 기여도 × 수익률 평가</div>
-                      <div style={{ fontSize: 11.5, color: T.textMute }}>이 사업 수익률 점수 <strong style={{ color: ps >= 70 ? T.success : ps >= 50 ? T.warning : T.danger }}>{ps != null ? ps + '점' : '-'}</strong> (수익률 {(mm2.pocRate != null ? mm2.pocRate : mm2.rate) != null ? ((mm2.pocRate != null ? mm2.pocRate : mm2.rate) * 100).toFixed(1) + '%' : '-'}) × 개인 기여도(%)</div>
+                      <div style={{ fontSize: 11.5, color: T.textMute }}>사업 수익률 점수 <strong style={{ color: ps >= 70 ? T.success : ps >= 50 ? T.warning : T.danger }}>{ps != null ? ps + '점' : '-'}</strong> · 기여도 = 투입기간(개월)×참여율(%) {usesPeriod ? '기준' : '(미입력 시 기여도% 폴백)'}</div>
                     </div>
-                    {mem.length === 0 ? (
-                      <div style={{ fontSize: 11.5, color: T.textMute, marginTop: 8 }}>투입인원이 없습니다. 아래 프로젝트 표에서 ✏ → 참여인력을 추가하면 여기에 기여도별 환산점수가 표시됩니다.</div>
+                    {withPct.length === 0 ? (
+                      <div style={{ fontSize: 11.5, color: T.textMute, marginTop: 8 }}>투입인원이 없습니다. 아래 프로젝트 표에서 ✏ → 참여인력을 추가하고, 여기서 [✏편집]으로 투입기간·참여율을 입력하세요.</div>
                     ) : (
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, marginTop: 8 }}>
-                        <thead><tr style={{ color: T.textMute }}><Th align="left">투입인원</Th><Th align="center">역할</Th><Th align="right">기여도</Th><Th align="right">기여 인건비(추정)</Th><Th align="right">환산 점수</Th></tr></thead>
+                        <thead><tr style={{ color: T.textMute }}><Th align="left">투입인원</Th><Th align="center">역할</Th><Th align="center">투입기간(개월)</Th><Th align="center">참여율%</Th><Th align="right">기여도(산출)</Th><Th align="right">기여 인건비</Th><Th align="right">환산 점수</Th></tr></thead>
                         <tbody>
-                          {mem.map((m, i) => {
-                            const w = Number(m.contribution) || 0;
-                            const cScore = ps != null ? ps : 0;   // 개인 환산점수 = 사업 수익률 점수(기여도는 여러 사업 가중에 쓰임)
-                            const laborShare = mm2.labor > 0 && csum > 0 ? mm2.labor * w / csum : 0;
-                            const low = w < EVAL_CFG.coreMin;
+                          {withPct.map((m) => {
+                            const idx = rawMem.findIndex(x => x === rawMem.find(y => y.empId === m.empId && (y.role === m.role)));
+                            const realIdx = rawMem.indexOf(rawMem.find(x => x.empId === m.empId && x.role === m.role && (x.months === m.months) && (x.rate === m.rate) && (x.contribution === m.contribution)));
+                            const ri = realIdx >= 0 ? realIdx : rawMem.findIndex(x => x.empId === m.empId);
+                            const pct = m._pct;
+                            const cScore = ps != null ? ps : 0;
+                            const laborShare = totMonths > 0 ? mm2.labor * m._w / totMonths : (pctSum > 0 ? mm2.labor * pct / pctSum : 0);
+                            const low = pct < EVAL_CFG.coreMin;
                             return (
-                              <tr key={i} style={{ borderTop: `1px solid ${T.border}` }}>
+                              <tr key={ri} style={{ borderTop: `1px solid ${T.border}` }}>
                                 <Td>{empName2(m.empId)} <span style={{ fontSize: 10, color: T.textMute }}>{empDept2(m.empId)}</span></Td>
                                 <Td align="center">{m.role || '-'}</Td>
-                                <Td align="right" mono>{w}%{low ? <span style={{ color: T.textMute, fontSize: 9.5 }}> (소액)</span> : ''}</Td>
+                                <Td align="center">{analEdit ? <input type="number" value={m.months ?? ''} onChange={e => updM(ri, 'months', e.target.value)} placeholder="-" style={{ width: 52, textAlign: 'center', border: `1px solid ${T.border}`, borderRadius: 5, padding: '2px', fontSize: 11 }} /> : (m.months || '-')}</Td>
+                                <Td align="center">{analEdit ? <input type="number" value={m.rate ?? ''} onChange={e => updM(ri, 'rate', e.target.value)} placeholder="-" style={{ width: 52, textAlign: 'center', border: `1px solid ${T.border}`, borderRadius: 5, padding: '2px', fontSize: 11 }} /> : (m.rate != null && m.rate !== '' ? m.rate + '%' : '-')}</Td>
+                                <Td align="right" mono style={{ fontWeight: 600 }}>{pct.toFixed(0)}%{low ? <span style={{ color: T.textMute, fontSize: 9.5 }}> (소액)</span> : ''}</Td>
                                 <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(laborShare)}</Td>
                                 <Td align="right" mono><strong style={{ color: cScore >= 70 ? T.success : cScore >= 50 ? T.warning : T.danger }}>{low ? '수행 제외' : cScore + '점'}</strong></Td>
                               </tr>
                             );
                           })}
                         </tbody>
-                        <tfoot><tr style={{ borderTop: `2px solid ${T.border}` }}><Td style={{ fontWeight: 700 }}>합계</Td><Td></Td><Td align="right" mono style={{ fontWeight: 700, color: csum === 100 ? T.success : T.warning }}>{csum}%</Td><Td align="right" mono>{fmtMoney(mm2.labor)}</Td><Td></Td></tr></tfoot>
+                        <tfoot><tr style={{ borderTop: `2px solid ${T.border}` }}><Td style={{ fontWeight: 700 }}>합계</Td><Td></Td><Td align="center" mono>{totMonths > 0 ? totMonths.toFixed(1) + '인·월' : '-'}</Td><Td></Td><Td align="right" mono style={{ fontWeight: 700, color: pctSum === 100 ? T.success : T.warning }}>{pctSum}%</Td><Td align="right" mono>{fmtMoney(mm2.labor)}</Td><Td></Td></tr></tfoot>
                       </table>
                     )}
                     <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6, lineHeight: 1.6 }}>
-                      환산 점수 = 이 사업의 수익률 점수이며, 개인의 업적평가 '프로젝트 기여도'는 <strong>참여한 모든 사업의 (수익률 점수 × 기여도%)를 가중평균</strong>해 산정됩니다(평가 입력에서 [이 점수 적용]). 기여도 {EVAL_CFG.coreMin}% 미만은 수행 기여에서 제외(제안·지원은 수주 기여로 별도 반영). 기여도 합계는 100%가 되도록 프로젝트 표 ✏에서 조정하세요.
+                      기여도(산출) = 각 인원의 <strong>투입기간(개월)×참여율(%)</strong>을 사업 전체 대비 정규화한 값입니다(둘 다 입력해야 적용, 미입력 시 기존 기여도% 사용). 이 값이 개인 업적평가 '프로젝트 기여도'(모든 사업 가중평균)와 관리자 인건비 배분에 반영됩니다. {EVAL_CFG.coreMin}% 미만은 수행 기여 제외. [✏편집]으로 입력하세요.
                     </div>
                   </div>
                 );
