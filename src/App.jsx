@@ -10076,6 +10076,31 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 ))}
               </div>
             </details>
+            <details className="no-print" style={{ marginBottom: S[3] }}>
+              <summary style={{ fontSize: 12, fontWeight: 700, color: T.success, cursor: 'pointer' }}>수주 파이프라인 개별 설정 (미수주 제안별 포함 여부·예상 계약월·선급률)</summary>
+              <div style={{ fontSize: 11, color: T.textMute, margin: `4px 0 ${S[2]}px` }}>초록 점선(파이프라인) 라인에 반영됩니다. 체크 해제 시 그 제안은 시나리오에서 제외됩니다. 계약월을 비우면 입찰일 익월로 가정합니다.</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: S[2] }}>
+                {(proposals || []).filter(p => p.status !== '수주' && Number(p.budget) > 0).map(p => {
+                  const pc = (cfg.pipeline || {})[p.id] || {};
+                  const setPipe = (patch) => setCashCfg(prev => ({ ...prev, pipeline: { ...(prev.pipeline || {}), [p.id]: { ...((prev.pipeline || {})[p.id] || {}), ...patch } } }));
+                  const on = pc.on !== false;
+                  return (
+                    <div key={p.id} style={{ background: '#fff', border: `1px solid ${on ? T.success : T.border}`, borderRadius: 8, padding: S[2], opacity: on ? 1 : 0.55 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={on} onChange={e => setPipe({ on: e.target.checked })} />
+                        <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={p.name}>{p.name || p.id}</span>
+                      </label>
+                      <div style={{ fontSize: 10, color: T.textMute, margin: '2px 0 4px' }}>{p.client || ''} · 예산 {fmtMoney(p.budget)}원</div>
+                      <div style={{ display: 'flex', gap: 5 }}>
+                        <input placeholder="계약월 2026.09" value={pc.month || ''} onChange={e => setPipe({ month: e.target.value })} disabled={!on} style={{ flex: 1, padding: '3px 6px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 10.5, minWidth: 0 }} />
+                        <input type="number" placeholder={String(cfg.advRate)} value={pc.rate ?? ''} onChange={e => setPipe({ rate: e.target.value === '' ? '' : Number(e.target.value) })} disabled={!on} title="선급률%" style={{ width: 52, padding: '3px 6px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 10.5, textAlign: 'right' }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                {(proposals || []).filter(p => p.status !== '수주' && Number(p.budget) > 0).length === 0 && <div style={{ fontSize: 11.5, color: T.textMute }}>미수주 제안이 없습니다. 제안·수주 관리에서 제안을 등록하면 여기에 나타납니다.</div>}
+              </div>
+            </details>
             {/* 다음 급여일 지급 여력 */}
             {startBal > 0 && (() => {
               const gap = startBal - useLabor;
