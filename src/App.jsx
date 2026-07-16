@@ -9649,8 +9649,17 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const months = Array.from({ length: 12 }, (_, i) => { const d = new Date(y0, m0 + i, 1); return { y: d.getFullYear(), m: d.getMonth() + 1, key: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), label: (d.getMonth() + 1) + '월' }; });
         const idxOf = (yy, mm) => (yy - y0) * 12 + (mm - 1 - m0);
         const parsePeriod = (p) => { const m = String(p || '').match(/(\d{4})[.\-\/](\d{1,2})\s*~\s*(\d{4})[.\-\/](\d{1,2})/); return m ? { sy: +m[1], sm: +m[2], ey: +m[3], em: +m[4] } : null; };
+        // #2 선급률 자동학습: 수금 실적(receivables)에서 사업별 첫 입금/계약금액 비율의 중앙값을 기본 선급률로 추천
+        const learnedAdvRate = (() => {
+          const rs = (receivables || []).filter(r => r.paidDate && Number(r.amount) > 0 && Number(r.contractAmount) > 0);
+          if (rs.length < 2) return null;
+          const rates = rs.map(r => Math.min(100, Number(r.amount) / Number(r.contractAmount) * 100)).sort((a, b) => a - b);
+          const mid = Math.floor(rates.length / 2);
+          return Math.round(rates.length % 2 ? rates[mid] : (rates[mid - 1] + rates[mid]) / 2);
+        })();
         const advRates = cfg.advRates || {};
-        const advOf = (pid) => ((advRates[pid] != null && advRates[pid] !== '') ? Number(advRates[pid]) : Number(cfg.advRate) || 0) / 100;
+        const effAdvRate = (cfg.advRate != null && cfg.advRate !== '') ? Number(cfg.advRate) : (learnedAdvRate != null ? learnedAdvRate : 40);
+        const advOf = (pid) => ((advRates[pid] != null && advRates[pid] !== '') ? Number(advRates[pid]) : effAdvRate) / 100;
         const inc = Array(12).fill(0); const incNote = Array.from({ length: 12 }, () => []);
         const covered = new Set();
         // ① 수금 관리 등록분 (미입금) — 가장 확정적
@@ -9689,10 +9698,45 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         });
         // 지출: 인건비 + 운영경비 + 세금(부가세 1·4·7·10월, 법인세 3월)
         const laborOf = (mo) => { const v = laborByMonth[mo.key]; return (v != null && v !== '') ? Number(v) : useLabor; };
-        const exp = months.map(mo => laborOf(mo) + useOpex + ([1, 4, 7, 10].includes(mo.m) ? useVatQ : 0) + (mo.m === 3 ? useCorpTax : 0));
+        // #4 프로젝트성 경비 진행률 연동: 매월 '활성 사업 수' 비율로 프로젝트성 경비를 조정
+        //    (현재 진행 사업 대비 그 달에 기간이 걸쳐 있는 사업 비율). 기준월(현재)=100%.
+        const activeProjs = (projects || []).filter(p => !isEtcProject(p) && Number(p.revenue) > 0 && p.status !== 'completed' && parsePeriod(p.period));
+        const baseActive = (() => { let c = 0; activeProjs.forEach(p => { const pr = parsePeriod(p.period); const s = idxOf(pr.sy, pr.sm), e = idxOf(pr.ey, pr.em); if (s <= 0 && e >= 0) c++; }); return c || activeProjs.length || 1; })();
+        const activeRatioOf = (i) => {
+          if (cfg.projOpexProgress === false || activeProjs.length === 0) return 1;   // 토글 OFF면 고정
+          let c = 0; activeProjs.forEach(p => { const pr = parsePeriod(p.period); const s = idxOf(pr.sy, pr.sm), e = idxOf(pr.ey, pr.em); if (s <= i && e >= i) c++; });
+          return baseActive > 0 ? c / baseActive : 1;
+        };
+        const fixedOpexUse = useFixedOpex;
+        const projOpexUse = Math.round(useProjOpex * projOpexScale / 100);
+        const opexOf = (i) => fixedOpexUse + Math.round(projOpexUse * activeRatioOf(i));   // 고정 + 프로젝트성×진행률
+        const taxOf = (mo) => ([1, 4, 7, 10].includes(mo.m) ? useVatQ : 0) + (mo.m === 3 ? useCorpTax : 0);
+        const exp = months.map((mo, i) => laborOf(mo) + opexOf(i) + taxOf(mo));
         const startBal = Number(cfg.balance) || Number(finData.bankBalance) || 0;
-        let bal = startBal, balS = startBal;
-        const rows = months.map((mo, i) => { bal += inc[i] - exp[i]; balS += incS[i] - exp[i]; return { ...mo, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo), expOpex: useOpex, expTax: ([1, 4, 7, 10].includes(mo.m) ? useVatQ : 0) + (mo.m === 3 ? useCorpTax : 0), bal, balS, notes: incNote[i].slice(0, 3).join(', ') }; });
+        // #1 실제잔고 자동보정: 최근 3개월 (실제-예측) 평균 편향을 미래 예측에 반영
+        const actualBalMap = (finData.actualBalances) || {};
+        // #3 시나리오 밴드: 낙관(수주율+20%p·수금 정상)·보수(수주율-20%p·프로젝트성경비+10%)
+        let bal = startBal, balS = startBal, balOpt = startBal, balCons = startBal;
+        const incOpt = inc.slice(), incCons = inc.slice();
+        (proposals || []).filter(p => p.status !== '수주' && Number(p.budget) > 0).forEach(p => {
+          const pc = pipeCfg[p.id] || {}; if (pc.on === false) return;
+          const baseW = (p.winRate != null ? Number(p.winRate) : 50);
+          let start = null;
+          if (pc.month) { const mm = String(pc.month).match(/(\d{4})[.\-\/](\d{1,2})/); start = mm ? idxOf(+mm[1], +mm[2]) : null; }
+          if (start == null && p.period) { const pm = parsePeriod(p.period); if (pm) start = idxOf(pm.sy, pm.sm); }
+          if (start == null) { const bm = String(p.bidDate || '').match(/(\d{4})[.\-\/](\d{1,2})/); start = bm ? idxOf(+bm[1], +bm[2]) + 1 : 2; }
+          if (start < 1) start = 1;
+          const advP = ((pc.rate != null && pc.rate !== '') ? Number(pc.rate) : (Number(cfg.advRate) || 0)) / 100;
+          const wOpt = Math.min(100, baseW + 20) / 100, wCons = Math.max(0, baseW - 20) / 100;
+          if (start < 12 && advP > 0) { incOpt[start] += p.budget * wOpt * advP; incCons[start] += p.budget * wCons * advP; }
+          const end = start + 6; if (end < 12) { incOpt[end] += p.budget * wOpt * (1 - advP); incCons[end] += p.budget * wCons * (1 - advP); }
+        });
+        const expCons = months.map((mo, i) => laborOf(mo) + fixedOpexUse + Math.round(projOpexUse * activeRatioOf(i) * 1.1) + taxOf(mo));   // 보수: 프로젝트성경비 +10%
+        const rows = months.map((mo, i) => {
+          bal += inc[i] - exp[i]; balS += incS[i] - exp[i];
+          balOpt += incOpt[i] - exp[i]; balCons += incCons[i] - expCons[i];
+          return { ...mo, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo), expOpex: opexOf(i), expTax: taxOf(mo), activeRatio: activeRatioOf(i), bal, balS, balOpt, balCons, notes: incNote[i].slice(0, 3).join(', ') };
+        });
         const safety = Number(cfg.safety) || 0;
         const danger = rows.find(r => r.bal < safety);
         const minRow = rows.reduce((a, r) => r.bal < a.bal ? r : a, rows[0]);
@@ -9703,10 +9747,20 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           </div>
         );
         const actualBal = (finData.actualBalances) || {};
+        // #1 자동보정: 최근 실적월들의 (실제-예측단순) 평균 편향을 미래에 가산
+        const biasSamples = rows.map((r, i) => { const mk = r.y + '-' + String(r.m).padStart(2, '0'); const av = actualBal[mk]; return (av != null && av !== '') ? (Number(av) - r.bal) : null; }).filter(v => v != null);
+        const bias = (cfg.autoCorrect !== false && biasSamples.length >= 2) ? Math.round(biasSamples.slice(-3).reduce((a, v) => a + v, 0) / Math.min(3, biasSamples.length)) : 0;
         const chartData = rows.map(r => {
           const mk = r.y + '-' + String(r.m).padStart(2, '0');
           const av = actualBal[mk];
-          const d = { name: r.label, 예측잔고: Math.round(r.bal / 1000000), '예측(파이프라인)': Math.round(r.balS / 1000000), 안전선: Math.round(safety / 1000000) };
+          const d = {
+            name: r.label,
+            예측잔고: Math.round((r.bal + bias) / 1000000),
+            '예측(파이프라인)': Math.round((r.balS + bias) / 1000000),
+            낙관: Math.round((r.balOpt + bias) / 1000000),
+            보수: Math.round((r.balCons + bias) / 1000000),
+            안전선: Math.round(safety / 1000000),
+          };
           if (av != null && av !== '') d['실제잔고'] = Math.round(Number(av) / 1000000);
           return d;
         });
@@ -9759,6 +9813,14 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               </div>
               {inp('선급금 비율(%)', 'advRate', 5)}
               {inp('안전 잔고 경고선(원)', 'safety')}
+            </div>
+            {/* 정밀도 옵션 토글 */}
+            <div className="no-print" style={{ display: 'flex', gap: S[3], flexWrap: 'wrap', marginBottom: S[3], fontSize: 11.5, alignItems: 'center' }}>
+              <span style={{ fontWeight: 700, color: T.textMute }}>정밀도 옵션:</span>
+              <label style={{ cursor: 'pointer' }}><input type="checkbox" checked={cfg.projOpexProgress !== false} onChange={e => setCashCfg(prev => ({ ...prev, projOpexProgress: e.target.checked }))} style={{ verticalAlign: 'middle', marginRight: 3 }} />프로젝트성 경비 진행률 연동</label>
+              <label style={{ cursor: 'pointer' }}><input type="checkbox" checked={cfg.showBand !== false} onChange={e => setCashCfg(prev => ({ ...prev, showBand: e.target.checked }))} style={{ verticalAlign: 'middle', marginRight: 3 }} />낙관·보수 시나리오 밴드</label>
+              <label style={{ cursor: 'pointer' }}><input type="checkbox" checked={cfg.autoCorrect !== false} onChange={e => setCashCfg(prev => ({ ...prev, autoCorrect: e.target.checked }))} style={{ verticalAlign: 'middle', marginRight: 3 }} />실제잔고 기반 자동보정{bias !== 0 ? ` (${bias > 0 ? '+' : ''}${fmtMoney(bias)}원)` : ''}</label>
+              {learnedAdvRate != null && <span style={{ color: T.success }}>💡 수금 실적 기준 추천 선급률 {learnedAdvRate}%{(cfg.advRate == null || cfg.advRate === '') ? ' (적용 중)' : ''}</span>}
             </div>
             {startBal === 0 && <div style={{ fontSize: 12, color: T.warning, marginBottom: S[3] }}>⚠ 법인통장 잔고를 입력하면 예측이 시작됩니다 (입력값은 자동 저장).</div>}
             {(Number(cfg.balance) || 0) === 0 && startBal > 0 && <div style={{ fontSize: 11.5, color: T.textMute, marginBottom: S[3] }}>ℹ 잔고 미입력 — 경영회계 CMS의 통장잔고 <strong>{fmtMoney(startBal)}원</strong>(자금현황표 기준)을 시작점으로 사용 중. 최신 잔고를 입력하면 그 값이 우선합니다.</div>}
@@ -9882,8 +9944,10 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                       <Tooltip formatter={(v) => (v == null ? '-' : v.toLocaleString() + '백만원')} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${T.border}`, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }} />
                       <Legend wrapperStyle={{ fontSize: 11 }} iconType="plainline" />
                       {safeM > 0 && <ReferenceLine y={safeM} stroke={T.danger} strokeDasharray="5 4" strokeWidth={1.2} label={{ value: `안전선 ${safeM}M`, position: 'insideTopRight', fontSize: 10, fill: T.danger }} />}
+                      {cfg.showBand !== false && <Area type="monotone" dataKey="낙관" name="낙관(수주율+20%p)" stroke="#94C79A" strokeWidth={1} strokeDasharray="2 3" fill="none" dot={false} />}
+                      {cfg.showBand !== false && <Area type="monotone" dataKey="보수" name="보수(수주율-20%p·경비+10%)" stroke="#E3A6A0" strokeWidth={1} strokeDasharray="2 3" fill="none" dot={false} />}
                       <Area type="monotone" dataKey="예측(파이프라인)" name="수주 반영(시나리오)" stroke={T.success} strokeWidth={1.6} strokeDasharray="6 3" fill="url(#pipeFill)" dot={false} />
-                      <Area type="monotone" dataKey="예측잔고" name="예측 잔고(확정)" stroke={T.brand} strokeWidth={3} fill="url(#balFill)" dot={{ r: 2.5, fill: T.brand }} activeDot={{ r: 5 }} />
+                      <Area type="monotone" dataKey="예측잔고" name="예측 잔고(기준)" stroke={T.brand} strokeWidth={3} fill="url(#balFill)" dot={{ r: 2.5, fill: T.brand }} activeDot={{ r: 5 }} />
                       {hasActual && <Line type="monotone" dataKey="실제잔고" name="실제 잔고" stroke={T.gold || '#B8892B'} strokeWidth={2.5} dot={{ r: 3.5, fill: T.gold || '#B8892B' }} connectNulls />}
                       <ReferenceDot x={minPt.name} y={minPt.예측잔고} r={5} fill={belowSafe ? T.danger : T.warning} stroke="#fff" strokeWidth={1.5} label={{ value: '최저점', position: 'bottom', fontSize: 9.5, fill: belowSafe ? T.danger : T.warning }} />
                     </ComposedChart>
