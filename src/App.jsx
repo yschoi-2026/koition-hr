@@ -10446,6 +10446,51 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
                   </ResponsiveContainer>
                 </div>
               )}
+              {/* 투입인원 기여도 × 수익률 환산 */}
+              {(() => {
+                const mm2 = projectMetrics(p);
+                const ps = evalProjectScore(p, mm2);   // 이 사업의 수익률 점수(0~100)
+                const mem = (p.members || []).filter(m => (Number(m.contribution) || 0) > 0).sort((a, b) => (b.contribution || 0) - (a.contribution || 0));
+                const empName2 = (id) => { const e = (employees || []).find(x => x.id === id); return e ? e.name : id; };
+                const empDept2 = (id) => { const e = (employees || []).find(x => x.id === id); return e ? String(e.dept || '').split('/')[0] : ''; };
+                const csum = mem.reduce((a, m) => a + Number(m.contribution || 0), 0);
+                return (
+                  <div style={{ marginTop: S[4], background: T.surfaceAlt, borderRadius: 8, padding: S[3] }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
+                      <div style={{ fontWeight: 700, color: T.brand, fontSize: 12.5 }}>투입인원 기여도 × 수익률 평가</div>
+                      <div style={{ fontSize: 11.5, color: T.textMute }}>이 사업 수익률 점수 <strong style={{ color: ps >= 70 ? T.success : ps >= 50 ? T.warning : T.danger }}>{ps != null ? ps + '점' : '-'}</strong> (수익률 {(mm2.pocRate != null ? mm2.pocRate : mm2.rate) != null ? ((mm2.pocRate != null ? mm2.pocRate : mm2.rate) * 100).toFixed(1) + '%' : '-'}) × 개인 기여도(%)</div>
+                    </div>
+                    {mem.length === 0 ? (
+                      <div style={{ fontSize: 11.5, color: T.textMute, marginTop: 8 }}>투입인원이 없습니다. 아래 프로젝트 표에서 ✏ → 참여인력을 추가하면 여기에 기여도별 환산점수가 표시됩니다.</div>
+                    ) : (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, marginTop: 8 }}>
+                        <thead><tr style={{ color: T.textMute }}><Th align="left">투입인원</Th><Th align="center">역할</Th><Th align="right">기여도</Th><Th align="right">기여 인건비(추정)</Th><Th align="right">환산 점수</Th></tr></thead>
+                        <tbody>
+                          {mem.map((m, i) => {
+                            const w = Number(m.contribution) || 0;
+                            const cScore = ps != null ? ps : 0;   // 개인 환산점수 = 사업 수익률 점수(기여도는 여러 사업 가중에 쓰임)
+                            const laborShare = mm2.labor > 0 && csum > 0 ? mm2.labor * w / csum : 0;
+                            const low = w < EVAL_CFG.coreMin;
+                            return (
+                              <tr key={i} style={{ borderTop: `1px solid ${T.border}` }}>
+                                <Td>{empName2(m.empId)} <span style={{ fontSize: 10, color: T.textMute }}>{empDept2(m.empId)}</span></Td>
+                                <Td align="center">{m.role || '-'}</Td>
+                                <Td align="right" mono>{w}%{low ? <span style={{ color: T.textMute, fontSize: 9.5 }}> (소액)</span> : ''}</Td>
+                                <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(laborShare)}</Td>
+                                <Td align="right" mono><strong style={{ color: cScore >= 70 ? T.success : cScore >= 50 ? T.warning : T.danger }}>{low ? '수행 제외' : cScore + '점'}</strong></Td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot><tr style={{ borderTop: `2px solid ${T.border}` }}><Td style={{ fontWeight: 700 }}>합계</Td><Td></Td><Td align="right" mono style={{ fontWeight: 700, color: csum === 100 ? T.success : T.warning }}>{csum}%</Td><Td align="right" mono>{fmtMoney(mm2.labor)}</Td><Td></Td></tr></tfoot>
+                      </table>
+                    )}
+                    <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6, lineHeight: 1.6 }}>
+                      환산 점수 = 이 사업의 수익률 점수이며, 개인의 업적평가 '프로젝트 기여도'는 <strong>참여한 모든 사업의 (수익률 점수 × 기여도%)를 가중평균</strong>해 산정됩니다(평가 입력에서 [이 점수 적용]). 기여도 {EVAL_CFG.coreMin}% 미만은 수행 기여에서 제외(제안·지원은 수주 기여로 별도 반영). 기여도 합계는 100%가 되도록 프로젝트 표 ✏에서 조정하세요.
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           );
         })()}
