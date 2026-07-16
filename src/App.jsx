@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Users, Settings, FileText, BarChart3, Save, Download, Upload, Search, AlertCircle, Award, Wallet, Trash2, Printer, History, PieChart as PieIcon, LogIn, LogOut, Sparkles, Mail, UserCheck, CheckCircle2, ChevronRight, TrendingUp, Building2, Plus, Pencil, X, StickyNote, ChevronDown, Calendar, Briefcase, MessageSquare, Clock, Tag, Calculator, FileSpreadsheet, TrendingDown, Target, Activity, AlertTriangle, ShieldAlert, Layers, Percent, ArrowUpRight, ArrowDownRight, FileBarChart } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ComposedChart, Area, LabelList } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ComposedChart, Area, LabelList, ReferenceLine, ReferenceDot } from 'recharts';
 
 // ============================================================
 // 디자인 토큰 시스템
@@ -9966,9 +9966,17 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const taxLinked = !!(taxD.vatOutCum || taxD.netIncomeCum);
         const useVatQ = (cfg.taxFromCms !== false && taxLinked && cmsVatQ) ? cmsVatQ : (Number(cfg.vatQ) || 0);
         const useCorpTax = (cfg.taxFromCms !== false && taxLinked && cmsCorpTaxTotal) ? cmsCorpTaxTotal : (Number(cfg.corpTax) || 0);
-        // 사용값: cashCfg에 수동입력이 있으면 우선, 없으면 CMS 실적 자동 적용
+        // 사용값: cashCfg 수동입력 우선, 없으면 CMS 실적 자동
         const useLabor = (cfg.laborFromCms !== false && actualLaborMonthly) ? actualLaborMonthly : (Number(cfg.monthlyLabor) || 0);
-        const useOpex = (cfg.opexFromCms !== false && actualOpexMonthly) ? actualOpexMonthly : (Number(cfg.monthlyOpex) || 0);
+        // 운영경비 분리: 고정운영경비(임차·보험·세금 등) + 프로젝트성경비(외주·직접비, 사업 진행에 연동)
+        const fixedOpexAuto = Number(finData.opexCash) || 0;       // 고정 월운영경비(현금경비)
+        const projOpexAuto = Number(finData.opexPurchase) || 0;    // 프로젝트성 경비(매입·외주)
+        const useFixedOpex = (cfg.opexFromCms !== false && fixedOpexAuto) ? fixedOpexAuto : (Number(cfg.monthlyFixedOpex) || 0);
+        const useProjOpex = (cfg.opexFromCms !== false && projOpexAuto) ? projOpexAuto : (Number(cfg.monthlyProjOpex) || 0);
+        const projOpexScale = cfg.projOpexScale != null ? Number(cfg.projOpexScale) : 100;   // 프로젝트성 경비 조정 배율(%)
+        const useOpex = useFixedOpex + Math.round(useProjOpex * projOpexScale / 100);
+        // 월별 인건비 보정(cfg.laborByMonth['YYYY-MM'] 있으면 그 값, 없으면 useLabor)
+        const laborByMonth = cfg.laborByMonth || {};
         const now = new Date(); const y0 = now.getFullYear(), m0 = now.getMonth(); // 이번 달부터 12개월
         const months = Array.from({ length: 12 }, (_, i) => { const d = new Date(y0, m0 + i, 1); return { y: d.getFullYear(), m: d.getMonth() + 1, key: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), label: (d.getMonth() + 1) + '월' }; });
         const idxOf = (yy, mm) => (yy - y0) * 12 + (mm - 1 - m0);
@@ -10004,7 +10012,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           const end = start + 6; if (end < 12) incS[end] += p.budget * (1 - advP);
         });
         // 지출: 인건비 + 운영경비 + 세금(부가세 1·4·7·10월, 법인세 3월)
-        const exp = months.map(mo => useLabor + useOpex + ([1, 4, 7, 10].includes(mo.m) ? useVatQ : 0) + (mo.m === 3 ? useCorpTax : 0));
+        const laborOf = (mo) => { const v = laborByMonth[mo.key]; return (v != null && v !== '') ? Number(v) : useLabor; };
+        const exp = months.map(mo => laborOf(mo) + useOpex + ([1, 4, 7, 10].includes(mo.m) ? useVatQ : 0) + (mo.m === 3 ? useCorpTax : 0));
         const startBal = Number(cfg.balance) || Number(finData.bankBalance) || 0;
         let bal = startBal, balS = startBal;
         const rows = months.map((mo, i) => { bal += inc[i] - exp[i]; balS += incS[i] - exp[i]; return { ...mo, inc: inc[i], incS: incS[i], exp: exp[i], bal, balS, notes: incNote[i].slice(0, 3).join(', ') }; });
@@ -10034,7 +10043,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 <strong style={{ color: T.brand }}>🔗 경영회계 CMS 실적 연동</strong> — 예측 지출의 산출 근거:
                 <div style={{ marginTop: 4, lineHeight: 1.8 }}>
                   · 월 인건비 <strong>{fmtMoney(actualLaborMonthly)}원</strong> = 정규직 {fmtMoney(finData.salaryReg || 0)} + 계약직·사업소득 {fmtMoney(finData.salaryCon || 0)} <span style={{ color: T.textMute }}>(최근월 실지급 기준 · 매월 10일 지급)</span><br />
-                  · 월 운영경비 <strong>{fmtMoney(actualOpexMonthly)}원</strong> {opexVerified ? <>= 현금경비 {fmtMoney(finData.opexCash || 0)} <span style={{ color: T.textMute }}>(임차·세금과공과·보험 등 판관비 실적)</span> + 매입지급 {fmtMoney(finData.opexPurchase || 0)} <span style={{ color: T.textMute }}>(외주·소모품 세금계산서, 최근 3개월 평균)</span></> : <span style={{ color: T.textMute }}>({monthsElapsed}개월 판관비 ÷ 경과월)</span>}
+                  · 월 운영경비 <strong>{fmtMoney(useOpex)}원</strong> {opexVerified ? <>= 고정운영경비 {fmtMoney(useFixedOpex)} <span style={{ color: T.textMute }}>(임차·세금과공과·보험 등)</span> + 프로젝트성경비 {fmtMoney(Math.round(useProjOpex * projOpexScale / 100))} <span style={{ color: T.textMute }}>(외주·소모품{projOpexScale !== 100 ? ` ×${projOpexScale}%` : ''})</span></> : <span style={{ color: T.textMute }}>({monthsElapsed}개월 판관비 ÷ 경과월)</span>}
                   {taxLinked ? <><br />· 분기 부가세 <strong>{fmtMoney(cmsVatQ)}원</strong> · 연 법인세 <strong>{fmtMoney(cmsCorpTaxTotal)}원</strong> <span style={{ color: T.textMute }}>(세무 자동계산)</span></> : null}
                 </div>
                 <label style={{ marginLeft: 10, fontSize: 11.5, cursor: 'pointer' }}>
@@ -10052,8 +10061,17 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 <input inputMode="numeric" disabled={cfg.laborFromCms !== false && !!actualLaborMonthly} value={fmtInput(useLabor)} onChange={ev => up('monthlyLabor', parseInput(ev.target.value))} style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', background: (cfg.laborFromCms !== false && actualLaborMonthly) ? T.surfaceAlt : '#fff', color: (cfg.laborFromCms !== false && actualLaborMonthly) ? T.textMute : T.ink }} />
               </div>
               <div>
-                <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>월 운영경비(원){cfg.opexFromCms !== false && actualOpexMonthly ? ' · CMS연동' : ''}</div>
-                <input inputMode="numeric" disabled={cfg.opexFromCms !== false && !!actualOpexMonthly} value={fmtInput(useOpex)} onChange={ev => up('monthlyOpex', parseInput(ev.target.value))} style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', background: (cfg.opexFromCms !== false && actualOpexMonthly) ? T.surfaceAlt : '#fff', color: (cfg.opexFromCms !== false && actualOpexMonthly) ? T.textMute : T.ink }} />
+                <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>고정 운영경비(원){cfg.opexFromCms !== false && fixedOpexAuto ? ' · CMS' : ''}</div>
+                <input inputMode="numeric" disabled={cfg.opexFromCms !== false && !!fixedOpexAuto} value={fmtInput(useFixedOpex)} onChange={ev => up('monthlyFixedOpex', parseInput(ev.target.value))} title="임차료·보험·세금과공과·통신 등 매월 고정 지출" style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', background: (cfg.opexFromCms !== false && fixedOpexAuto) ? T.surfaceAlt : '#fff', color: (cfg.opexFromCms !== false && fixedOpexAuto) ? T.textMute : T.ink }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>프로젝트성 경비(원){cfg.opexFromCms !== false && projOpexAuto ? ' · CMS' : ''}</div>
+                <input inputMode="numeric" disabled={cfg.opexFromCms !== false && !!projOpexAuto} value={fmtInput(useProjOpex)} onChange={ev => up('monthlyProjOpex', parseInput(ev.target.value))} title="외주·소모품 등 사업 진행에 따라 변동하는 지출" style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', background: (cfg.opexFromCms !== false && projOpexAuto) ? T.surfaceAlt : '#fff', color: (cfg.opexFromCms !== false && projOpexAuto) ? T.textMute : T.ink }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>프로젝트성 경비 조정 {projOpexScale}%</div>
+                <input type="range" min="0" max="200" step="10" value={projOpexScale} onChange={ev => setCashCfg(prev => ({ ...prev, projOpexScale: Number(ev.target.value) }))} style={{ width: '100%' }} />
+                <div style={{ fontSize: 9.5, color: T.textMute, textAlign: 'center' }}>사업 축소/확대 시뮬레이션</div>
               </div>
               <div>
                 <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>분기 부가세(1·4·7·10월){cfg.taxFromCms !== false && taxLinked && cmsVatQ ? ' · CMS연동' : ''}</div>
@@ -10093,6 +10111,23 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                     </div>
                   </div>
                 ))}
+              </div>
+            </details>
+            <details className="no-print" style={{ marginBottom: S[3] }}>
+              <summary style={{ fontSize: 12, fontWeight: 700, color: T.brand, cursor: 'pointer' }}>월별 인건비 보정 (사업 투입 인력 변동 반영 · 미입력 월은 기본값 {fmtMoney(useLabor)}원)</summary>
+              <div style={{ fontSize: 11, color: T.textMute, margin: `4px 0 ${S[2]}px` }}>특정 월에 계약직 투입이 늘거나 줄면 그 달의 인건비를 직접 입력하세요. 예측·지급여력에 즉시 반영됩니다.</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 6 }}>
+                {months.map(mo => {
+                  const v = (cfg.laborByMonth || {})[mo.key];
+                  return (
+                    <div key={mo.key}>
+                      <div style={{ fontSize: 10, color: T.textMute, marginBottom: 1 }}>{mo.y}.{mo.m}월</div>
+                      <input inputMode="numeric" value={v != null && v !== '' ? fmtInput(v) : ''} placeholder={fmtInput(useLabor)}
+                        onChange={ev => { const raw = ev.target.value; setCashCfg(prev => ({ ...prev, laborByMonth: { ...(prev.laborByMonth || {}), [mo.key]: raw === '' ? '' : parseInput(raw) } })); }}
+                        style={{ width: '100%', padding: '4px 6px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }} />
+                    </div>
+                  );
+                })}
               </div>
             </details>
             <details className="no-print" style={{ marginBottom: S[3] }}>
@@ -10140,22 +10175,46 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 <strong style={{ color: T.success }}>✅ 안정</strong> — 12개월 내 안전선({fmtMoney(safety)}원) 미달 없음. 최저점 {minRow.y}년 {minRow.label} {fmtMoney(minRow.bal)}원 · 12개월 후 예상 잔고 <strong>{fmtMoney(rows[11].bal)}원</strong> — 결산 후 투자·상여 재원 검토 가능.
               </div>
             )}
-            {/* 차트 */}
-            <div style={{ height: 220 }}>
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <LineChart data={chartData} margin={{ top: 6, right: 12, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
-                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                  <YAxis tick={{ fontSize: 10 }} unit="M" />
-                  <Tooltip formatter={(v) => v + '백만원'} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Line type="monotone" dataKey="예측잔고" stroke={T.brand} strokeWidth={2.5} dot={{ r: 2.5 }} />
-                  <Line type="monotone" dataKey="예측(파이프라인)" stroke={T.success} strokeWidth={1.8} strokeDasharray="6 3" dot={false} />
-                  {hasActual && <Line type="monotone" dataKey="실제잔고" stroke={T.gold || '#B8892B'} strokeWidth={2.5} dot={{ r: 3.5 }} connectNulls />}
-                  <Line type="monotone" dataKey="안전선" stroke={T.danger} strokeWidth={1} strokeDasharray="2 4" dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            {/* 차트 — IR/자금 트렌드 스타일 */}
+            {(() => {
+              const minPt = chartData.reduce((a, d) => d.예측잔고 < a.예측잔고 ? d : a, chartData[0]);
+              const maxV = Math.max(...chartData.map(d => Math.max(d.예측잔고, d['예측(파이프라인)'] || 0, d.실제잔고 || 0)));
+              const minV = Math.min(...chartData.map(d => Math.min(d.예측잔고, d['예측(파이프라인)'] || Infinity)));
+              const safeM = Math.round(safety / 1000000);
+              const belowSafe = minPt.예측잔고 < safeM;
+              return (
+                <div style={{ height: 300, background: 'linear-gradient(180deg,#FBFCFE 0%,#F4F7FB 100%)', borderRadius: 12, padding: `${S[3]}px ${S[2]}px ${S[2]}px`, border: `1px solid ${T.border}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: `0 ${S[3]}px`, marginBottom: 2 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, letterSpacing: '-0.01em' }}>12개월 자금 잔고 추이 <span style={{ fontSize: 10.5, fontWeight: 600, color: T.textMute }}>(단위: 백만원)</span></span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: belowSafe ? T.danger : T.success }}>최저 {minPt.name} {minPt.예측잔고.toLocaleString()}M {belowSafe ? '⚠ 안전선 이하' : '✓ 안전'}</span>
+                  </div>
+                  <ResponsiveContainer width="100%" height="90%" minWidth={0}>
+                    <ComposedChart data={chartData} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="balFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={T.brand} stopOpacity={0.28} />
+                          <stop offset="100%" stopColor={T.brand} stopOpacity={0.02} />
+                        </linearGradient>
+                        <linearGradient id="pipeFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={T.success} stopOpacity={0.14} />
+                          <stop offset="100%" stopColor={T.success} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="2 4" stroke="#E2E8F0" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 10.5, fill: T.textMute }} axisLine={{ stroke: '#CBD5E1' }} tickLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: T.textMute }} axisLine={false} tickLine={false} width={44} />
+                      <Tooltip formatter={(v) => (v == null ? '-' : v.toLocaleString() + '백만원')} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${T.border}`, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} iconType="plainline" />
+                      {safeM > 0 && <ReferenceLine y={safeM} stroke={T.danger} strokeDasharray="5 4" strokeWidth={1.2} label={{ value: `안전선 ${safeM}M`, position: 'insideTopRight', fontSize: 10, fill: T.danger }} />}
+                      <Area type="monotone" dataKey="예측(파이프라인)" name="수주 반영(시나리오)" stroke={T.success} strokeWidth={1.6} strokeDasharray="6 3" fill="url(#pipeFill)" dot={false} />
+                      <Area type="monotone" dataKey="예측잔고" name="예측 잔고(확정)" stroke={T.brand} strokeWidth={3} fill="url(#balFill)" dot={{ r: 2.5, fill: T.brand }} activeDot={{ r: 5 }} />
+                      {hasActual && <Line type="monotone" dataKey="실제잔고" name="실제 잔고" stroke={T.gold || '#B8892B'} strokeWidth={2.5} dot={{ r: 3.5, fill: T.gold || '#B8892B' }} connectNulls />}
+                      <ReferenceDot x={minPt.name} y={minPt.예측잔고} r={5} fill={belowSafe ? T.danger : T.warning} stroke="#fff" strokeWidth={1.5} label={{ value: '최저점', position: 'bottom', fontSize: 9.5, fill: belowSafe ? T.danger : T.warning }} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              );
+            })()}
             {/* 예측 vs 실제 정확도 */}
             {hasActual && (() => {
               const diffs = rows.map(r => { const mk = r.y + '-' + String(r.m).padStart(2, '0'); const av = actualBal[mk]; return (av != null && av !== '') ? { label: r.label, pred: r.bal, act: Number(av), diff: r.bal - Number(av) } : null; }).filter(Boolean);
