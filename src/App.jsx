@@ -9908,34 +9908,57 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         </div>
       )}
 
-      {utilRows.length > 0 && (
+      {utilRows.length > 0 && (() => {
+        const rated = utilRows.filter(r => r.util != null);
+        const avgUtil = rated.length ? Math.round(rated.reduce((a, r) => a + r.util, 0) / rated.length) : 0;
+        const high = rated.filter(r => r.util >= 90).length;
+        return (
         <div style={{ ...card(), padding: S[5], marginTop: S[3], borderLeft: `4px solid ${T.ink}` }}>
-          <SectionTitle>정규직 가동률 — 사업 투입 인건비 ÷ 급여 (1~{monthsElapsed}월 기준)</SectionTitle>
-          {lowUtil > 0 && <div style={{ fontSize: 12, color: T.warning, marginTop: 4 }}>가동률 60% 미만 {lowUtil}명 — 급여의 상당 부분이 특정 사업에 배분되지 않고 공통비로 흡수되고 있습니다.</div>}
-          <div style={{ overflow: 'auto', marginTop: S[3] }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 640 }}>
-              <thead><tr style={{ background: T.surfaceAlt }}>
-                <Th>직원</Th><Th>부서</Th><Th align="center">참여 사업</Th><Th align="right">사업 투입 인건비</Th><Th align="right">기간 급여</Th><Th align="center">가동률</Th>
-              </tr></thead>
-              <tbody>
-                {utilRows.map((r, i) => (
-                  <tr key={i}>
-                    <Td><strong>{r.name}</strong> <span style={{ fontSize: 10, color: T.textMute }}>{r.position}</span></Td>
-                    <Td style={{ fontSize: 11, color: T.textMute }}>{shortName(r.dept)}</Td>
-                    <Td align="center" mono>{r.cnt}</Td>
-                    <Td align="right" mono>{fmtMoney(r.lab)}</Td>
-                    <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(r.cap)}</Td>
-                    <Td align="center">{r.util == null ? '-' : <Badge color={r.util >= 90 ? T.success : r.util >= 60 ? T.warning : T.danger} size="sm">{r.util.toFixed(0)}%</Badge>}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <SectionTitle>정규직 가동률 (1~{monthsElapsed}월)</SectionTitle>
+          {/* 요약 카드 3개 */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: S[3], marginTop: S[3] }}>
+            <div style={{ background: T.surfaceAlt, borderRadius: 8, padding: S[3], textAlign: 'center' }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: avgUtil >= 80 ? T.success : avgUtil >= 60 ? T.warning : T.danger }}>{avgUtil}%</div>
+              <div style={{ fontSize: 11, color: T.textMute }}>평균 가동률</div>
+            </div>
+            <div style={{ background: T.surfaceAlt, borderRadius: 8, padding: S[3], textAlign: 'center' }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: T.success }}>{high}<span style={{ fontSize: 12, fontWeight: 600 }}>명</span></div>
+              <div style={{ fontSize: 11, color: T.textMute }}>고가동(90%↑)</div>
+            </div>
+            <div style={{ background: lowUtil > 0 ? 'rgba(180,35,24,0.06)' : T.surfaceAlt, borderRadius: 8, padding: S[3], textAlign: 'center' }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: lowUtil > 0 ? T.danger : T.textMute }}>{lowUtil}<span style={{ fontSize: 12, fontWeight: 600 }}>명</span></div>
+              <div style={{ fontSize: 11, color: T.textMute }}>저가동(60%↓)</div>
+            </div>
           </div>
-          <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2], lineHeight: 1.6 }}>
-            가동률 = 사업에 배분된 인건비 ÷ (월 급여 × 경과월수). 100%면 급여 전액이 사업에 투입된 것, 낮으면 비배분(공통비 부담)이 큽니다. 경영지원·경영기획 등 지원조직은 본래 공통비 성격이라 낮게 나오는 것이 정상이며, <strong>매출조직인데 낮은 인원</strong>이 수주·재배치 검토 대상입니다.
-          </div>
+          {lowUtil > 0 && <div style={{ fontSize: 12, color: T.warning, marginTop: S[2] }}>저가동 {lowUtil}명 — 급여의 상당 부분이 사업에 배분되지 않고 공통비로 흡수되고 있습니다.</div>}
+          <details className="no-print" style={{ marginTop: S[3] }}>
+            <summary style={{ fontSize: 12, fontWeight: 700, color: T.brand, cursor: 'pointer' }}>직원별 상세 펼치기 ({utilRows.length}명)</summary>
+            <div style={{ overflow: 'auto', marginTop: S[2] }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 640 }}>
+                <thead><tr style={{ background: T.surfaceAlt }}>
+                  <Th>직원</Th><Th>부서</Th><Th align="center">참여 사업</Th><Th align="right">사업 투입 인건비</Th><Th align="right">기간 급여</Th><Th align="center">가동률</Th>
+                </tr></thead>
+                <tbody>
+                  {utilRows.map((r, i) => (
+                    <tr key={i}>
+                      <Td><strong>{r.name}</strong> <span style={{ fontSize: 10, color: T.textMute }}>{r.position}</span></Td>
+                      <Td style={{ fontSize: 11, color: T.textMute }}>{shortName(r.dept)}</Td>
+                      <Td align="center" mono>{r.cnt}</Td>
+                      <Td align="right" mono>{fmtMoney(r.lab)}</Td>
+                      <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(r.cap)}</Td>
+                      <Td align="center">{r.util == null ? '-' : <Badge color={r.util >= 90 ? T.success : r.util >= 60 ? T.warning : T.danger} size="sm">{r.util.toFixed(0)}%</Badge>}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2], lineHeight: 1.6 }}>
+              가동률 = 사업에 배분된 인건비 ÷ (월 급여 × 경과월수). 100%면 급여 전액이 사업에 투입된 것, 낮으면 비배분(공통비 부담)이 큽니다. 경영지원·경영기획 등 지원조직은 본래 공통비 성격이라 낮게 나오는 것이 정상이며, <strong>매출조직인데 낮은 인원</strong>이 수주·재배치 검토 대상입니다.
+            </div>
+          </details>
         </div>
-      )}
+        );
+      })()}
 
       {/* 7. 원가·경비 구조 */}
       <H n="7" icon={Layers}>원가·경비 구조</H>
@@ -10116,7 +10139,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const exp = months.map(mo => laborOf(mo) + useOpex + ([1, 4, 7, 10].includes(mo.m) ? useVatQ : 0) + (mo.m === 3 ? useCorpTax : 0));
         const startBal = Number(cfg.balance) || Number(finData.bankBalance) || 0;
         let bal = startBal, balS = startBal;
-        const rows = months.map((mo, i) => { bal += inc[i] - exp[i]; balS += incS[i] - exp[i]; return { ...mo, inc: inc[i], incS: incS[i], exp: exp[i], bal, balS, notes: incNote[i].slice(0, 3).join(', ') }; });
+        const rows = months.map((mo, i) => { bal += inc[i] - exp[i]; balS += incS[i] - exp[i]; return { ...mo, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo), expOpex: useOpex, expTax: ([1, 4, 7, 10].includes(mo.m) ? useVatQ : 0) + (mo.m === 3 ? useCorpTax : 0), bal, balS, notes: incNote[i].slice(0, 3).join(', ') }; });
         const safety = Number(cfg.safety) || 0;
         const danger = rows.find(r => r.bal < safety);
         const minRow = rows.reduce((a, r) => r.bal < a.bal ? r : a, rows[0]);
@@ -10329,26 +10352,32 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 </div>
               );
             })()}
-            {/* 월별 표 */}
-            <div style={{ overflow: 'auto', marginTop: S[3] }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, minWidth: 760 }}>
-                <thead><tr style={{ background: T.surfaceAlt }}>
-                  <Th>월</Th><Th align="right">수입(확정)</Th><Th align="right">지출</Th><Th align="right">잔고</Th><Th align="right">잔고(파이프라인)</Th><Th>수입 내역</Th>
-                </tr></thead>
-                <tbody>
-                  {rows.map((r, i) => (
-                    <tr key={i} style={r.bal < safety ? { background: 'rgba(180,35,24,0.05)' } : undefined}>
-                      <Td>{r.y !== y0 || i === 0 ? `${r.y}.${r.label}` : r.label}</Td>
-                      <Td align="right" mono style={{ color: r.inc > 0 ? T.success : T.textLight }}>{r.inc ? fmtMoney(r.inc) : '-'}</Td>
-                      <Td align="right" mono>{fmtMoney(r.exp)}</Td>
-                      <Td align="right" mono><strong style={{ color: r.bal < 0 ? T.danger : r.bal < safety ? T.warning : T.ink }}>{fmtMoney(r.bal)}</strong></Td>
-                      <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(r.balS)}</Td>
-                      <Td style={{ fontSize: 10.5, color: T.textMute }}>{r.notes}</Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {/* 월별 표 (접기/펼치기 · 지출 세부 포함) */}
+            <details className="no-print" style={{ marginTop: S[3] }}>
+              <summary style={{ fontSize: 12.5, fontWeight: 700, color: T.brand, cursor: 'pointer', padding: '6px 0' }}>📋 월별 상세 표 펼치기 (수입·지출 세부·잔고)</summary>
+              <div style={{ overflow: 'auto', marginTop: S[2] }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, minWidth: 860 }}>
+                  <thead><tr style={{ background: T.surfaceAlt }}>
+                    <Th>월</Th><Th align="right">수입(확정)</Th><Th align="right">인건비</Th><Th align="right">운영경비</Th><Th align="right">세금</Th><Th align="right">지출 계</Th><Th align="right">잔고</Th><Th align="right">잔고(파이프라인)</Th><Th>수입 내역</Th>
+                  </tr></thead>
+                  <tbody>
+                    {rows.map((r, i) => (
+                      <tr key={i} style={r.bal < safety ? { background: 'rgba(180,35,24,0.05)' } : undefined}>
+                        <Td>{r.y !== y0 || i === 0 ? `${r.y}.${r.label}` : r.label}</Td>
+                        <Td align="right" mono style={{ color: r.inc > 0 ? T.success : T.textLight }}>{r.inc ? fmtMoney(r.inc) : '-'}</Td>
+                        <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(r.expLabor)}</Td>
+                        <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(r.expOpex)}</Td>
+                        <Td align="right" mono style={{ color: r.expTax > 0 ? T.warning : T.textLight }}>{r.expTax > 0 ? fmtMoney(r.expTax) : '-'}</Td>
+                        <Td align="right" mono>{fmtMoney(r.exp)}</Td>
+                        <Td align="right" mono><strong style={{ color: r.bal < 0 ? T.danger : r.bal < safety ? T.warning : T.ink }}>{fmtMoney(r.bal)}</strong></Td>
+                        <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(r.balS)}</Td>
+                        <Td style={{ fontSize: 10.5, color: T.textMute }}>{r.notes}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
             <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2], lineHeight: 1.7 }}>
               수입 = ①수금 관리 등록분(가장 우선) + ②진행 사업 선급금(기본 {cfg.advRate}% · 사업별 개별 설정 가능 · 착수월)과 잔금(종료 익월, 종료 지연분은 이번 달 가정). 파이프라인 라인은 미수주 제안이 전부 수주된다는 가정(마감 익월 선급, +6개월 잔금). <strong>신규 수주 확정 시 자동으로 확정 라인에 반영</strong>됩니다. 지출 = 월 인건비+운영경비+분기 부가세+법인세. 인건비·운영경비는 경영회계 CMS의 실제 실적(급여대장·판관비)에서 자동 산출되며, 체크 해제 시 수동 입력으로 전환됩니다. 정확한 수금 일정은 「수금 관리」에 등록할수록 예측이 정밀해집니다. 실제 통장잔고를 경영회계 CMS에 월별 입력하면 위 차트에 금색 실선(실제)이 겹쳐 예측 정확도를 확인할 수 있습니다.
             </div>
