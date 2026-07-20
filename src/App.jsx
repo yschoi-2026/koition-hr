@@ -3036,14 +3036,26 @@ function App() {
     const missing = (projects || []).filter(p => Number(p.year) === 2026 && p.id && !linked.has(p.id) && (!isEtcProject(p) || MAINT_SUPPORT_IDS.includes(p.id)));
     // 기존 자동 제안 보정: 유지보수·OPT 사업인데 담당 미지정이면 신수호·고영훈 지정
     const needFix = (proposals || []).some(p => String(p.id).startsWith('P:auto:') && MAINT_SUPPORT_IDS.includes(p.wonProjectId) && !p.pm);
-    if (missing.length === 0 && !needFix) return;
+    // 계약기간 백필: 수주 제안인데 기간이 비어 있으면 연결된 프로젝트의 기간을 가져옴
+    const projById = Object.fromEntries((projects || []).map(p => [p.id, p]));
+    const needPeriod = (proposals || []).some(p => p.wonProjectId && (!p.period || p.period === '') && projById[p.wonProjectId] && projById[p.wonProjectId].period);
+    if (missing.length === 0 && !needFix && !needPeriod) return;
     setProposals(prev => {
       let list = (prev || []).map(p => (String(p.id).startsWith('P:auto:') && MAINT_SUPPORT_IDS.includes(p.wonProjectId) && !p.pm) ? { ...p, pm: MAINT_SUPPORT_PM, participants: ['-'], support: ['-'], note: '유지보수·OPT — 사업지원(신수호·고영훈) 100% 귀속' } : p);
+      // 프로젝트 → 제안 계약기간 동기화 (제안에 기간이 비어 있을 때만)
+      list = list.map(p => {
+        if (p.wonProjectId && (!p.period || p.period === '')) {
+          const pj = projById[p.wonProjectId];
+          if (pj && pj.period) return { ...p, period: pj.period };
+        }
+        return p;
+      });
       const add = missing.map(p => {
         const maint = MAINT_SUPPORT_IDS.includes(p.id);
         return {
           id: 'P:auto:' + p.id, name: p.name, client: p.client || '',
           budget: Number(p.revenue) || 0, bidDate: '',
+          period: p.period || '',   // 프로젝트의 계약기간 승계
           pm: maint ? MAINT_SUPPORT_PM : '',
           participants: maint ? ['-'] : [], support: maint ? ['-'] : [],   // '-' = 표준팀 미적용
           status: '수주', wonProjectId: p.id,
@@ -9721,9 +9733,22 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const fixedOpexAuto = Number(finData.opexCash) || 0;       // 고정 월운영경비(현금경비)
         const projOpexAuto = Number(finData.opexPurchase) || 0;    // 프로젝트성 경비(매입·외주)
         const useFixedOpex = (cfg.opexFromCms !== false && fixedOpexAuto) ? fixedOpexAuto : (Number(cfg.monthlyFixedOpex) || 0);
-        const useProjOpex = (cfg.opexFromCms !== false && projOpexAuto) ? projOpexAuto : (Number(cfg.monthlyProjOpex) || 0);
+        const useProjOpexRaw = (cfg.opexFromCms !== false && projOpexAuto) ? projOpexAuto : (Number(cfg.monthlyProjOpex) || 0);
+        // 프로젝트성 법인카드 경비: 여비교통·차량유지·운반·도서인쇄 등 사업 수행에 따라 발생하는 카드 지출
+        //   → 고정경비에서 빼서 프로젝트성으로 이동 (진행률 연동·슬라이더 적용 대상). cfg.cardProjOpex 수동 입력 시 우선.
+        const cardProjAuto = (() => {
+          try {
+            const sga = finData.sga || {};
+            const keys = Object.keys(sga).filter(k => /여\s*비|차\s*량|운\s*반|도\s*서/.test(k));
+            const sum = keys.reduce((a, k) => a + (Number(sga[k]) || 0), 0);
+            return monthsElapsed > 0 ? Math.round(sum / monthsElapsed) : 0;
+          } catch (e) { return 0; }
+        })();
+        const cardProj = (cfg.cardProjOpex != null && cfg.cardProjOpex !== '') ? Number(cfg.cardProjOpex) : cardProjAuto;
+        const useFixedOpexAdj = Math.max(0, useFixedOpex - cardProj);   // 고정경비에서 카드 사업변동분 제외
+        const useProjOpex = useProjOpexRaw + cardProj;                   // 프로젝트성 = 매입 + 카드 사업변동
         const projOpexScale = cfg.projOpexScale != null ? Number(cfg.projOpexScale) : 100;   // 프로젝트성 경비 조정 배율(%)
-        const useOpex = useFixedOpex + Math.round(useProjOpex * projOpexScale / 100);
+        const useOpex = useFixedOpexAdj + Math.round(useProjOpex * projOpexScale / 100);
         // 월별 인건비 보정(cfg.laborByMonth['YYYY-MM'] 있으면 그 값, 없으면 useLabor)
         const laborByMonth = cfg.laborByMonth || {};
         const now = new Date(); const y0 = now.getFullYear(), m0 = now.getMonth(); // 이번 달부터 12개월
@@ -9813,7 +9838,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           let c = 0; activeProjs.forEach(p => { const pr = parsePeriod(p.period); const s = idxOf(pr.sy, pr.sm), e = idxOf(pr.ey, pr.em); if (s <= i && e >= i) c++; });
           return baseActive > 0 ? c / baseActive : 1;
         };
-        const fixedOpexUse = useFixedOpex;
+        const fixedOpexUse = useFixedOpexAdj;   // 카드 사업변동분 제외된 고정경비
         const projOpexUse = Math.round(useProjOpex * projOpexScale / 100);
         const opexOf = (i) => fixedOpexUse + Math.round(projOpexUse * activeRatioOf(i));   // 고정 + 프로젝트성×진행률
         const taxOf = (mo) => ([1, 4, 7, 10].includes(mo.m) ? useVatQ : 0) + (mo.m === 3 ? useCorpTax : 0);
@@ -9879,7 +9904,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 <strong style={{ color: T.brand }}>🔗 경영회계 CMS 실적 연동</strong> — 예측 지출의 산출 근거:
                 <div style={{ marginTop: 4, lineHeight: 1.8 }}>
                   · 월 인건비 <strong>{fmtMoney(actualLaborMonthly)}원</strong> = 정규직 {fmtMoney(finData.salaryReg || 0)} + 계약직·사업소득 {fmtMoney(finData.salaryCon || 0)} <span style={{ color: T.textMute }}>(최근월 실지급 기준 · 매월 10일 지급)</span><br />
-                  · 월 운영경비 <strong>{fmtMoney(useOpex)}원</strong> {opexVerified ? <>= 고정운영경비 {fmtMoney(useFixedOpex)} <span style={{ color: T.textMute }}>(임차·세금과공과·보험 등)</span> + 프로젝트성경비 {fmtMoney(Math.round(useProjOpex * projOpexScale / 100))} <span style={{ color: T.textMute }}>(외주·소모품{projOpexScale !== 100 ? ` ×${projOpexScale}%` : ''})</span></> : <span style={{ color: T.textMute }}>({monthsElapsed}개월 판관비 ÷ 경과월)</span>}
+                  · 월 운영경비 <strong>{fmtMoney(useOpex)}원</strong> {opexVerified ? <>= 고정운영경비 {fmtMoney(useFixedOpexAdj)} <span style={{ color: T.textMute }}>(임차·세금과공과·보험 등)</span> + 프로젝트성경비 {fmtMoney(Math.round(useProjOpex * projOpexScale / 100))} <span style={{ color: T.textMute }}>(외주·매입 {fmtMoney(useProjOpexRaw)} + 사업카드 {fmtMoney(cardProj)}{projOpexScale !== 100 ? ` ×${projOpexScale}%` : ''})</span></> : <span style={{ color: T.textMute }}>({monthsElapsed}개월 판관비 ÷ 경과월)</span>}
                   {taxLinked ? <><br />· 분기 부가세 <strong>{fmtMoney(cmsVatQ)}원</strong> · 연 법인세 <strong>{fmtMoney(cmsCorpTaxTotal)}원</strong> <span style={{ color: T.textMute }}>(세무 자동계산)</span></> : null}
                 </div>
                 <label style={{ marginLeft: 10, fontSize: 11.5, cursor: 'pointer' }}>
@@ -9902,7 +9927,11 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               </div>
               <div>
                 <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>프로젝트성 경비(원){cfg.opexFromCms !== false && projOpexAuto ? ' · CMS' : ''}</div>
-                <input inputMode="numeric" disabled={cfg.opexFromCms !== false && !!projOpexAuto} value={fmtInput(useProjOpex)} onChange={ev => up('monthlyProjOpex', parseInput(ev.target.value))} title="외주·소모품 등 사업 진행에 따라 변동하는 지출" style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', background: (cfg.opexFromCms !== false && projOpexAuto) ? T.surfaceAlt : '#fff', color: (cfg.opexFromCms !== false && projOpexAuto) ? T.textMute : T.ink }} />
+                <input inputMode="numeric" disabled={cfg.opexFromCms !== false && !!projOpexAuto} value={fmtInput(useProjOpexRaw)} onChange={ev => up('monthlyProjOpex', parseInput(ev.target.value))} title="외주·소모품 등 사업 진행에 따라 변동하는 매입 지출" style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums', background: (cfg.opexFromCms !== false && projOpexAuto) ? T.surfaceAlt : '#fff', color: (cfg.opexFromCms !== false && projOpexAuto) ? T.textMute : T.ink }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>사업 법인카드 경비(원/월){(cfg.cardProjOpex == null || cfg.cardProjOpex === '') ? ' · 자동' : ''}</div>
+                <input inputMode="numeric" value={fmtInput(cardProj)} onChange={ev => setCashCfg(prev => ({ ...prev, cardProjOpex: parseInput(ev.target.value) }))} title="여비교통·차량유지·운반·도서인쇄 등 사업 수행 법인카드 지출 — 고정경비에서 빼고 프로젝트성으로 이동" style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }} />
               </div>
               <div>
                 <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>프로젝트성 경비 조정 {projOpexScale}%</div>
