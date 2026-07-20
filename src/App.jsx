@@ -2294,6 +2294,9 @@ function calcContributionScore(empId, projects, year) {
   if (mine.length === 0) return null;
   let wsum = 0, ssum = 0;
   const breakdown = [];
+  // 매출 규모 비례 가중: 큰 사업의 기여가 개인 점수에 더 크게 반영되도록 매출을 로그 스케일 계수로 사용
+  //   (선형이면 대형 1건이 소형 다수를 압도 → 완만한 log10 스케일로 균형)
+  const revFactor = (rev) => { const r = Math.max(0, Number(rev) || 0); return r <= 0 ? 1 : 1 + Math.log10(1 + r / 100000000); }; // 1억당 완만 증가
   mine.forEach(p => {
     const m = (p.members || []).find(x => x.empId === empId);
     const mm = projectMetrics(p);
@@ -2302,11 +2305,12 @@ function calcContributionScore(empId, projects, year) {
     // 정규화 기여도(%) — 투입기간×참여율 기준(미입력 시 기여도% 폴백)
     const norm = normalizedContribution(p.members);
     const me = norm.find(x => x.empId === empId);
-    const w = me ? me._pct : Math.max(0, Number(m.contribution) || 0);
-    if (w < EVAL_CFG.coreMin) return;   // 소액 참여(제안서지원 등)는 수행 기여에서 제외(기준: 정책설정)
+    const pct = me ? me._pct : Math.max(0, Number(m.contribution) || 0);
+    if (pct < EVAL_CFG.coreMin) return;   // 소액 참여(제안서지원 등)는 수행 기여에서 제외(기준: 정책설정)
+    const w = pct * revFactor(mm.revenue);   // 기여도% × 매출규모 계수
     wsum += w;
     ssum += ps * w;
-    breakdown.push({ project: p, member: m, metrics: mm, weight: Math.round(w) });
+    breakdown.push({ project: p, member: m, metrics: mm, weight: Math.round(pct), revWeight: +revFactor(mm.revenue).toFixed(2) });
   });
   if (wsum === 0) return null;
   const score = Math.round(ssum / wsum);
@@ -4646,6 +4650,7 @@ function LoginView({ onLogin, policy, users }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPw, setShowPw] = useState(false);
   
   const handleSubmit = async () => {
     if (loading) return;
@@ -4653,8 +4658,9 @@ function LoginView({ onLogin, policy, users }) {
     setLoading(true);
     
     try {
+      const uname = (username || '').trim();   // 아이디 앞뒤 공백 제거(비밀번호는 원문 유지)
       // 비상 복구: 시스템관리자(cys) 비밀번호 분실 시 복구 코드로 초기화
-      if (username === 'cys' && password === 'koition-recover-2026!') {
+      if (uname === 'cys' && password === 'koition-recover-2026!') {
         const newHash = await hashPassword('uj!5n3Rs');
         const migrated = users.some(x => x.username === 'cys')
           ? users.map(x => x.username === 'cys' ? { ...x, passwordHash: newHash, role: 'admin', deptScope: '전체', mustChangePassword: true } : x)
@@ -4664,7 +4670,7 @@ function LoginView({ onLogin, policy, users }) {
         setLoading(false);
         return;
       }
-      const u = users.find(x => x.username === username);
+      const u = users.find(x => x.username === uname);
       if (!u) {
         setError('아이디 또는 비밀번호가 일치하지 않습니다.');
         setLoading(false);
@@ -4881,10 +4887,11 @@ function LoginView({ onLogin, policy, users }) {
               <input type="text" value={username} onChange={e => setUsername(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSubmit()}
                 placeholder="username"
+                autoCapitalize="none" autoCorrect="off" autoComplete="username" spellCheck={false} inputMode="text"
                 style={{ 
                   width: '100%', padding: '12px 14px', 
                   border: `1px solid ${T.border}`, borderRadius: 6,
-                  fontSize: 14, background: T.surface, boxSizing: 'border-box',
+                  fontSize: 16, background: T.surface, boxSizing: 'border-box',
                   fontFamily: FONT, outline: 'none', transition: 'border 0.15s'
                 }}
                 onFocus={e => e.target.style.borderColor = T.brand}
@@ -4899,18 +4906,25 @@ function LoginView({ onLogin, policy, users }) {
               }}>
                 비밀번호
               </label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-                placeholder="••••••••"
-                style={{ 
-                  width: '100%', padding: '12px 14px',
-                  border: `1px solid ${T.border}`, borderRadius: 6,
-                  fontSize: 14, background: T.surface, boxSizing: 'border-box',
-                  fontFamily: FONT, outline: 'none', transition: 'border 0.15s'
-                }}
-                onFocus={e => e.target.style.borderColor = T.brand}
-                onBlur={e => e.target.style.borderColor = T.border}
-              />
+              <div style={{ position: 'relative' }}>
+                <input type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+                  placeholder="••••••••"
+                  autoCapitalize="none" autoCorrect="off" autoComplete="current-password" spellCheck={false}
+                  style={{ 
+                    width: '100%', padding: '12px 44px 12px 14px',
+                    border: `1px solid ${T.border}`, borderRadius: 6,
+                    fontSize: 16, background: T.surface, boxSizing: 'border-box',
+                    fontFamily: FONT, outline: 'none', transition: 'border 0.15s'
+                  }}
+                  onFocus={e => e.target.style.borderColor = T.brand}
+                  onBlur={e => e.target.style.borderColor = T.border}
+                />
+                <button type="button" onClick={() => setShowPw(v => !v)} tabIndex={-1}
+                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute, fontSize: 11, padding: '4px 6px' }}>
+                  {showPw ? '숨기기' : '보기'}
+                </button>
+              </div>
             </div>
             
             {error && (
@@ -9377,6 +9391,18 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
     const d = e ? String(e.dept || '').split('/')[0].trim() : '';
     return d || '미지정';
   };
+  // 프로젝트의 대표 팀 = 참여인력 기여도(투입기간×참여율) 가중 최다 팀 (지원조직 제외). dept 지정 시 우선.
+  const teamOfProject = (p) => {
+    if (p.dept && p.dept !== '미지정' && !isNonPL(p.dept)) return p.dept;
+    const agg = {};
+    (p.members || []).forEach(m => {
+      const d = deptOfEmp(m.empId);
+      if (isNonPL(d)) return;
+      agg[d] = (agg[d] || 0) + memberWeight(m);
+    });
+    const top = Object.entries(agg).sort((a, b) => b[1] - a[1])[0];
+    return top ? top[0] : '미배정';
+  };
   const addOrg = (k, m, share, allocShare, countProj) => {
     if (!orgMap[k]) orgMap[k] = { name: k, revenue: 0, labor: 0, worker: 0, mgr: 0, overhead: 0, cost: 0, alloc: 0, cnt: 0, _projs: new Set() };
     const o = orgMap[k];
@@ -9678,6 +9704,13 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           const ei = eiRaw < 0 ? 0 : eiRaw; // 이미 종료됐는데 미수금 → 이번 달 수금 가정
           if (ei < 12) { const rem = p.revenue * (si >= 0 ? (1 - adv) : 1); inc[ei] += rem; incNote[ei].push(p.id + ' 잔금' + (eiRaw < 0 ? '(지연)' : '')); }
         });
+        // ②-B 기타 예정 수입 (사용자 직접 등록: 소규모 매출·비매출조직 수익 등) — cfg.extraIncome[]
+        (cfg.extraIncome || []).forEach(e => {
+          const mm = String(e.month || '').match(/(\d{4})[.\-\/](\d{1,2})/);
+          if (!mm) return;
+          const i = idxOf(+mm[1], +mm[2]); const amt = Number(e.amount) || 0;
+          if (i >= 0 && i < 12 && amt > 0) { inc[i] += amt; incNote[i].push((e.memo || '예정수입')); }
+        });
         // ③ 파이프라인 시나리오: 미수주 제안을 수주율(%)로 가중해 반영 (계약기간 시작월 선급, +6개월 잔금)
         //    cfg.pipeline[id]={on,month,rate}: 개별 포함여부·예상 계약월·선급률. 기대금액 = 예산 × 수주율.
         const pipeCfg = cfg.pipeline || {};
@@ -9697,7 +9730,25 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           const end = start + 6; if (end < 12) incS[end] += expBudget * (1 - advP);
         });
         // 지출: 인건비 + 운영경비 + 세금(부가세 1·4·7·10월, 법인세 3월)
-        const laborOf = (mo) => { const v = laborByMonth[mo.key]; return (v != null && v !== '') ? Number(v) : useLabor; };
+        // 계약직 인건비 자동 증감: 각 사업의 작업자인건비(계약직, 월액)를 계약기간 동안만 배분.
+        //   사업이 끝나면 그 사업분 계약직 인건비가 빠지고, 진행 중이면 유지 → 월별 계약직 총액이 자동 변동.
+        //   base월(현재)의 자동합을 기준으로, 미래월은 활성 사업 비율로 스케일. 수동보정(laborByMonth) 있으면 그 값 우선.
+        const regLabor = Number(finData.salaryReg) || 0;
+        const conLaborBase = Number(finData.salaryCon) || 0;   // 현재(기준월) 계약직 총액
+        const conProjs = (projects || []).filter(p => !isEtcProject(p) && Number(p.workerLabor) > 0 && parsePeriod(p.period));
+        const conMonthlyOf = (p) => { const pr = parsePeriod(p.period); if (!pr) return 0; const span = (pr.ey - pr.sy) * 12 + (pr.em - pr.sm) + 1; return span > 0 ? Number(p.workerLabor) / span : 0; };  // 사업 계약직 월액(누계÷기간)
+        const conActiveAt = (i) => { let s = 0; conProjs.forEach(p => { const pr = parsePeriod(p.period); const st = idxOf(pr.sy, pr.sm), en = idxOf(pr.ey, pr.em); if (st <= i && en >= i) s += conMonthlyOf(p); }); return s; };
+        const conBaseSum = conActiveAt(0) || 1;   // 기준월(현재) 활성 계약직 월액 합
+        const autoConOf = (i) => {
+          if (cfg.conAuto === false || conProjs.length === 0) return conLaborBase;   // 토글 OFF면 고정
+          const ratio = conActiveAt(i) / conBaseSum;   // 현재 대비 활성 비율
+          return Math.round(conLaborBase * ratio);      // 실제 계약직 총액(급여기준)을 활성 비율로 스케일
+        };
+        const laborOf = (mo, i) => {
+          const v = laborByMonth[mo.key];
+          if (v != null && v !== '') return Number(v);   // 월별 수동 보정 우선
+          return regLabor + autoConOf(i);                // 정규직 + 자동 계약직
+        };
         // #4 프로젝트성 경비 진행률 연동: 매월 '활성 사업 수' 비율로 프로젝트성 경비를 조정
         //    (현재 진행 사업 대비 그 달에 기간이 걸쳐 있는 사업 비율). 기준월(현재)=100%.
         const activeProjs = (projects || []).filter(p => !isEtcProject(p) && Number(p.revenue) > 0 && p.status !== 'completed' && parsePeriod(p.period));
@@ -9711,7 +9762,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const projOpexUse = Math.round(useProjOpex * projOpexScale / 100);
         const opexOf = (i) => fixedOpexUse + Math.round(projOpexUse * activeRatioOf(i));   // 고정 + 프로젝트성×진행률
         const taxOf = (mo) => ([1, 4, 7, 10].includes(mo.m) ? useVatQ : 0) + (mo.m === 3 ? useCorpTax : 0);
-        const exp = months.map((mo, i) => laborOf(mo) + opexOf(i) + taxOf(mo));
+        const exp = months.map((mo, i) => laborOf(mo, i) + opexOf(i) + taxOf(mo));
         const startBal = Number(cfg.balance) || Number(finData.bankBalance) || 0;
         // #1 실제잔고 자동보정: 최근 3개월 (실제-예측) 평균 편향을 미래 예측에 반영
         const actualBalMap = (finData.actualBalances) || {};
@@ -9731,11 +9782,11 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           if (start < 12 && advP > 0) { incOpt[start] += p.budget * wOpt * advP; incCons[start] += p.budget * wCons * advP; }
           const end = start + 6; if (end < 12) { incOpt[end] += p.budget * wOpt * (1 - advP); incCons[end] += p.budget * wCons * (1 - advP); }
         });
-        const expCons = months.map((mo, i) => laborOf(mo) + fixedOpexUse + Math.round(projOpexUse * activeRatioOf(i) * 1.1) + taxOf(mo));   // 보수: 프로젝트성경비 +10%
+        const expCons = months.map((mo, i) => laborOf(mo, i) + fixedOpexUse + Math.round(projOpexUse * activeRatioOf(i) * 1.1) + taxOf(mo));   // 보수: 프로젝트성경비 +10%
         const rows = months.map((mo, i) => {
           bal += inc[i] - exp[i]; balS += incS[i] - exp[i];
           balOpt += incOpt[i] - exp[i]; balCons += incCons[i] - expCons[i];
-          return { ...mo, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo), expOpex: opexOf(i), expTax: taxOf(mo), activeRatio: activeRatioOf(i), bal, balS, balOpt, balCons, notes: incNote[i].slice(0, 3).join(', ') };
+          return { ...mo, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), activeRatio: activeRatioOf(i), bal, balS, balOpt, balCons, notes: incNote[i].slice(0, 3).join(', ') };
         });
         const safety = Number(cfg.safety) || 0;
         const danger = rows.find(r => r.bal < safety);
@@ -9817,6 +9868,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             {/* 정밀도 옵션 토글 */}
             <div className="no-print" style={{ display: 'flex', gap: S[3], flexWrap: 'wrap', marginBottom: S[3], fontSize: 11.5, alignItems: 'center' }}>
               <span style={{ fontWeight: 700, color: T.textMute }}>정밀도 옵션:</span>
+              <label style={{ cursor: 'pointer' }}><input type="checkbox" checked={cfg.conAuto !== false} onChange={e => setCashCfg(prev => ({ ...prev, conAuto: e.target.checked }))} style={{ verticalAlign: 'middle', marginRight: 3 }} />계약직 인건비 계약기간 자동 증감</label>
               <label style={{ cursor: 'pointer' }}><input type="checkbox" checked={cfg.projOpexProgress !== false} onChange={e => setCashCfg(prev => ({ ...prev, projOpexProgress: e.target.checked }))} style={{ verticalAlign: 'middle', marginRight: 3 }} />프로젝트성 경비 진행률 연동</label>
               <label style={{ cursor: 'pointer' }}><input type="checkbox" checked={cfg.showBand !== false} onChange={e => setCashCfg(prev => ({ ...prev, showBand: e.target.checked }))} style={{ verticalAlign: 'middle', marginRight: 3 }} />낙관·보수 시나리오 밴드</label>
               <label style={{ cursor: 'pointer' }}><input type="checkbox" checked={cfg.autoCorrect !== false} onChange={e => setCashCfg(prev => ({ ...prev, autoCorrect: e.target.checked }))} style={{ verticalAlign: 'middle', marginRight: 3 }} />실제잔고 기반 자동보정{bias !== 0 ? ` (${bias > 0 ? '+' : ''}${fmtMoney(bias)}원)` : ''}</label>
@@ -9852,15 +9904,16 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               </div>
             </details>
             <details className="no-print" style={{ marginBottom: S[3] }}>
-              <summary style={{ fontSize: 12, fontWeight: 700, color: T.brand, cursor: 'pointer' }}>월별 인건비 보정 (사업 투입 인력 변동 반영 · 미입력 월은 기본값 {fmtMoney(useLabor)}원)</summary>
-              <div style={{ fontSize: 11, color: T.textMute, margin: `4px 0 ${S[2]}px` }}>특정 월에 계약직 투입이 늘거나 줄면 그 달의 인건비를 직접 입력하세요. 예측·지급여력에 즉시 반영됩니다.</div>
+              <summary style={{ fontSize: 12, fontWeight: 700, color: T.brand, cursor: 'pointer' }}>월별 인건비 보정 (계약직 자동 증감 값 표시 · 특정 월만 직접 수정 가능)</summary>
+              <div style={{ fontSize: 11, color: T.textMute, margin: `4px 0 ${S[2]}px` }}>회색 숫자 = 계약기간 기반 자동 계산값(정규직+활성 계약직). 특정 월에 인력이 더 들고나면 그 달만 직접 입력해 덮어쓰세요. 예측·지급여력에 즉시 반영됩니다.</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 6 }}>
-                {months.map(mo => {
+                {months.map((mo, i) => {
                   const v = (cfg.laborByMonth || {})[mo.key];
+                  const auto = regLabor + autoConOf(i);
                   return (
                     <div key={mo.key}>
-                      <div style={{ fontSize: 10, color: T.textMute, marginBottom: 1 }}>{mo.y}.{mo.m}월</div>
-                      <input inputMode="numeric" value={v != null && v !== '' ? fmtInput(v) : ''} placeholder={fmtInput(useLabor)}
+                      <div style={{ fontSize: 10, color: T.textMute, marginBottom: 1 }}>{mo.y}.{mo.m}월 <span style={{ color: T.textLight }}>(자동 {fmtMoney(auto)})</span></div>
+                      <input inputMode="numeric" value={v != null && v !== '' ? fmtInput(v) : ''} placeholder={fmtInput(auto)}
                         onChange={ev => { const raw = ev.target.value; setCashCfg(prev => ({ ...prev, laborByMonth: { ...(prev.laborByMonth || {}), [mo.key]: raw === '' ? '' : parseInput(raw) } })); }}
                         style={{ width: '100%', padding: '4px 6px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }} />
                     </div>
@@ -9892,6 +9945,19 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 })}
                 {(proposals || []).filter(p => p.status !== '수주' && Number(p.budget) > 0).length === 0 && <div style={{ fontSize: 11.5, color: T.textMute }}>미수주 제안이 없습니다. 제안·수주 관리에서 제안을 등록하면 여기에 나타납니다.</div>}
               </div>
+            </details>
+            <details className="no-print" style={{ marginBottom: S[3] }}>
+              <summary style={{ fontSize: 12, fontWeight: 700, color: T.brand, cursor: 'pointer' }}>기타 예정 수입 등록 (소규모 매출·비매출조직 수익 등 · 월·금액 직접 입력)</summary>
+              <div style={{ fontSize: 11, color: T.textMute, margin: `4px 0 ${S[2]}px` }}>제안 파이프라인에 없는 자잘한 예상 수입(부수입, 소규모 용역, 이자·환급 등)을 월별로 등록하면 예측 잔고(기준선)에 바로 더해집니다.</div>
+              {(cfg.extraIncome || []).map((e, i) => (
+                <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 5 }}>
+                  <input placeholder="2026.09" value={e.month || ''} onChange={ev => setCashCfg(prev => ({ ...prev, extraIncome: (prev.extraIncome || []).map((x, j) => j === i ? { ...x, month: ev.target.value } : x) }))} style={{ width: 90, padding: '4px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, fontFamily: FONT }} />
+                  <input inputMode="numeric" placeholder="금액(원)" value={e.amount != null && e.amount !== '' ? fmtInput(e.amount) : ''} onChange={ev => setCashCfg(prev => ({ ...prev, extraIncome: (prev.extraIncome || []).map((x, j) => j === i ? { ...x, amount: parseInput(ev.target.value) } : x) }))} style={{ width: 130, padding: '4px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, fontFamily: FONT, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} />
+                  <input placeholder="메모(예: 유지보수 수입)" value={e.memo || ''} onChange={ev => setCashCfg(prev => ({ ...prev, extraIncome: (prev.extraIncome || []).map((x, j) => j === i ? { ...x, memo: ev.target.value } : x) }))} style={{ flex: 1, padding: '4px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, minWidth: 0, fontFamily: FONT }} />
+                  <button onClick={() => setCashCfg(prev => ({ ...prev, extraIncome: (prev.extraIncome || []).filter((_, j) => j !== i) }))} style={{ border: 'none', background: 'transparent', color: T.danger, cursor: 'pointer', fontSize: 13 }}>🗑</button>
+                </div>
+              ))}
+              <Button variant="outline" size="sm" onClick={() => setCashCfg(prev => ({ ...prev, extraIncome: [...(prev.extraIncome || []), { month: '', amount: '', memo: '' }] }))}>+ 예정 수입 추가</Button>
             </details>
             {/* 다음 급여일 지급 여력 */}
             {startBal > 0 && (() => {
@@ -10007,6 +10073,39 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         <summary style={{ fontSize: 15, fontWeight: 800, color: T.ink, cursor: 'pointer', padding: `${S[3]}px 0`, borderTop: `2px solid ${T.border}` }}>📊 상세 경영분석 펼치기 <span style={{ fontSize: 12, fontWeight: 600, color: T.textMute }}>(경영요약·매출·조직손익·인건비·생산성·순기여·원가·수익성·위험·제언)</span></summary>
       {/* 1. 경영 요약 */}
       <H n="1" icon={Activity}>경영 요약 (Executive Summary)</H>
+      {/* 인포그래픽 히어로 대시보드 */}
+      {(() => {
+        const eok = (v) => (Math.abs(v) >= 100000000 ? (v / 100000000).toFixed(1) + '억' : Math.round(v / 10000).toLocaleString() + '만');
+        const gauge = (val, color) => {
+          const r = 34, c = 2 * Math.PI * r, pctv = Math.max(0, Math.min(100, val));
+          return (
+            <svg width="88" height="88" viewBox="0 0 88 88">
+              <circle cx="44" cy="44" r={r} fill="none" stroke="#EEF2F7" strokeWidth="9" />
+              <circle cx="44" cy="44" r={r} fill="none" stroke={color} strokeWidth="9" strokeLinecap="round"
+                strokeDasharray={`${c * pctv / 100} ${c}`} transform="rotate(-90 44 44)" />
+              <text x="44" y="49" textAnchor="middle" fontSize="19" fontWeight="800" fill={color} fontFamily={FONT}>{Math.round(val)}%</text>
+            </svg>
+          );
+        };
+        const heroCard = (bg, accent, label, big, sub, extra) => (
+          <div style={{ flex: '1 1 200px', background: bg, borderRadius: 14, padding: `${S[4]}px ${S[5]}px`, position: 'relative', overflow: 'hidden', minWidth: 190 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: accent, letterSpacing: '0.02em', marginBottom: 6 }}>{label}</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: T.ink, lineHeight: 1.1 }}>{big}</div>
+            {sub && <div style={{ fontSize: 11.5, color: T.textMute, marginTop: 4 }}>{sub}</div>}
+            {extra}
+          </div>
+        );
+        return (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: S[3], marginBottom: S[4] }}>
+            {heroCard('linear-gradient(135deg,#EAF2FC,#F5F9FF)', T.brand, '계약·수주 매출', eok(T0.revenue) + '원', `${rows.length}개 사업${targets.revenue > 0 ? ` · 목표 ${revAch.toFixed(0)}%` : ''}`)}
+            {heroCard(full >= 0 ? 'linear-gradient(135deg,#E9F6EE,#F4FBF6)' : 'linear-gradient(135deg,#FCEBEA,#FFF5F4)', full >= 0 ? T.success : T.danger, '완전영업이익', eok(full) + '원',
+              null, <div style={{ position: 'absolute', top: S[3], right: S[4] }}>{gauge(Math.max(0, marginFull), full >= 0 ? T.success : T.danger)}</div>)}
+            {heroCard('linear-gradient(135deg,#FBF0E4,#FEF9F3)', T.gold || '#B8892B', '인건비율', laborRev.toFixed(0) + '%',
+              `인건비 ${eok(T0.labor)}원`, <div style={{ position: 'absolute', top: S[3], right: S[4] }}>{gauge(laborRev, laborRev >= 70 ? T.warning : T.gold || '#B8892B')}</div>)}
+            {heroCard(sev.length ? 'linear-gradient(135deg,#FCEBEA,#FFF5F4)' : 'linear-gradient(135deg,#EEF2F7,#F7FAFD)', sev.length ? T.danger : T.textMute, '위험요소', `${sev.length + wrn.length}건`, `심각 ${sev.length} · 주의 ${wrn.length}`)}
+          </div>
+        );
+      })()}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: S[3], marginBottom: S[3] }}>
         <KPI icon={TrendingUp} label="계약·수주 매출" value={fmtMoney(T0.revenue)} unit="원" color={T.brand} sub={targets.revenue > 0 ? `연간목표 대비 ${revAch.toFixed(0)}%` : `${rows.length}개 사업`} />
         <KPI icon={Layers} label="직접원가" value={fmtMoney(T0.cost)} unit="원" color={T.text} sub={`원가율 ${costRev.toFixed(0)}%`} />
@@ -10065,9 +10164,20 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           </div>
           <div style={{ ...card(), padding: S[5] }}>
             <SectionTitle>매출 편중도</SectionTitle>
-            <div style={{ marginTop: S[3], fontSize: 13, color: T.textMute }}>최대 사업 비중</div>
-            <div style={{ fontSize: 26, fontWeight: 800, color: topShare > 40 ? T.warning : T.ink }}>{topShare.toFixed(0)}%</div>
-            <div style={{ fontSize: 12, color: T.textMute, marginTop: 4 }}>{byRev[0] ? byRev[0].name : '-'}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: S[3], marginTop: S[3] }}>
+              <ResponsiveContainer width={90} height={90}>
+                <PieChart>
+                  <Pie data={[{ v: topShare }, { v: 100 - topShare }]} dataKey="v" innerRadius={28} outerRadius={42} startAngle={90} endAngle={-270}>
+                    <Cell fill={topShare > 40 ? T.warning : T.brand} /><Cell fill="#EEF2F7" />
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: topShare > 40 ? T.warning : T.ink }}>{topShare.toFixed(0)}%</div>
+                <div style={{ fontSize: 11.5, color: T.textMute }}>최대 사업 비중</div>
+                <div style={{ fontSize: 11, color: T.textMute, marginTop: 2, maxWidth: 130 }}>{byRev[0] ? byRev[0].name : '-'}</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -10206,7 +10316,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
       <div style={{ ...card(), padding: 0, overflow: 'auto', marginBottom: S[3] }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 860 }}>
           <thead><tr style={{ background: T.surfaceAlt }}>
-            <Th>직원</Th><Th>본부</Th><Th align="center">참여</Th><Th align="right">배분인건비</Th><Th align="right">창출매출</Th><Th align="right">순기여(사업)</Th><Th align="right">신규수주</Th><Th align="right">법인카드</Th><Th align="right">종합(순기여−카드)</Th><Th align="center">점수</Th>{canEditLedger && <Th align="center">관리</Th>}
+            <Th>직원</Th><Th>팀</Th><Th align="center">참여</Th><Th align="right">배분인건비</Th><Th align="right">창출매출</Th><Th align="right">순기여(사업)</Th><Th align="right">신규수주</Th><Th align="right">법인카드</Th><Th align="right">종합(순기여−카드)</Th><Th align="center">점수</Th>{canEditLedger && <Th align="center">관리</Th>}
           </tr></thead>
           <tbody>
             {empRows.length === 0 && <tr><td colSpan={10} style={{ textAlign: "center", color: T.textLight, padding: 20, fontSize: 12.5 }}>사업 참여(인력배분) 데이터가 없습니다</td></tr>}
@@ -10400,7 +10510,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
       <div style={{ ...card(), padding: 0, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 900 }}>
           <thead><tr style={{ background: T.surfaceAlt }}>
-            <Th>사업</Th><Th>본부</Th><Th align="right">매출</Th><Th align="right">인건비</Th><Th align="right">사업경비</Th><Th align="right">공헌이익</Th><Th align="right">배부공통비</Th><Th align="right">완전이익</Th><Th align="center">진행률</Th><Th align="right">수익률(계약)</Th><Th align="right">수익률(진행)</Th><Th align="center">등급</Th><Th align="center">진단</Th>
+            <Th>사업</Th><Th>팀</Th><Th align="right">매출</Th><Th align="right">인건비</Th><Th align="right">사업경비</Th><Th align="right">공헌이익</Th><Th align="right">배부공통비</Th><Th align="right">완전이익</Th><Th align="center">진행률</Th><Th align="right">수익률(계약)</Th><Th align="right">수익률(진행)</Th><Th align="center">등급</Th><Th align="center">진단</Th>
           </tr></thead>
           <tbody>
             {byRev.map(r => {
@@ -10408,7 +10518,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               return (
                 <tr key={r.id}>
                   <Td><span title={r.full}>{r.name}</span></Td>
-                  <Td style={{ fontSize: 11, color: T.textMute }}>{shortName(r.dept)}</Td>
+                  <Td style={{ fontSize: 11, color: T.textMute }}>{shortName(teamOfProject(r.p))}</Td>
                   <Td align="right" mono>{fmtMoney(r.m.revenue)}</Td>
                   <Td align="right" mono>{fmtMoney(r.m.labor)}</Td>
                   <Td align="right" mono>{fmtMoney(r.m.overhead)}</Td>
