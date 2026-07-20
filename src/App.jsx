@@ -2516,9 +2516,12 @@ const INITIAL_FIN = {"period": "2026-06", "sales": {"용역": 1376809157.0, "상
 // ── 서버 저장 동기화 (api/store.js + Upstash Redis) ──
 const SERVER_URL = '/api/store';
 const APP_KEY = 'koition-hr-2026-key';   // api/store.js의 환경변수 APP_KEY와 동일해야 함
-async function serverGet(key) {
+async function serverGet(key, timeoutMs = 6000) {
   try {
-    const r = await fetch(`${SERVER_URL}?key=${encodeURIComponent(key)}`, { headers: { 'x-app-key': APP_KEY } });
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);   // 서버 지연 시 무한 대기 방지
+    const r = await fetch(`${SERVER_URL}?key=${encodeURIComponent(key)}`, { headers: { 'x-app-key': APP_KEY }, signal: ctrl.signal });
+    clearTimeout(t);
     if (!r.ok) return null;
     const j = await r.json();
     return j && j.value != null ? j.value : null;
@@ -2736,7 +2739,20 @@ function App() {
   useEffect(() => {
     const initializeUsers = async () => {
       try {
-        // 서버에 계정이 있으면 우선 사용 (모든 PC에서 동일 계정·비밀번호)
+        // ① 먼저 localStorage 캐시로 즉시 로그인 화면 표시 (서버 대기 없이)
+        const cached = localStorage.getItem('koition_hr_users');
+        let shownFromCache = false;
+        if (cached) {
+          try {
+            const arr = JSON.parse(cached);
+            if (Array.isArray(arr) && arr.length && arr[0].passwordHash) {
+              setUsers(arr);
+              setUsersInitialized(true);   // 로그인 화면 즉시 노출
+              shownFromCache = true;
+            }
+          } catch (e) {}
+        }
+        // ② 서버에서 최신 계정 받아 백그라운드 갱신 (타임아웃 6초)
         const sv = await serverGet('users');
         if (sv) {
           try {
@@ -2888,61 +2904,78 @@ function App() {
   };
 
   const dataLoadedRef = useRef(false);   // 자동 저장 가드: 초기 로드 완료 전에는 저장 안 함(기존 데이터 보호)
+  const heavyLoadedRef = useRef(false);
+  // 공통 데이터 파서 (경량/중량 분리)
+  const applyLightData = (data) => {
+    if (data.employees) setEmployees(data.employees);
+    if (data.policy) {
+      if (!data.policy.orgs) data.policy.orgs = INITIAL_POLICY.orgs;
+      if (!data.policy.projMap) data.policy.projMap = INITIAL_POLICY.projMap;
+      const migrated = {
+        ...INITIAL_POLICY,
+        ...data.policy,
+        grades: (Array.isArray(data.policy.grades) && data.policy.grades.length) ? data.policy.grades : INITIAL_POLICY.grades,
+        coverStats: data.policy.coverStats || INITIAL_POLICY.coverStats,
+        coverImage: data.policy.coverImage || INITIAL_POLICY.coverImage,
+        promotion: data.policy.promotion || INITIAL_POLICY.promotion,
+        diag: { ...INITIAL_POLICY.diag, ...(data.policy.diag || {}) },
+        targets: data.policy.targets || INITIAL_POLICY.targets,
+        allocation: { ...INITIAL_POLICY.allocation, ...(data.policy.allocation || {}) }
+      };
+      setPolicy(migrated);
+    }
+    // 평가 관련(본인 평가에 필요) — 경량
+    if (data.selfScores) setSelfScores(data.selfScores);
+    if (data.comments) setComments(data.comments);
+    if (data.submissions) setSubmissions(data.submissions);
+    if (data.peerEvals) setPeerEvals(data.peerEvals);
+    if (data.projects) setProjects(data.projects);      // 본인 참여 사업 확인용
+    if (data.proposals) setProposals(data.proposals);
+  };
+  // 중량(경영·재무·전사평가) — admin/manager만
+  const applyHeavyData = (data) => {
+    if (data.scores) setScores(data.scores);
+    if (data.overheads) setOverheads(data.overheads);
+    if (data.empLedger) setEmpLedger(data.empLedger);
+    if (data.loans) setLoans(data.loans);
+    if (data.receivables) setReceivables(data.receivables);
+    if (data.cashCfg) setCashCfg(prev => ({ ...prev, ...data.cashCfg }));
+    if (data.fin) {
+      const f = data.fin;
+      if (!f._v || f._v < 2) {
+        setFin({ ...INITIAL_FIN, ...f, salaryCon: INITIAL_FIN.salaryCon, salaryConNote: INITIAL_FIN.salaryConNote, opexCash: INITIAL_FIN.opexCash, opexPurchase: INITIAL_FIN.opexPurchase, _v: 2 });
+      } else setFin(f);
+    }
+    if (data.history) setHistory(data.history);
+  };
+  // ① 마운트 시: 경량 데이터만 로드 (로그인 화면·본인 평가에 필요한 최소한)
   useEffect(() => {
     (async () => {
-    try {
-      const remote = await serverGet('main');
-      if (remote != null) {
-        try { localStorage.setItem('koition_hr_v6', typeof remote === 'string' ? remote : JSON.stringify(remote)); } catch (e) {}
-      }
-    } catch (e) {}
-    try {
-      const res = localStorage.getItem('koition_hr_v6');
-      if (res) {
-        const data = JSON.parse(res);
-        if (data.employees) setEmployees(data.employees);
-        if (data.policy) {
-          // 기존 정책에 coverStats/coverImage/promotion/orgs가 없으면 기본값 보충 (마이그레이션)
-          if (!data.policy.orgs) data.policy.orgs = INITIAL_POLICY.orgs;
-          if (!data.policy.projMap) data.policy.projMap = INITIAL_POLICY.projMap;
-          const migrated = { 
-            ...INITIAL_POLICY,               // 구조 키(grades·등급기준 등) 기본 보존
-            ...data.policy, 
-            grades: (Array.isArray(data.policy.grades) && data.policy.grades.length) ? data.policy.grades : INITIAL_POLICY.grades,
-            coverStats: data.policy.coverStats || INITIAL_POLICY.coverStats,
-            coverImage: data.policy.coverImage || INITIAL_POLICY.coverImage,
-            promotion: data.policy.promotion || INITIAL_POLICY.promotion,
-            diag: { ...INITIAL_POLICY.diag, ...(data.policy.diag || {}) },
-            targets: data.policy.targets || INITIAL_POLICY.targets,
-            allocation: { ...INITIAL_POLICY.allocation, ...(data.policy.allocation || {}) }
-          };
-          setPolicy(migrated);
+      try {
+        const remote = await serverGet('main');
+        if (remote != null) {
+          try { localStorage.setItem('koition_hr_v6', typeof remote === 'string' ? remote : JSON.stringify(remote)); } catch (e) {}
         }
-        if (data.scores) setScores(data.scores);
-        if (data.selfScores) setSelfScores(data.selfScores);
-        if (data.comments) setComments(data.comments);
-        if (data.submissions) setSubmissions(data.submissions);
-        if (data.projects) setProjects(data.projects);
-        if (data.proposals) setProposals(data.proposals);
-        if (data.overheads) setOverheads(data.overheads);
-        if (data.empLedger) setEmpLedger(data.empLedger);
-        if (data.peerEvals) setPeerEvals(data.peerEvals);
-        if (data.loans) setLoans(data.loans);
-        if (data.receivables) setReceivables(data.receivables);
-        if (data.cashCfg) setCashCfg(prev => ({ ...prev, ...data.cashCfg }));
-        if (data.fin) {
-          const f = data.fin;
-          if (!f._v || f._v < 2) {
-            // v2 마이그레이션: 검증된 인건비(사업소득 포함)·운영경비 분해값 반영 (사용자 편집분은 보존)
-            setFin({ ...INITIAL_FIN, ...f, salaryCon: INITIAL_FIN.salaryCon, salaryConNote: INITIAL_FIN.salaryConNote, opexCash: INITIAL_FIN.opexCash, opexPurchase: INITIAL_FIN.opexPurchase, _v: 2 });
-          } else setFin(f);
-        }
-        if (data.history) setHistory(data.history);
-      }
-    } catch (e) {}
-  dataLoadedRef.current = true;
+      } catch (e) {}
+      try {
+        const res = localStorage.getItem('koition_hr_v6');
+        if (res) applyLightData(JSON.parse(res));
+      } catch (e) {}
+      dataLoadedRef.current = true;
     })();
   }, []);
+  // ② 로그인 후: admin/manager면 중량 데이터 로드 (직원은 로드 안 함 → 빠름·안전)
+  useEffect(() => {
+    if (!user || heavyLoadedRef.current) return;
+    if (user.role !== 'admin' && user.role !== 'manager') return;   // 직원·평가자는 중량 데이터 불필요
+    (async () => {
+      try {
+        const res = localStorage.getItem('koition_hr_v6');
+        if (res) applyHeavyData(JSON.parse(res));
+      } catch (e) {}
+      heavyLoadedRef.current = true;
+    })();
+  }, [user]);
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -2973,12 +3006,22 @@ function App() {
       showToast('데이터가 저장되었습니다 (서버 포함)');
     } catch (e) { showToast('저장 실패', 'error'); }
   };
-  // 자동 저장: 데이터 변경 후 1초 디바운스로 브라우저에 기록 (불러오기·입력 후 저장 누락 방지)
+  // 자동 저장: 데이터 변경 후 1초 디바운스로 기록. 권한별 안전 저장(직원은 경량 필드만 병합 → 경영·재무 데이터 보호)
   useEffect(() => {
     if (!dataLoadedRef.current) return;
+    const heavyLoaded = user && (user.role === 'admin' || user.role === 'manager') && heavyLoadedRef.current;
     const t = setTimeout(() => {
       try {
-        const payload = JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, fin, history, updatedAt: new Date().toISOString() });
+        let payload;
+        if (heavyLoaded) {
+          // admin/manager: 전체 저장 (중량 데이터를 정상 보유한 상태)
+          payload = JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, fin, history, updatedAt: new Date().toISOString() });
+        } else {
+          // 직원·평가자: 기존 저장본을 읽어 본인이 편집 가능한 경량 필드만 덮어씀 (중량 데이터 원본 보존)
+          let base = {};
+          try { base = JSON.parse(localStorage.getItem('koition_hr_v6') || '{}'); } catch (e) {}
+          payload = JSON.stringify({ ...base, selfScores, comments, submissions, peerEvals, updatedAt: new Date().toISOString() });
+        }
         localStorage.setItem('koition_hr_v6', payload);
         serverPut('main', payload);   // 서버 저장 (모든 PC 공유)
       } catch (e) { /* 저장 공간 부족 등 — 수동 저장/내보내기 사용 */ }
@@ -3258,7 +3301,7 @@ function App() {
           minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: T.surface, fontFamily: FONT, fontSize: 13, color: T.textMute
         }}>
-          시스템 초기화 중...
+          시스템을 불러오는 중입니다... (최초 접속은 몇 초 걸릴 수 있어요)
         </div>
       );
     }
