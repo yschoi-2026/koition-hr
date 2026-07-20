@@ -2529,8 +2529,10 @@ async function serverGet(key, timeoutMs = 6000) {
 }
 function serverPut(key, value) {
   try {
-    fetch(SERVER_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-app-key': APP_KEY }, body: JSON.stringify({ key, value }) }).catch(() => {});
-  } catch (e) {}
+    return fetch(SERVER_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-app-key': APP_KEY }, body: JSON.stringify({ key, value }) })
+      .then(r => { if (!r.ok) console.warn('[서버저장 실패]', key, r.status); return r.ok; })
+      .catch((e) => { console.warn('[서버저장 실패]', key, e && e.message); return false; });
+  } catch (e) { return Promise.resolve(false); }
 }
 // 계정 저장: 브라우저 + 서버 동시 기록 (비밀번호 변경이 모든 PC에 반영)
 function persistUsers(users) {
@@ -2668,6 +2670,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [users, setUsers] = useState([]);  // 해시된 비밀번호 포함 사용자 배열
   const [usersInitialized, setUsersInitialized] = useState(false);
+  const [serverSyncOk, setServerSyncOk] = useState(true);   // 서버 저장 실패 감지 → 상단 경고
   const [tab, setTab] = useState('dashboard');
   const [employees, setEmployees] = useState(INITIAL_EMPLOYEES);
   const [policy, setPolicy] = useState(INITIAL_POLICY);
@@ -2955,7 +2958,18 @@ function App() {
       try {
         const remote = await serverGet('main');
         if (remote != null) {
-          try { localStorage.setItem('koition_hr_v6', typeof remote === 'string' ? remote : JSON.stringify(remote)); } catch (e) {}
+          try {
+            const remoteStr = typeof remote === 'string' ? remote : JSON.stringify(remote);
+            const localStr = localStorage.getItem('koition_hr_v6');
+            let useRemote = true;
+            try {
+              const rT = Date.parse((JSON.parse(remoteStr) || {}).updatedAt || 0) || 0;
+              const lT = localStr ? (Date.parse((JSON.parse(localStr) || {}).updatedAt || 0) || 0) : -1;
+              useRemote = rT >= lT;   // ★ 서버가 로컬보다 오래된 데이터면 덮어쓰지 않음 (편집 유실 방지)
+            } catch (e) {}
+            if (useRemote) localStorage.setItem('koition_hr_v6', remoteStr);
+            else console.warn('[동기화] 서버 데이터가 로컬보다 오래됨 — 로컬 유지, 최신본을 서버로 재전송');
+          } catch (e) {}
         }
       } catch (e) {}
       try {
@@ -3024,7 +3038,7 @@ function App() {
           payload = JSON.stringify({ ...base, selfScores, comments, submissions, peerEvals, updatedAt: new Date().toISOString() });
         }
         localStorage.setItem('koition_hr_v6', payload);
-        serverPut('main', payload);   // 서버 저장 (모든 PC 공유)
+        serverPut('main', payload).then(ok => setServerSyncOk(!!ok));   // 서버 저장 (모든 PC 공유) — 실패 시 경고 표시
       } catch (e) { /* 저장 공간 부족 등 — 수동 저장/내보내기 사용 */ }
     }, 1200);
     return () => clearTimeout(t);
@@ -3401,6 +3415,11 @@ function App() {
           }}>
             {/* K 워터마크 - 메인 영역 우하단 거대 배경 */}
             <KWatermark />
+            {!serverSyncOk && (
+              <div style={{ background: '#FDECEA', border: '1px solid #E8B4AE', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 12.5, color: '#8A2A21', fontWeight: 600 }}>
+                ⚠ 서버 저장 실패 — 변경사항이 지금 이 브라우저에만 저장되고 있습니다. 새로고침해도 이 브라우저에서는 유지되지만, 다른 PC와 공유되지 않습니다. 잠시 후 자동 재시도되며, 계속되면 관리자에게 알려주세요. (서버 사용량 한도 초과 가능성)
+              </div>
+            )}
             
             <div style={{ position: 'relative', zIndex: 1 }}>
             {user.role === 'admin' && backupDue && (
