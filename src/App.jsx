@@ -2543,6 +2543,7 @@ const DEFAULT_BID_PARTICIPANTS = ['최영숙', '이원규'];   // 주요 제안(
 const DEFAULT_BID_SUPPORT = ['신수호', '심도현'];                 // 제안서류 제출·관리 인력
 const MAINT_SUPPORT_IDS = ['2026-005', '2026-006', '2026-009', '2026-013'];  // 유지보수·OPT변환 — 사업지원(신수호·고영훈) 100% 귀속
 const MAINT_SUPPORT_PM = '신수호, 고영훈';
+const nameKeyOf = (n) => String(n || '').replace(/\s+/g, '').toLowerCase();   // 제안 중복 판별용 이름 키
 const ETC_BID_SCORE = 40;   // 수익률 산정 제외(기타) 사업의 수주 기여 고정점수
 const fmtInput = (v) => (v === '' || v == null || isNaN(Number(v))) ? '' : Number(v).toLocaleString('ko-KR');
 const parseInput = (t) => { const d = String(t).replace(/[^\d]/g, ''); return d === '' ? '' : Number(d); };
@@ -3033,7 +3034,10 @@ function App() {
   useEffect(() => {
     if (!dataLoadedRef.current) return;
     const linked = new Set((proposals || []).filter(p => p.wonProjectId).map(p => p.wonProjectId));
-    const missing = (projects || []).filter(p => Number(p.year) === 2026 && p.id && !linked.has(p.id) && (!isEtcProject(p) || MAINT_SUPPORT_IDS.includes(p.id)));
+    const hidden = new Set(((policy || {}).hiddenProps) || []);
+    const nameSet = new Set((proposals || []).map(x => nameKeyOf(x.name)));
+    const missing = (projects || []).filter(p => Number(p.year) === 2026 && p.id && !linked.has(p.id) && (!isEtcProject(p) || MAINT_SUPPORT_IDS.includes(p.id))
+      && !hidden.has('P:auto:' + p.id) && !hidden.has(nameKeyOf(p.name)) && !nameSet.has(nameKeyOf(p.name)));   // 삭제된 제안·동일 이름 제안은 재생성 안 함
     // 기존 자동 제안 보정: 유지보수·OPT 사업인데 담당 미지정이면 신수호·고영훈 지정
     const needFix = (proposals || []).some(p => String(p.id).startsWith('P:auto:') && MAINT_SUPPORT_IDS.includes(p.wonProjectId) && !p.pm);
     // 계약기간 백필: 수주 제안인데 기간이 비어 있으면 연결된 프로젝트의 기간을 가져옴
@@ -3233,7 +3237,9 @@ function App() {
     if (!rows || rows.length === 0) return;
     setProposals(prev => {
       const map = new Map(prev.map(p => [p.id, p]));
+      const hidden2 = new Set(((policy || {}).hiddenProps) || []);
       rows.forEach(r => {
+        if (hidden2.has(String(r.id || '')) || hidden2.has(nameKeyOf(r.name))) return;   // 삭제된 제안은 재업로드로 부활 안 함
         const old = map.get(r.id);
         if (!old) { map.set(r.id, r); return; }
         // 병합: 엑셀에 없는 수동 입력 필드(계약기간·수주율·제출서류·메모 등)는 기존 값 보존
@@ -3248,7 +3254,11 @@ function App() {
       return Array.from(map.values());
     });
   };
-  const deleteProposal = (id) => setProposals(prev => prev.filter(x => x.id !== id));
+  const deleteProposal = (id) => {
+    const target = (proposals || []).find(x => x.id === id);
+    if (target) setPolicy(pol => ({ ...pol, hiddenProps: Array.from(new Set([...(pol.hiddenProps || []), String(target.id || ''), nameKeyOf(target.name)])) }));   // 삭제 기록 → 자동 재생성·재업로드 부활 방지
+    setProposals(prev => prev.filter(x => x.id !== id));
+  };
   const updateProposal = (id, patch) => setProposals(prev => (prev || []).map(x => x.id === id ? { ...x, ...patch } : x));
   const upsertProposal = (prop) => setProposals(prev => {
     const exists = (prev || []).some(x => x.id === prop.id);
@@ -9373,6 +9383,9 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
 
 
 function ManagementReportView({ user, projects, proposals, overheads, employees, empLedger, setEmpLedger, currentYear, policy, receivables, cashCfg, setCashCfg, upsertProject, fin }) {
+  // 데이터 기준월: CMS 마감월(fin.period '2026-06') → '1~6월 누계' 라벨
+  const cutM = (() => { const m = String((fin || {}).period || '').match(/-(\d{2})/); return m ? Number(m[1]) : null; })();
+  const basisLabel = cutM ? `${currentYear || new Date().getFullYear()}년 1~${cutM}월 누계 기준` : '연초~최근 마감월 누계 기준';
   const canEditLedger = !!setEmpLedger && user.role === 'admin';
   const [ledgerForm, setLedgerForm] = React.useState(null); // {name, empId, card, newOrder}
   const removeLedger = (row) => {
@@ -9843,8 +9856,18 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const fixedOpexUse = useFixedOpexAdj;   // 카드 사업변동분 제외된 고정경비
         const projOpexUse = Math.round(useProjOpex * projOpexScale / 100);
         const opexOf = (i) => fixedOpexUse + Math.round(projOpexUse * activeRatioOf(i));   // 고정 + 프로젝트성×진행률
-        const taxOf = (mo) => ([1, 4, 7, 10].includes(mo.m) ? useVatQ : 0) + (mo.m === 3 ? useCorpTax : 0);
-        const exp = months.map((mo, i) => laborOf(mo, i) + opexOf(i) + taxOf(mo));
+        // 세금(부가세·법인세)은 추정액이라 기본 제외 — 실질 현금흐름 왜곡 방지. 옵션에서 켜면 반영.
+        const taxOn = cfg.taxInclude === true;
+        const taxOf = (mo) => taxOn ? (([1, 4, 7, 10].includes(mo.m) ? useVatQ : 0) + (mo.m === 3 ? useCorpTax : 0)) : 0;
+        // 예정 지출(직접 등록): 세금 납부 예정액·장비 구입·보증금 등 확정된 미래 지출 — cfg.extraExpense[]
+        const extraExpArr = Array(12).fill(0);
+        (cfg.extraExpense || []).forEach(e => {
+          const mm = String(e.month || '').match(/(\d{4})[.\-\/](\d{1,2})/);
+          if (!mm) return;
+          const i = idxOf(+mm[1], +mm[2]); const amt = Number(e.amount) || 0;
+          if (i >= 0 && i < 12 && amt > 0) extraExpArr[i] += amt;
+        });
+        const exp = months.map((mo, i) => laborOf(mo, i) + opexOf(i) + taxOf(mo) + extraExpArr[i]);
         const startBal = Number(cfg.balance) || Number(finData.bankBalance) || 0;
         // #1 실제잔고 자동보정: 최근 3개월 (실제-예측) 평균 편향을 미래 예측에 반영
         const actualBalMap = (finData.actualBalances) || {};
@@ -9864,11 +9887,11 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           if (start < 12 && advP > 0) { incOpt[start] += p.budget * wOpt * advP; incCons[start] += p.budget * wCons * advP; }
           const end = start + 6; if (end < 12) { incOpt[end] += p.budget * wOpt * (1 - advP); incCons[end] += p.budget * wCons * (1 - advP); }
         });
-        const expCons = months.map((mo, i) => laborOf(mo, i) + fixedOpexUse + Math.round(projOpexUse * activeRatioOf(i) * 1.1) + taxOf(mo));   // 보수: 프로젝트성경비 +10%
+        const expCons = months.map((mo, i) => laborOf(mo, i) + fixedOpexUse + Math.round(projOpexUse * activeRatioOf(i) * 1.1) + taxOf(mo) + extraExpArr[i]);   // 보수: 프로젝트성경비 +10%
         const rows = months.map((mo, i) => {
           bal += inc[i] - exp[i]; balS += incS[i] - exp[i];
           balOpt += incOpt[i] - exp[i]; balCons += incCons[i] - expCons[i];
-          return { ...mo, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), activeRatio: activeRatioOf(i), bal, balS, balOpt, balCons, notes: incNote[i].slice(0, 3).join(', ') };
+          return { ...mo, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), expEtc: extraExpArr[i], activeRatio: activeRatioOf(i), bal, balS, balOpt, balCons, notes: incNote[i].slice(0, 3).join(', ') };
         });
         const safety = Number(cfg.safety) || 0;
         const danger = rows.find(r => r.bal < safety);
@@ -9907,7 +9930,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 <div style={{ marginTop: 4, lineHeight: 1.8 }}>
                   · 월 인건비 <strong>{fmtMoney(actualLaborMonthly)}원</strong> = 정규직 {fmtMoney(finData.salaryReg || 0)} + 계약직·사업소득 {fmtMoney(finData.salaryCon || 0)} <span style={{ color: T.textMute }}>(최근월 실지급 기준 · 매월 10일 지급)</span><br />
                   · 월 운영경비 <strong>{fmtMoney(useOpex)}원</strong> {opexVerified ? <>= 고정운영경비 {fmtMoney(useFixedOpexAdj)} <span style={{ color: T.textMute }}>(임차·세금과공과·보험 등)</span> + 프로젝트성경비 {fmtMoney(Math.round(useProjOpex * projOpexScale / 100))} <span style={{ color: T.textMute }}>(외주·매입 {fmtMoney(useProjOpexRaw)} + 사업카드 {fmtMoney(cardProj)}{projOpexScale !== 100 ? ` ×${projOpexScale}%` : ''})</span></> : <span style={{ color: T.textMute }}>({monthsElapsed}개월 판관비 ÷ 경과월)</span>}
-                  {taxLinked ? <><br />· 분기 부가세 <strong>{fmtMoney(cmsVatQ)}원</strong> · 연 법인세 <strong>{fmtMoney(cmsCorpTaxTotal)}원</strong> <span style={{ color: T.textMute }}>(세무 자동계산)</span></> : null}
+                  {taxLinked ? <><br />· 분기 부가세 <strong>{fmtMoney(cmsVatQ)}원</strong> · 연 법인세 <strong>{fmtMoney(cmsCorpTaxTotal)}원</strong> <span style={{ color: T.textMute }}>(세무 자동계산{cfg.taxInclude === true ? ' · 예측 반영 중' : ' · 예측 미반영 — 추정액 제외'})</span></> : null}
                 </div>
                 <label style={{ marginLeft: 10, fontSize: 11.5, cursor: 'pointer' }}>
                   <input type="checkbox" checked={cfg.laborFromCms !== false && cfg.opexFromCms !== false && cfg.taxFromCms !== false} onChange={e => setCashCfg(prev => ({ ...prev, laborFromCms: e.target.checked, opexFromCms: e.target.checked, taxFromCms: e.target.checked }))} style={{ marginRight: 4, verticalAlign: 'middle' }} />
@@ -9951,9 +9974,23 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               {inp('선급금 비율(%)', 'advRate', 5)}
               {inp('안전 잔고 경고선(원)', 'safety')}
             </div>
+            {/* 계산 방법 설명 */}
+            <details className="no-print" style={{ marginBottom: S[3], background: T.surfaceAlt, borderRadius: 8, padding: `${S[2]}px ${S[3]}px` }}>
+              <summary style={{ fontSize: 12, fontWeight: 700, color: T.brand, cursor: 'pointer' }}>📖 이 예측은 어떻게 계산되나요? (계산법·흐름 설명)</summary>
+              <div style={{ fontSize: 11.5, color: T.ink, lineHeight: 1.8, marginTop: S[2] }}>
+                <strong style={{ color: T.brand }}>1. 시작점</strong> — 법인통장 잔고(CMS 자금현황표 또는 직접 입력)에서 출발해, 매월 <strong>잔고 = 전월 잔고 + 그달 수입 − 그달 지출</strong>로 12개월을 이어 계산합니다.<br />
+                <strong style={{ color: T.success }}>2. 수입(파란 실선에 반영)</strong> — ① <strong>수금관리 등록분</strong>(미입금 예정일 기준, 가장 확정적) ② <strong>진행 사업의 선급·잔금</strong>: 계약기간 시작월에 매출×선급률, 종료 익월에 잔금(이미 수금관리에 있는 사업은 중복 제외) ③ <strong>기타 예정 수입</strong>(직접 등록분). 선급률은 사업별 입력값 → 없으면 수금 실적에서 학습한 중앙값 → 없으면 기본값 순.<br />
+                <strong style={{ color: T.warning }}>3. 지출</strong> — ① <strong>정규직 인건비</strong>: 매월 고정(CMS 급여 실적) ② <strong>계약직 인건비</strong>: 각 사업의 계약직 인건비를 계약기간에 배분 — 사업이 끝나는 달부터 그만큼 자동 감소(월별 수동 보정이 있으면 그 값 우선) ③ <strong>고정 운영경비</strong>: 임차·보험·세금과공과 등 매월 동일 ④ <strong>프로젝트성 경비</strong>: 외주·매입 + 사업 법인카드(여비·차량·운반·인쇄), 그달의 <strong>활성 사업 비율로 자동 증감</strong> + 조정 슬라이더 배율 적용 ⑤ <strong>세금</strong>: 부가세·법인세 추정액은 <strong>기본 제외</strong>(실질 지출 파악 왜곡 방지) — 정밀도 옵션에서 켜면 부가세 1·4·7·10월, 법인세 3월에 반영됩니다. ⑥ <strong>예정 지출</strong>(직접 등록): 세금 납부 확정액·장비 구입·보증금 등 미래 확정 지출을 월별로 등록하면 그 달 지출에 가산됩니다.<br />
+                <strong style={{ color: T.success }}>4. 수주 반영 시나리오(초록 점선)</strong> — 미수주 제안의 <strong>예산 × 수주율(%)</strong>을 기대수입으로 가산. 계약기간 시작월에 선급, +6개월에 잔금으로 배치하며, 아래 「수주 파이프라인 개별 설정」에서 제안별 포함/제외·계약월·선급률을 조정할 수 있습니다.<br />
+                <strong>5. 낙관·보수 밴드(연한 점선)</strong> — 낙관 = 수주율 +20%p, 보수 = 수주율 −20%p에 프로젝트성 경비 +10%를 가정한 상·하한 범위입니다. 실제 잔고는 대개 이 밴드 안에서 움직입니다.<br />
+                <strong>6. 자동 보정</strong> — 매월 말 실제 잔고를 입력하면, 최근 3개월의 (실제−예측) 평균 편차를 미래 예측에 가산해 체계적 오차를 줄입니다.<br />
+                <span style={{ color: T.textMute }}>※ 안전선(빨간 점선) 아래로 예측 잔고가 내려가는 달이 있으면 위험 신호 배너로 알려드립니다. 정확도를 높이려면: 수금관리에 입금 예정 등록, 사업별 계약기간·선급률 입력, 매월 실제 잔고 기록 — 이 세 가지가 핵심입니다.</span>
+              </div>
+            </details>
             {/* 정밀도 옵션 토글 */}
             <div className="no-print" style={{ display: 'flex', gap: S[3], flexWrap: 'wrap', marginBottom: S[3], fontSize: 11.5, alignItems: 'center' }}>
               <span style={{ fontWeight: 700, color: T.textMute }}>정밀도 옵션:</span>
+              <label style={{ cursor: 'pointer' }}><input type="checkbox" checked={cfg.taxInclude === true} onChange={e => setCashCfg(prev => ({ ...prev, taxInclude: e.target.checked }))} style={{ verticalAlign: 'middle', marginRight: 3 }} />부가세·법인세 추정 반영 <span style={{ color: T.textMute }}>(기본 제외)</span></label>
               <label style={{ cursor: 'pointer' }}><input type="checkbox" checked={cfg.conAuto !== false} onChange={e => setCashCfg(prev => ({ ...prev, conAuto: e.target.checked }))} style={{ verticalAlign: 'middle', marginRight: 3 }} />계약직 인건비 계약기간 자동 증감</label>
               <label style={{ cursor: 'pointer' }}><input type="checkbox" checked={cfg.projOpexProgress !== false} onChange={e => setCashCfg(prev => ({ ...prev, projOpexProgress: e.target.checked }))} style={{ verticalAlign: 'middle', marginRight: 3 }} />프로젝트성 경비 진행률 연동</label>
               <label style={{ cursor: 'pointer' }}><input type="checkbox" checked={cfg.showBand !== false} onChange={e => setCashCfg(prev => ({ ...prev, showBand: e.target.checked }))} style={{ verticalAlign: 'middle', marginRight: 3 }} />낙관·보수 시나리오 밴드</label>
@@ -10045,6 +10082,19 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               ))}
               <Button variant="outline" size="sm" onClick={() => setCashCfg(prev => ({ ...prev, extraIncome: [...(prev.extraIncome || []), { month: '', amount: '', memo: '' }] }))}>+ 예정 수입 추가</Button>
             </details>
+            <details className="no-print" open style={{ marginBottom: S[3] }}>
+              <summary style={{ fontSize: 12, fontWeight: 700, color: T.danger, cursor: 'pointer' }}>예정 지출 등록 (세금 납부 확정액·장비 구입·보증금 등 · 월·금액 직접 입력)</summary>
+              <div style={{ fontSize: 11, color: T.textMute, margin: `4px 0 ${S[2]}px` }}>확정된 미래 지출을 등록하면 그 달 지출에 가산됩니다. 부가세·법인세는 고지서로 금액이 확정되면 여기에 등록하세요 (자동 추정은 기본 제외 상태).</div>
+              {(cfg.extraExpense || []).map((e, i) => (
+                <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 5 }}>
+                  <input placeholder="2026.10" value={e.month || ''} onChange={ev => setCashCfg(prev => ({ ...prev, extraExpense: (prev.extraExpense || []).map((x, j) => j === i ? { ...x, month: ev.target.value } : x) }))} style={{ width: 90, padding: '4px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, fontFamily: FONT }} />
+                  <input inputMode="numeric" placeholder="금액(원)" value={e.amount != null && e.amount !== '' ? fmtInput(e.amount) : ''} onChange={ev => setCashCfg(prev => ({ ...prev, extraExpense: (prev.extraExpense || []).map((x, j) => j === i ? { ...x, amount: parseInput(ev.target.value) } : x) }))} style={{ width: 130, padding: '4px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, fontFamily: FONT, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} />
+                  <input placeholder="메모(예: 2기 부가세 확정분)" value={e.memo || ''} onChange={ev => setCashCfg(prev => ({ ...prev, extraExpense: (prev.extraExpense || []).map((x, j) => j === i ? { ...x, memo: ev.target.value } : x) }))} style={{ flex: 1, padding: '4px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, minWidth: 0, fontFamily: FONT }} />
+                  <button onClick={() => setCashCfg(prev => ({ ...prev, extraExpense: (prev.extraExpense || []).filter((_, j) => j !== i) }))} style={{ border: 'none', background: 'transparent', color: T.danger, cursor: 'pointer', fontSize: 13 }}>🗑</button>
+                </div>
+              ))}
+              <Button variant="outline" size="sm" onClick={() => setCashCfg(prev => ({ ...prev, extraExpense: [...(prev.extraExpense || []), { month: '', amount: '', memo: '' }] }))}>+ 예정 지출 추가</Button>
+            </details>
             {/* 다음 급여일 지급 여력 */}
             {startBal > 0 && (() => {
               const gap = startBal - useLabor;
@@ -10127,7 +10177,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               <div style={{ overflow: 'auto', marginTop: S[2] }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, minWidth: 860 }}>
                   <thead><tr style={{ background: T.surfaceAlt }}>
-                    <Th>월</Th><Th align="right">수입(확정)</Th><Th align="right">인건비</Th><Th align="right">운영경비</Th><Th align="right">세금</Th><Th align="right">지출 계</Th><Th align="right">잔고</Th><Th align="right">잔고(파이프라인)</Th><Th>수입 내역</Th>
+                    <Th>월</Th><Th align="right">수입(확정)</Th><Th align="right">인건비</Th><Th align="right">운영경비</Th><Th align="right">세금</Th><Th align="right">예정지출</Th><Th align="right">지출 계</Th><Th align="right">잔고</Th><Th align="right">잔고(파이프라인)</Th><Th>수입 내역</Th>
                   </tr></thead>
                   <tbody>
                     {rows.map((r, i) => (
@@ -10137,6 +10187,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                         <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(r.expLabor)}</Td>
                         <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(r.expOpex)}</Td>
                         <Td align="right" mono style={{ color: r.expTax > 0 ? T.warning : T.textLight }}>{r.expTax > 0 ? fmtMoney(r.expTax) : '-'}</Td>
+                        <Td align="right" mono style={{ color: r.expEtc > 0 ? T.warning : T.textLight }}>{r.expEtc > 0 ? fmtMoney(r.expEtc) : '-'}</Td>
                         <Td align="right" mono>{fmtMoney(r.exp)}</Td>
                         <Td align="right" mono><strong style={{ color: r.bal < 0 ? T.danger : r.bal < safety ? T.warning : T.ink }}>{fmtMoney(r.bal)}</strong></Td>
                         <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(r.balS)}</Td>
@@ -10324,7 +10375,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
       <Note>{bestOrg && worstOrg ? `${shortName(bestOrg.name)}이(가) 이익률 ${bestOrg.fullMargin.toFixed(0)}%로 가장 우수하고, ${shortName(worstOrg.name)}이(가) ${worstOrg.fullMargin.toFixed(0)}%로 가장 낮습니다. 본부 간 수익성 격차를 고려해 인력·사업 배분을 조정하면 전사 이익률을 끌어올릴 수 있습니다.` : '수행조직 정보가 있는 사업이 제한적입니다. 사업진행현황의 수행조직을 채우면 본부별 손익이 정확히 집계됩니다.'} 인원은 임직원의 소속 본부명 매칭 기준이며, 미매칭 시 ‘-’로 표시됩니다.</Note>
 
       {/* 4. 인건비 분석 */}
-      <H n="4" icon={Users}>인건비 분석</H>
+      <H n="4" icon={Users}>인건비 분석 <span style={{ fontSize: 12, fontWeight: 600, color: T.textMute }}>({basisLabel} — 사업별 실제 투입 누계, 월 급여액 아님)</span></H>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: S[4] }}>
         <div style={{ ...card(), padding: S[5] }}>
           <SectionTitle>인건비 구성</SectionTitle>
@@ -10559,7 +10610,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
       </details>
 
       {/* 7. 원가·경비 구조 */}
-      <H n="7" icon={Layers}>원가·경비 구조</H>
+      <H n="7" icon={Layers}>원가·경비 구조 <span style={{ fontSize: 12, fontWeight: 600, color: T.textMute }}>({basisLabel})</span></H>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: S[4] }}>
         <div style={{ ...card(), padding: S[5] }}>
           <SectionTitle>총원가 구성</SectionTitle>
