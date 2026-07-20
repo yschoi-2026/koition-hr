@@ -3221,7 +3221,18 @@ function App() {
     if (!rows || rows.length === 0) return;
     setProposals(prev => {
       const map = new Map(prev.map(p => [p.id, p]));
-      rows.forEach(r => map.set(r.id, r));
+      rows.forEach(r => {
+        const old = map.get(r.id);
+        if (!old) { map.set(r.id, r); return; }
+        // 병합: 엑셀에 없는 수동 입력 필드(계약기간·수주율·제출서류·메모 등)는 기존 값 보존
+        const merged = { ...old, ...r };
+        ['period', 'winRate', 'docs', 'memo'].forEach(k => { if (r[k] == null || r[k] === '') merged[k] = old[k]; });
+        if ((!r.pm || r.pm === '') && old.pm) merged.pm = old.pm;
+        if ((!r.participants || r.participants.length === 0) && (old.participants || []).length) merged.participants = old.participants;
+        if ((!r.support || r.support.length === 0) && (old.support || []).length) merged.support = old.support;
+        if (old.wonProjectId && !r.wonProjectId) { merged.wonProjectId = old.wonProjectId; merged.status = old.status; }
+        map.set(r.id, merged);
+      });
       return Array.from(map.values());
     });
   };
@@ -11495,6 +11506,15 @@ function parseSagwanWorkbook(XLSX, arrayBuffer, yearDefault, pmFloor) {
   const wsP = wb.Sheets['사업제안현황'];
   if (wsP) {
     const rngP = XLSX.utils.decode_range(wsP['!ref']);
+    // 헤더에서 '계약기간/사업기간/기간' 컬럼 위치 자동 탐지 (없으면 -1)
+    let periodCol = -1;
+    for (let r0 = 0; r0 <= Math.min(3, rngP.e.r); r0++) {
+      for (let c0 = 0; c0 <= rngP.e.c; c0++) {
+        const hv = _sgStr(wsP, XLSX, r0, c0);
+        if (/계약\s*기간|사업\s*기간|^기간$/.test(hv)) { periodCol = c0; break; }
+      }
+      if (periodCol >= 0) break;
+    }
     for (let r = 0; r <= rngP.e.r; r++) {
       const name = _sgStr(wsP, XLSX, r, 2);
       const client = _sgStr(wsP, XLSX, r, 3);
@@ -11507,6 +11527,7 @@ function parseSagwanWorkbook(XLSX, arrayBuffer, yearDefault, pmFloor) {
         name, client, category: _sgStr(wsP, XLSX, r, 1),
         budget: Math.round(budget || 0),
         bidDate: _sgYM(_sgCell(wsP, XLSX, r, 5)),
+        period: periodCol >= 0 ? _sgStr(wsP, XLSX, r, periodCol) : '',   // 계약기간 컬럼 있으면 반영
         pm: _sgTitle(_sgStr(wsP, XLSX, r, 9)),
         participants: _sgStr(wsP, XLSX, r, 8).split(/[,\s/·]+/).map(s => _sgTitle(s.trim())).filter(Boolean),
         consortium: _sgStr(wsP, XLSX, r, 7),
