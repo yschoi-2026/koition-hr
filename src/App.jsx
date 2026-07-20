@@ -3247,9 +3247,10 @@ function App() {
     const newProject = {
       id: newId, name: p.name, client: p.client || '', year: yr,
       status: 'ongoing', progress: 0,
+      period: p.period || '',   // 제안의 계약기간을 프로젝트로 승계 (자금예측 선급·잔금 시점에 사용)
       revenue: Number(p.budget) || 0, laborCost: 0, workerLabor: 0, mgrLabor: 0, overhead: 0, otherCost: 0,
       members: pmEmp ? [{ empId: pmEmp.id, role: 'PM', contribution: 0 }] : [],
-      note: `제안 수주 확정 (${new Date().toISOString().slice(0, 10)}) — 인건비·경비는 월마감/사업관리 업로드로 반영`,
+      note: `제안 수주 확정 (${new Date().toISOString().slice(0, 10)})${p.period ? ` · 계약기간 ${p.period}` : ''} — 인건비·경비는 월마감/사업관리 업로드로 반영`,
     };
     setProjects(prev => [...(prev || []), newProject]);
     setProposals(prev => (prev || []).map(x => x.id === proposalId ? { ...x, status: '수주', wonProjectId: newId } : x));
@@ -11176,7 +11177,7 @@ function ProjectEditModal({ project, employees, currentYear, onSave, onClose }) 
       overhead: Number(form.overhead) || 0,
       otherCost: Number(form.otherCost) || 0,
       planCost: Number(form.planCost) || 0,
-      members: (form.members || []).filter(x => x.empId).map(x => ({ empId: x.empId, role: x.role, contribution: Number(x.contribution) || 0 })),
+      members: (form.members || []).filter(x => x.empId).map(x => ({ empId: x.empId, role: x.role, contribution: Number(x.contribution) || 0, ...(x.months != null && x.months !== '' ? { months: Number(x.months) } : {}), ...(x.rate != null && x.rate !== '' ? { rate: Number(x.rate) } : {}) })),
     });
   };
 
@@ -11208,6 +11209,14 @@ function ProjectEditModal({ project, employees, currentYear, onSave, onClose }) 
                 <option value="completed">종료</option>
               </select>
             </div>
+          </div>
+          {/* 컨소시엄(공동수급) 정보 — 우리 회사 지분만 매출로 반영 */}
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: S[3], marginBottom: S[5] }}>
+            <div><label style={labelStyle}>컨소시엄/공동수급 (선택 · 표시용)</label><input style={inputStyle} value={form.consortium || ''} onChange={e => set('consortium', e.target.value)} placeholder="예) ○○기록물+△△소프트 공동수급 (주관: ○○)" /></div>
+            <div><label style={labelStyle}>우리 지분율(%) · 선택</label><input style={numStyle} inputMode="numeric" value={form.shareRate ?? ''} onChange={e => set('shareRate', e.target.value === '' ? '' : Number(e.target.value))} placeholder="예: 40" /></div>
+          </div>
+          <div style={{ fontSize: 10.5, color: T.textMute, marginTop: -12, marginBottom: S[4] }}>
+            ※ 컨소시엄이면 <strong>매출에 우리 지분 금액</strong>을 입력하세요(총계약액이 아니라 우리 몫). 지분율은 참고 표시용이며, 매출 금액 자체가 손익·수익성 기준이 됩니다.
           </div>
 
           {/* 재무 입력 */}
