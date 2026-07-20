@@ -9921,7 +9921,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 })}
               </div>
             </details>
-            <details className="no-print" style={{ marginBottom: S[3] }}>
+            <details className="no-print" open style={{ marginBottom: S[3] }}>
               <summary style={{ fontSize: 12, fontWeight: 700, color: T.success, cursor: 'pointer' }}>수주 파이프라인 개별 설정 (미수주 제안별 포함 여부·예상 계약월·선급률)</summary>
               <div style={{ fontSize: 11, color: T.textMute, margin: `4px 0 ${S[2]}px` }}>초록 점선(파이프라인) 라인에 반영됩니다. 체크 해제 시 그 제안은 시나리오에서 제외됩니다. 계약월을 비우면 입찰일 익월로 가정합니다.</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: S[2] }}>
@@ -9946,7 +9946,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 {(proposals || []).filter(p => p.status !== '수주' && Number(p.budget) > 0).length === 0 && <div style={{ fontSize: 11.5, color: T.textMute }}>미수주 제안이 없습니다. 제안·수주 관리에서 제안을 등록하면 여기에 나타납니다.</div>}
               </div>
             </details>
-            <details className="no-print" style={{ marginBottom: S[3] }}>
+            <details className="no-print" open style={{ marginBottom: S[3] }}>
               <summary style={{ fontSize: 12, fontWeight: 700, color: T.brand, cursor: 'pointer' }}>기타 예정 수입 등록 (소규모 매출·비매출조직 수익 등 · 월·금액 직접 입력)</summary>
               <div style={{ fontSize: 11, color: T.textMute, margin: `4px 0 ${S[2]}px` }}>제안 파이프라인에 없는 자잘한 예상 수입(부수입, 소규모 용역, 이자·환급 등)을 월별로 등록하면 예측 잔고(기준선)에 바로 더해집니다.</div>
               {(cfg.extraIncome || []).map((e, i) => (
