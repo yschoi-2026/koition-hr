@@ -2534,7 +2534,7 @@ function serverPut(key, value) {
 }
 // 계정 저장: 브라우저 + 서버 동시 기록 (비밀번호 변경이 모든 PC에 반영)
 function persistUsers(users) {
-  try { persistUsers(users); } catch (e) {}
+  try { localStorage.setItem('koition_hr_users', JSON.stringify(users)); } catch (e) {}
   serverPut('users', JSON.stringify(users));
 }
 
@@ -4738,26 +4738,28 @@ function LoginView({ onLogin, policy, users }) {
         return;
       }
       const u = users.find(x => x.username === uname);
-      if (!u) {
-        setError('아이디 또는 비밀번호가 일치하지 않습니다.');
-        setLoading(false);
-        return;
-      }
-      
-      const isValid = await verifyPassword(password, u.passwordHash);
-      if (isValid) {
-        // 사용자 정보에 mustChangePassword 플래그 포함 전달
-        onLogin({
-          username: u.username,
-          role: u.role,
-          name: u.name,
-          empId: u.empId,
-          deptScope: u.deptScope,
-          mustChangePassword: u.mustChangePassword,
-        });
-      } else {
-        setError('아이디 또는 비밀번호가 일치하지 않습니다.');
-      }
+      // 캐시 경합 대비: 계정이 없거나 비번 불일치면 서버 최신 계정으로 1회 재시도
+      const tryLogin = async (acct) => {
+        if (!acct) return false;
+        const ok = await verifyPassword(password, acct.passwordHash);
+        if (!ok) return false;
+        onLogin({ username: acct.username, role: acct.role, name: acct.name, empId: acct.empId, deptScope: acct.deptScope, mustChangePassword: acct.mustChangePassword });
+        return true;
+      };
+      if (await tryLogin(u)) { setLoading(false); return; }
+      // 실패 → 서버에서 최신 계정 재조회 후 재시도 (다른 PC에서 비번 변경 직후 케이스)
+      try {
+        const sv = await serverGet('users');
+        if (sv) {
+          const arr = typeof sv === 'string' ? JSON.parse(sv) : sv;
+          if (Array.isArray(arr) && arr.length && arr[0].passwordHash) {
+            try { localStorage.setItem('koition_hr_users', JSON.stringify(arr)); } catch (e) {}
+            const u2 = arr.find(x => x.username === uname);
+            if (await tryLogin(u2)) { setLoading(false); return; }
+          }
+        }
+      } catch (e) {}
+      setError('아이디 또는 비밀번호가 일치하지 않습니다.');
     } catch (err) {
       setError('로그인 처리 중 오류가 발생했습니다');
       console.error(err);
