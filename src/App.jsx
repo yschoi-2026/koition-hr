@@ -2536,8 +2536,17 @@ function serverPut(key, value) {
 }
 // 계정 저장: 브라우저 + 서버 동시 기록 (비밀번호 변경이 모든 PC에 반영)
 function persistUsers(users) {
-  try { localStorage.setItem('koition_hr_users', JSON.stringify(users)); } catch (e) {}
-  serverPut('users', JSON.stringify(users));
+  const stamped = { _v: 2, updatedAt: new Date().toISOString(), list: users };
+  try { localStorage.setItem('koition_hr_users', JSON.stringify(users)); localStorage.setItem('koition_hr_users_ts', stamped.updatedAt); } catch (e) {}
+  serverPut('users', JSON.stringify(stamped));   // 서버엔 타임스탬프 포함 저장
+}
+// 서버/로컬 계정 응답을 배열로 정규화 (구버전=배열, 신버전={updatedAt,list})
+function normUsers(raw) {
+  if (raw == null) return null;
+  let o = raw; if (typeof raw === 'string') { try { o = JSON.parse(raw); } catch (e) { return null; } }
+  if (Array.isArray(o)) return { list: o, ts: 0 };
+  if (o && Array.isArray(o.list)) return { list: o.list, ts: Date.parse(o.updatedAt || 0) || 0 };
+  return null;
 }
 
 // ── 회사 표준 제안팀 (제안별 인력 입력이 없으면 이 명단을 기본 적용) ──
@@ -2756,30 +2765,36 @@ function App() {
             }
           } catch (e) {}
         }
-        // ② 서버에서 최신 계정 받아 백그라운드 갱신 (타임아웃 6초)
+        // ② 서버에서 최신 계정 받아 비교 — 서버가 로컬보다 최신일 때만 캐시 갱신 (비번 변경 유실 방지)
         const sv = await serverGet('users');
-        if (sv) {
-          try {
-            const arr = typeof sv === 'string' ? JSON.parse(sv) : sv;
-            if (Array.isArray(arr) && arr.length && arr[0].passwordHash) {
-              localStorage.setItem('koition_hr_users', JSON.stringify(arr));
-            }
-          } catch (e) {}
+        const svN = normUsers(sv);
+        if (svN && svN.list.length && svN.list[0].passwordHash) {
+          const localTs = Date.parse(localStorage.getItem('koition_hr_users_ts') || 0) || 0;
+          if (svN.ts >= localTs) {   // 서버가 최신(또는 동급) → 로컬 갱신
+            try { localStorage.setItem('koition_hr_users', JSON.stringify(svN.list)); if (svN.ts) localStorage.setItem('koition_hr_users_ts', new Date(svN.ts).toISOString()); } catch (e) {}
+          } else {
+            // 로컬이 더 최신(다른 데서 서버가 뒤처짐) → 로컬을 서버로 재전송
+            persistUsers(JSON.parse(localStorage.getItem('koition_hr_users')));
+          }
         }
         const stored = localStorage.getItem('koition_hr_users');
         if (stored) {
           const parsed = JSON.parse(stored);
           // 이미 해시된 데이터: passwordHash 필드 존재
           if (parsed.length > 0 && parsed[0].passwordHash) {
-            // 마이그레이션: 시스템관리자 최영숙(cys)을 최고관리자로 승격 (비밀번호는 기존 것 유지)
+            const alreadyEmpId = parsed.some(u => /^K-\d{6}$/.test(u.username));
+            const hasCys = parsed.some(u => u.username === 'cys');
+            // 마이그레이션이 이미 끝난 정상 상태면 그대로 사용 (재저장 안 함 → 비번 변경분 보존)
+            if (alreadyEmpId && hasCys) {
+              setUsers(parsed);
+              setUsersInitialized(true);
+              return;
+            }
+            // 마이그레이션 필요 시에만 수행
             let migrated = parsed.map(u => u.username === 'cys' ? { ...u, role: 'admin', deptScope: '전체' } : u);
-            // cys 계정이 삭제된 경우 초기 비밀번호로 복구 생성
             if (!migrated.some(u => u.username === 'cys')) {
               migrated = [...migrated, { username: 'cys', passwordHash: await hashPassword('uj!5n3Rs'), role: 'admin', name: '최영숙', empId: 'K-140403', deptScope: '전체', mustChangePassword: true, lastPasswordChange: null }];
             }
-            // ★ 사번 아이디 전환 마이그레이션 (1회) — 기존 이니셜 계정을 사번 기준으로 교체.
-            //   admin·cys는 기존 비밀번호/변경분을 그대로 보존하고, 나머지는 INITIAL_USERS(사번)로 재구성.
-            const alreadyEmpId = migrated.some(u => /^K-\d{6}$/.test(u.username));
             if (!alreadyEmpId) {
               const keep = migrated.filter(u => u.username === 'cys' || u.username === 'admin');
               const empAccts = await Promise.all(
@@ -4779,13 +4794,12 @@ function LoginView({ onLogin, policy, users }) {
       // 실패 → 서버에서 최신 계정 재조회 후 재시도 (다른 PC에서 비번 변경 직후 케이스)
       try {
         const sv = await serverGet('users');
-        if (sv) {
-          const arr = typeof sv === 'string' ? JSON.parse(sv) : sv;
-          if (Array.isArray(arr) && arr.length && arr[0].passwordHash) {
-            try { localStorage.setItem('koition_hr_users', JSON.stringify(arr)); } catch (e) {}
-            const u2 = arr.find(x => x.username === uname);
-            if (await tryLogin(u2)) { setLoading(false); return; }
-          }
+        const svN = normUsers(sv);
+        if (svN && svN.list.length && svN.list[0].passwordHash) {
+          const arr = svN.list;
+          try { localStorage.setItem('koition_hr_users', JSON.stringify(arr)); if (svN.ts) localStorage.setItem('koition_hr_users_ts', new Date(svN.ts).toISOString()); } catch (e) {}
+          const u2 = arr.find(x => x.username === uname);
+          if (await tryLogin(u2)) { setLoading(false); return; }
         }
       } catch (e) {}
       setError('아이디 또는 비밀번호가 일치하지 않습니다.');
