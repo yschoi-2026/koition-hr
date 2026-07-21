@@ -10007,6 +10007,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             낙관: Math.round((r.balOpt + bias) / 1000000),
             보수: Math.round((r.balCons + bias) / 1000000),
             안전선: Math.round(safety / 1000000),
+            순증감: Math.round((r.inc - r.exp) / 1000000),   // 그 달 현금 순증감(수입−지출)
+            confirmed: r.confirmed,
           };
           if (av != null && av !== '') d['실제잔고'] = Math.round(Number(av) / 1000000);
           return d;
@@ -10273,42 +10275,48 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                   <ResponsiveContainer width="100%" height="90%" minWidth={0}>
                     <ComposedChart data={chartData} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
                       <defs>
-                        <linearGradient id="balFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={T.brand} stopOpacity={0.42} />
-                          <stop offset="55%" stopColor={T.brand} stopOpacity={0.16} />
-                          <stop offset="100%" stopColor={T.brand} stopOpacity={0.02} />
-                        </linearGradient>
-                        <linearGradient id="pipeFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={T.success} stopOpacity={0.18} />
-                          <stop offset="100%" stopColor={T.success} stopOpacity={0} />
-                        </linearGradient>
                         <linearGradient id="pipeFillHi" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={'#F97316'} stopOpacity={0.30} />
-                          <stop offset="60%" stopColor={'#F97316'} stopOpacity={0.10} />
-                          <stop offset="100%" stopColor={'#F97316'} stopOpacity={0} />
+                          <stop offset="0%" stopColor="#10B981" stopOpacity={0.32} />
+                          <stop offset="60%" stopColor="#10B981" stopOpacity={0.10} />
+                          <stop offset="100%" stopColor="#10B981" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="balFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#6366F1" stopOpacity={0.16} />
+                          <stop offset="100%" stopColor="#6366F1" stopOpacity={0.01} />
+                        </linearGradient>
+                        <linearGradient id="netPos" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#10B981" stopOpacity={0.55} />
+                          <stop offset="100%" stopColor="#10B981" stopOpacity={0.28} />
+                        </linearGradient>
+                        <linearGradient id="netNeg" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#F43F5E" stopOpacity={0.5} />
+                          <stop offset="100%" stopColor="#F43F5E" stopOpacity={0.25} />
                         </linearGradient>
                         <filter id="pipeGlow" x="-20%" y="-20%" width="140%" height="140%">
-                          <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor={'#F97316'} floodOpacity="0.4" />
-                        </filter>
-                        <filter id="lineGlow" x="-20%" y="-20%" width="140%" height="140%">
-                          <feDropShadow dx="0" dy="2.5" stdDeviation="3" floodColor={T.brand} floodOpacity="0.35" />
+                          <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#10B981" floodOpacity="0.4" />
                         </filter>
                         <filter id="actGlow" x="-20%" y="-20%" width="140%" height="140%">
-                          <feDropShadow dx="0" dy="2" stdDeviation="2.5" floodColor={T.gold || '#B8892B'} floodOpacity="0.4" />
+                          <feDropShadow dx="0" dy="2" stdDeviation="2.5" floodColor="#1E293B" floodOpacity="0.4" />
                         </filter>
                       </defs>
-                      <CartesianGrid strokeDasharray="2 4" stroke="#E2E8F0" vertical={false} />
+                      <CartesianGrid strokeDasharray="2 4" stroke="#E9EDF2" vertical={false} />
                       <XAxis dataKey="name" tick={{ fontSize: 10.5, fill: T.textMute }} axisLine={{ stroke: '#CBD5E1' }} tickLine={false} />
-                      <YAxis tick={{ fontSize: 10, fill: T.textMute }} axisLine={false} tickLine={false} width={44} />
-                      <Tooltip formatter={(v) => (v == null ? '-' : v.toLocaleString() + '백만원')} contentStyle={{ fontSize: 12, borderRadius: 10, border: 'none', boxShadow: '0 6px 20px rgba(21,35,63,0.15)' }} />
+                      <YAxis yAxisId="bal" tick={{ fontSize: 10, fill: T.textMute }} axisLine={false} tickLine={false} width={44} />
+                      <YAxis yAxisId="net" orientation="right" tick={{ fontSize: 9.5, fill: '#94A3B8' }} axisLine={false} tickLine={false} width={38} />
+                      <Tooltip formatter={(v, n) => (v == null ? '-' : (n === '월 순증감' ? (v >= 0 ? '+' : '') : '') + v.toLocaleString() + '백만원')} contentStyle={{ fontSize: 12, borderRadius: 10, border: 'none', boxShadow: '0 8px 24px rgba(21,35,63,0.16)' }} />
                       <Legend wrapperStyle={{ fontSize: 11 }} iconType="plainline" />
-                      {safeM > 0 && <ReferenceLine y={safeM} stroke={T.danger} strokeDasharray="5 4" strokeWidth={1.2} label={{ value: `안전선 ${safeM}M`, position: 'insideTopRight', fontSize: 10, fill: T.danger }} />}
-                      {cfg.showBand !== false && <Area type="monotone" dataKey="낙관" name="낙관(수주율+20%p)" stroke="#94C79A" strokeWidth={1} strokeDasharray="2 3" fill="none" dot={false} />}
-                      {cfg.showBand !== false && <Area type="monotone" dataKey="보수" name="보수(수주율-20%p·경비+10%)" stroke="#E3A6A0" strokeWidth={1} strokeDasharray="2 3" fill="none" dot={false} />}
-                      <Area type="monotone" dataKey="예측(파이프라인)" name="🎯 수주 반영 시나리오" stroke={'#F97316'} strokeWidth={3} fill="url(#pipeFillHi)" dot={{ r: 3, fill: '#fff', stroke: '#F97316', strokeWidth: 2 }} activeDot={{ r: 6, strokeWidth: 2, stroke: '#fff' }} style={{ filter: 'url(#pipeGlow)' }} />
-                      <Area type="monotone" dataKey="예측잔고" name="예측 잔고(수주 미반영)" stroke={T.brand} strokeWidth={2.5} strokeDasharray="5 3" fill="url(#balFill)" dot={{ r: 2.5, fill: '#fff', stroke: T.brand, strokeWidth: 1.5 }} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} style={{ filter: 'url(#lineGlow)' }} />
-                      {hasActual && <Line type="monotone" dataKey="실제잔고" name="실제 잔고" stroke={T.gold || '#B8892B'} strokeWidth={3} dot={{ r: 4, fill: '#fff', stroke: T.gold || '#B8892B', strokeWidth: 2 }} activeDot={{ r: 6 }} connectNulls style={{ filter: 'url(#actGlow)' }} />}
-                      <ReferenceDot x={minPt.name} y={minPt.예측잔고} r={6} fill={belowSafe ? T.danger : T.warning} stroke="#fff" strokeWidth={2} label={{ value: '최저점', position: 'bottom', fontSize: 9.5, fill: belowSafe ? T.danger : T.warning, fontWeight: 700 }} />
+                      {safeM > 0 && <ReferenceLine yAxisId="bal" y={safeM} stroke={T.danger} strokeDasharray="5 4" strokeWidth={1.2} label={{ value: `안전선 ${safeM}M`, position: 'insideTopRight', fontSize: 10, fill: T.danger }} />}
+                      {/* 월별 순증감 막대 (오른쪽 축) — 그 달 현금 들고남 */}
+                      <Bar yAxisId="net" dataKey="순증감" name="월 순증감" barSize={16} radius={[3, 3, 0, 0]} isAnimationActive={false}>
+                        {chartData.map((e, i) => <Cell key={i} fill={e.순증감 >= 0 ? 'url(#netPos)' : 'url(#netNeg)'} />)}
+                      </Bar>
+                      {/* 잔고 밴드 */}
+                      {cfg.showBand !== false && <Area yAxisId="bal" type="monotone" dataKey="낙관" name="낙관(수주율+20%p)" stroke="#6EE7B7" strokeWidth={1} strokeDasharray="2 3" fill="none" dot={false} />}
+                      {cfg.showBand !== false && <Area yAxisId="bal" type="monotone" dataKey="보수" name="보수(수주율-20%p·경비+10%)" stroke="#FDA4AF" strokeWidth={1} strokeDasharray="2 3" fill="none" dot={false} />}
+                      <Area yAxisId="bal" type="monotone" dataKey="예측(파이프라인)" name="🎯 수주 반영 시나리오" stroke="#10B981" strokeWidth={3} fill="url(#pipeFillHi)" dot={{ r: 3, fill: '#fff', stroke: '#10B981', strokeWidth: 2 }} activeDot={{ r: 6, strokeWidth: 2, stroke: '#fff' }} style={{ filter: 'url(#pipeGlow)' }} />
+                      <Area yAxisId="bal" type="monotone" dataKey="예측잔고" name="예측 잔고(수주 미반영)" stroke="#6366F1" strokeWidth={2.2} strokeDasharray="5 3" fill="url(#balFill)" dot={{ r: 2.5, fill: '#fff', stroke: '#6366F1', strokeWidth: 1.5 }} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
+                      {hasActual && <Line yAxisId="bal" type="monotone" dataKey="실제잔고" name="실제 잔고(확정)" stroke="#1E293B" strokeWidth={3.5} dot={{ r: 4, fill: '#fff', stroke: '#1E293B', strokeWidth: 2 }} activeDot={{ r: 6 }} connectNulls style={{ filter: 'url(#actGlow)' }} />}
+                      <ReferenceDot yAxisId="bal" x={minPt.name} y={minPt.예측잔고} r={6} fill={belowSafe ? T.danger : T.warning} stroke="#fff" strokeWidth={2} label={{ value: '최저점', position: 'bottom', fontSize: 9.5, fill: belowSafe ? T.danger : T.warning, fontWeight: 700 }} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
