@@ -9941,7 +9941,16 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           if (i >= 0 && i < 12 && amt > 0) extraExpArr[i] += amt;
         });
         const exp = months.map((mo, i) => laborOf(mo, i) + opexOf(i) + taxOf(mo) + extraExpArr[i]);
-        const startBal = Number(cfg.balance) || Number(finData.bankBalance) || 0;
+        // 예측 시작점: 가장 최근 입력된 '월말 실제 통장잔고'를 시작점으로 사용 (없으면 수동 balance → CMS 통장잔고)
+        //   'N월 말 잔고'는 N월 종료 시점 → N+1월부터 수입·지출을 누적한다.
+        const actualBalMapInit = (finData.actualBalances) || {};
+        const actualMonths = Object.keys(actualBalMapInit).filter(k => actualBalMapInit[k] != null && actualBalMapInit[k] !== '').sort();
+        const lastActualKey = actualMonths.length ? actualMonths[actualMonths.length - 1] : null;
+        const lastActualVal = lastActualKey ? Number(actualBalMapInit[lastActualKey]) : null;
+        // 최근 실제월 '말'의 예측창 인덱스. N월말 → N+1월(idx)부터 흐름 시작
+        const lastActualIdx = lastActualKey ? (() => { const mm = lastActualKey.match(/(\d{4})-(\d{2})/); return mm ? idxOf(+mm[1], +mm[2]) : null; })() : null;
+        const startBal = (lastActualVal != null) ? lastActualVal : (Number(cfg.balance) || Number(finData.bankBalance) || 0);
+        const startAfterIdx = (lastActualIdx != null) ? lastActualIdx : -99;   // 이 인덱스(그 달)까지는 실제 확정 → 잔고 고정, 다음 달부터 예측
         // #1 실제잔고 자동보정: 최근 3개월 (실제-예측) 평균 편향을 미래 예측에 반영
         const actualBalMap = (finData.actualBalances) || {};
         // #3 시나리오 밴드: 낙관(수주율+20%p·수금 정상)·보수(수주율-20%p·프로젝트성경비+10%)
@@ -9962,9 +9971,17 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         });
         const expCons = months.map((mo, i) => laborOf(mo, i) + fixedOpexUse + Math.round(projOpexUse * activeRatioOf(i) * 1.1) + taxOf(mo) + extraExpArr[i]);   // 보수: 프로젝트성경비 +10%
         const rows = months.map((mo, i) => {
+          const isConfirmed = i <= startAfterIdx;   // 실제 잔고가 있는 확정 월
+          const aVal = actualBalMapInit[mo.key];
+          if (isConfirmed && aVal != null && aVal !== '') {
+            // 확정 월: 실제 통장잔고를 그대로 사용 (예측 아님)
+            const av = Number(aVal);
+            bal = av; balS = av; balOpt = av; balCons = av;
+            return { ...mo, confirmed: true, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), expEtc: extraExpArr[i], expFixed: fixedOpexUse, expProj: Math.round(projOpexUse * activeRatioOf(i)), incColl: incColl[i], incSched: incSched[i], incManual: incManual[i], incExtra: incExtra[i], incPipe: incPipe[i], prevBal: av, prevBalS: av, activeRatio: activeRatioOf(i), bal, balS, balOpt, balCons, allNotes: ['실제 통장잔고 (확정)'], notes: '실제 잔고' };
+          }
           bal += inc[i] - exp[i]; balS += incS[i] - exp[i];
           balOpt += incOpt[i] - exp[i]; balCons += incCons[i] - expCons[i];
-          return { ...mo, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), expEtc: extraExpArr[i], expFixed: fixedOpexUse, expProj: Math.round(projOpexUse * activeRatioOf(i)), incColl: incColl[i], incSched: incSched[i], incManual: incManual[i], incExtra: incExtra[i], incPipe: incPipe[i], prevBal: bal - (inc[i] - exp[i]), prevBalS: balS - (incS[i] - exp[i]), activeRatio: activeRatioOf(i), bal, balS, balOpt, balCons, allNotes: incNote[i].slice(), notes: incNote[i].slice(0, 3).join(', ') };
+          return { ...mo, confirmed: false, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), expEtc: extraExpArr[i], expFixed: fixedOpexUse, expProj: Math.round(projOpexUse * activeRatioOf(i)), incColl: incColl[i], incSched: incSched[i], incManual: incManual[i], incExtra: incExtra[i], incPipe: incPipe[i], prevBal: bal - (inc[i] - exp[i]), prevBalS: balS - (incS[i] - exp[i]), activeRatio: activeRatioOf(i), bal, balS, balOpt, balCons, allNotes: incNote[i].slice(), notes: incNote[i].slice(0, 3).join(', ') };
         });
         const safety = Number(cfg.safety) || 0;
         const danger = rows.find(r => r.bal < safety);
@@ -10285,20 +10302,12 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 </div>
               );
             })()}
-            {/* 예측 vs 실제 정확도 */}
-            {hasActual && (() => {
-              const diffs = rows.map(r => { const mk = r.y + '-' + String(r.m).padStart(2, '0'); const av = actualBal[mk]; return (av != null && av !== '') ? { label: r.label, pred: r.bal, act: Number(av), diff: r.bal - Number(av) } : null; }).filter(Boolean);
-              if (!diffs.length) return null;
-              const last = diffs[diffs.length - 1];
-              const mape = Math.round(diffs.reduce((a, d) => a + Math.abs(d.diff) / Math.max(1, Math.abs(d.act)), 0) / diffs.length * 100);
-              return (
-                <div style={{ background: T.surfaceAlt, borderRadius: 8, padding: '10px 14px', margin: `${S[3]}px 0`, fontSize: 12 }}>
-                  <strong style={{ color: T.brand }}>📊 예측 정확도 {Math.max(0, 100 - mape)}%</strong> <span style={{ color: T.textMute }}>(실제 입력 {diffs.length}개월 기준 · 평균 오차율 {mape}%)</span>.
-                  최근({last.label}) 예측 {fmtMoney(last.pred)} vs 실제 {fmtMoney(last.act)} · 차이 <strong style={{ color: Math.abs(last.diff) > safety ? T.danger : T.textMute }}>{last.diff >= 0 ? '+' : ''}{fmtMoney(last.diff)}원</strong>
-                  {Math.abs(last.diff) > safety ? ' — 예측 가정(선급률·수금시점·경비)을 재점검하세요.' : ' — 예측이 실제와 잘 맞습니다.'}
-                </div>
-              );
-            })()}
+            {/* 예측 시작점 안내 */}
+            {lastActualKey && (
+              <div style={{ background: T.surfaceAlt, borderRadius: 8, padding: '10px 14px', margin: `${S[3]}px 0`, fontSize: 12, lineHeight: 1.7 }}>
+                <strong style={{ color: T.brand }}>📍 예측 기준점</strong> — {lastActualKey.replace('-', '.')} 말 <strong>실제 통장잔고 {fmtMoney(lastActualVal)}원</strong>에서 출발해, 그 다음 달부터 수입·지출을 반영해 미래 잔고를 예측합니다. 실제 잔고를 입력한 달(회색 '실제 잔고' 표시)은 예측이 아니라 확정값이며, 매월 말 실제 잔고를 갱신할수록 예측 시작점이 최신화되어 정확해집니다.
+              </div>
+            )}
             {/* 월별 수입 구성 시각화 (스택 막대) */}
             <details className="no-print" open style={{ marginTop: S[3] }}>
               <summary style={{ fontSize: 12.5, fontWeight: 700, color: T.brand, cursor: 'pointer', padding: '6px 0' }}>📊 월별 수입 구성 (수금등록·계약 선급/잔금·수동회차·기타예정)</summary>
