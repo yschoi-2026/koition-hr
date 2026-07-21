@@ -11534,6 +11534,7 @@ function ProjectEditModal({ project, employees, currentYear, onSave, onClose }) 
     const worker = Number(form.workerLabor) || 0, mgr = Number(form.mgrLabor) || 0;
     onSave({
       ...form,
+      _yearTouched: undefined,
       year: Number(form.year) || currentYear,
       revenue: Number(form.revenue) || 0,
       workerLabor: worker, mgrLabor: mgr, laborCost: worker + mgr,
@@ -11562,9 +11563,14 @@ function ProjectEditModal({ project, employees, currentYear, onSave, onClose }) 
             <div><label style={labelStyle}>프로젝트명</label><input style={inputStyle} value={form.name} onChange={e => set('name', e.target.value)} placeholder="예) 동원탄좌 M650 아카이브 2차년도" /></div>
             <div><label style={labelStyle}>발주처</label><input style={inputStyle} value={form.client} onChange={e => set('client', e.target.value)} placeholder="예) 강원랜드 사업본부" /></div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr 1fr', gap: S[3], marginBottom: S[5] }}>
-            <div><label style={labelStyle}>연도</label><input style={numStyle} type="number" value={form.year} onChange={e => set('year', e.target.value)} /></div>
-            <div><label style={labelStyle}>기간</label><input style={inputStyle} value={form.period} onChange={e => set('period', e.target.value)} placeholder="2026.01~2026.12" /></div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr 1fr', gap: S[3], marginBottom: 4 }}>
+            <div><label style={labelStyle}>귀속연도 <span style={{ fontSize: 10, color: T.textMute }}>(완료 기준)</span></label><input style={numStyle} type="number" value={form.year} onChange={e => { set('year', e.target.value); set('_yearTouched', true); }} /></div>
+            <div><label style={labelStyle}>기간</label><input style={inputStyle} value={form.period} onChange={e => {
+              const v = e.target.value; set('period', v);
+              // 연말 걸침 사업: 종료연도를 귀속연도로 자동 제안 (사용자가 이미 지정했으면 존중)
+              const m = String(v).match(/~\s*(\d{4})[.\-\/]/);
+              if (m && (!form._yearTouched)) set('year', Number(m[1]));
+            }} placeholder="2025.11~2026.03" /></div>
             <div>
               <label style={labelStyle}>상태</label>
               <select style={inputStyle} value={form.status} onChange={e => set('status', e.target.value)}>
@@ -11572,6 +11578,9 @@ function ProjectEditModal({ project, employees, currentYear, onSave, onClose }) 
                 <option value="completed">종료</option>
               </select>
             </div>
+          </div>
+          <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: S[5], lineHeight: 1.5 }}>
+            💡 <strong>회계연도를 걸치는 사업</strong>(예: 2025.11~2026.03)은 사업을 나누지 말고 <strong>하나로</strong> 두고, 귀속연도를 <strong>완료연도(2026)</strong>로 지정하세요. 자금예측은 계약기간 기준으로 선급(착수월)·잔금(완료 익월)을 자동 배치하므로, 2025년에 받은 선급도 정확히 반영됩니다.
           </div>
           {/* 컨소시엄(공동수급) 정보 — 우리 회사 지분만 매출로 반영 */}
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: S[3], marginBottom: S[5] }}>
