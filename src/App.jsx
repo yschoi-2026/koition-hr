@@ -11295,7 +11295,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
                   {inp('작업자인건비', 'workerLabor', wk)}
                   {inp('관리자인건비', 'mgrLabor', mg)}
                   {inp('제경비(외주·직접)', 'overhead', num(p.overhead))}
-                  {inp('기타경비', 'otherCost', num(p.otherCost))}
+                  {inp('기타비' + (p.otherCostMemo ? ` (${p.otherCostMemo})` : ''), 'otherCost', num(p.otherCost))}
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span style={{ color: T.textMute }}>간접경비(공통비 배부)</span><strong>{fmtMoney(alloc)}</strong></div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderTop: `1px dashed ${T.border}`, marginTop: 4 }}><span>총원가(완전)</span><strong style={{ color: T.danger }}>{fmtMoney(fullCost)}</strong></div>
                 </div>
@@ -11839,8 +11839,12 @@ function ProjectEditModal({ project, employees, currentYear, onSave, onClose }) 
             <div><label style={labelStyle}>제경비</label><input style={numStyle} inputMode="numeric" value={fmtInput(form.overhead)} onChange={e => set('overhead', parseInput(e.target.value))} placeholder="0" /></div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: S[3], marginBottom: S[4] }}>
-            <div><label style={labelStyle}>외주·기타비</label><input style={numStyle} inputMode="numeric" value={fmtInput(form.otherCost)} onChange={e => set('otherCost', parseInput(e.target.value))} placeholder="0" /></div>
+            <div><label style={labelStyle}>기타비 <span style={{ fontSize: 10, color: T.textMute }}>(영업대가 등)</span></label><input style={numStyle} inputMode="numeric" value={fmtInput(form.otherCost)} onChange={e => set('otherCost', parseInput(e.target.value))} placeholder="0" /></div>
+            <div style={{ gridColumn: 'span 2' }}><label style={labelStyle}>기타비 메모</label><input style={inputStyle} value={form.otherCostMemo || ''} onChange={e => set('otherCostMemo', e.target.value)} placeholder="예) 영업대가(소개 수수료)" /></div>
             <div><label style={labelStyle}>계획 원가(예산)</label><input style={numStyle} inputMode="numeric" value={fmtInput(form.planCost)} onChange={e => set('planCost', parseInput(e.target.value))} placeholder="0" /></div>
+          </div>
+          <div style={{ fontSize: 10.5, color: T.textMute, marginTop: -8, marginBottom: S[4], lineHeight: 1.5 }}>
+            💡 <strong>제경비</strong> = 사업 수행 원가(외주 작업·직접경비 등). <strong>기타비</strong> = 영업대가·소개 수수료처럼 수행과 무관한 지출 — 분리해두면 사업의 순수 수행 수익성과 영업비를 구분해 볼 수 있습니다. 수익률에는 둘 다 반영됩니다.
           </div>
 
           {/* 계산 결과 */}
