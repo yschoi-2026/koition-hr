@@ -2369,36 +2369,71 @@ async function parseMonthlyActuals(buf, fname, mapFn) {
   const wb = XLSX.read(buf, { type: 'array' });
   const num = (x) => { const n = Number(String(x == null ? '' : x).replace(/[^\d.-]/g, '')); return isNaN(n) ? 0 : n; };
   const grid = (n) => XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: null });
-  const out = { worker: {}, mgr: {}, oh: {} }; const un = new Set(); let kind = null;
+  const out = { worker: {}, mgr: {}, oh: {}, revenue: {}, conTotal: 0 }; const un = new Set(); let kind = null;
   const monthSheets = wb.SheetNames.filter(n => /^\d{1,2}월$/.test(n));
-  if (monthSheets.length) {           // (A) 계약직 통합본 → 작업자인건비
-    kind = '계약직 인건비';
+  if (wb.SheetNames.includes('프로젝트별 집계')) {   // (우선) 지출정리 → 사업별 매출 + 제경비 (실제 파일 구조)
+    kind = '사업별 매출·경비(프로젝트별 집계)';
+    // 헤더 자동 탐지: 프로젝트 / 매출 / 매입(외주) / 지출결의서 / 부동산
+    const g = grid('프로젝트별 집계');
+    // 헤더행: '프로젝트'와 '매출'이 서로 다른 셀에 있는 행 (제목행 오탐 방지)
+    let hr = g.findIndex(r => r && r.some(c => String(c || '').trim() === '프로젝트') && r.some(c => String(c || '').replace(/\s/g, '') === '매출'));
+    if (hr < 0) hr = g.findIndex(r => r && r.filter(c => c != null).length >= 4 && r.some(c => String(c || '').includes('매출')));
+    if (hr < 0) hr = 2;
+    const hdr = g[hr] || [];
+    const cName = 0;
+    const cRev = hdr.findIndex(c => String(c || '').replace(/\s/g, '') === '매출');
+    const cOut = hdr.findIndex(c => String(c || '').includes('외주') || String(c || '').includes('매입'));
+    const cDir = hdr.findIndex(c => String(c || '').includes('지출결의') || String(c || '').includes('직접경비'));
+    const cEst = hdr.findIndex(c => String(c || '').includes('부동산'));
+    g.slice(hr + 1).forEach(r => {
+      if (!r || !r[cName]) return; const nm = String(r[cName]).trim();
+      if (['프로젝트', '참고', '관련사업명', '합계', '소계', '총계'].includes(nm)) return;
+      const rev = cRev >= 0 ? num(r[cRev]) : 0;
+      const ohv = (cOut >= 0 ? num(r[cOut]) : 0) + (cDir >= 0 ? num(r[cDir]) : 0) + (cEst >= 0 ? num(r[cEst]) : 0);
+      if (rev <= 0 && ohv <= 0) return;
+      const pid = mapFn(nm);
+      if (pid) { if (rev > 0) out.revenue[pid] = (out.revenue[pid] || 0) + rev; if (ohv > 0) out.oh[pid] = (out.oh[pid] || 0) + ohv; }
+      else un.add(nm);
+    });
+  } else if (monthSheets.length) {           // (A) 계약직 통합본 → R열 프로젝트명 기준 사업별 인건비
+    kind = '계약직 인건비(사업별)';
     monthSheets.forEach(sn => {
       const rows = grid(sn); const hdr = rows[1] || [];
       const col = (kw) => hdr.findIndex(c => String(c || '').replace(/\s/g, '').includes(kw));
-      const cG = col('지급총액'), cN = col('국민연금'), cH = col('건강보험'), cE = col('고용보험'), cP = col('프로젝트');
+      const cG = col('지급총액'), cN = col('국민연금'), cH = col('건강보험'), cE = col('고용보험');
+      let cP = hdr.findIndex(c => String(c || '').replace(/\s/g, '') === '프로젝트');   // R열 프로젝트명
+      if (cP < 0) cP = 17;   // R열 기본 위치
       rows.slice(2).forEach(r => {
-        if (!r) return; const g = cG >= 0 ? num(r[cG]) : 0; if (g <= 0) return;
-        const nm = String((cP >= 0 && r[cP]) || '').trim(); if (!nm || nm.includes('#')) return;
-        const pid = mapFn(nm); const v = g + (cN >= 0 ? num(r[cN]) : 0) + (cH >= 0 ? num(r[cH]) : 0) + (cE >= 0 ? num(r[cE]) : 0);
-        if (pid) out.worker[pid] = (out.worker[pid] || 0) + v; else un.add(nm);
+        if (!r) return; const g0 = cG >= 0 ? num(r[cG]) : 0; if (g0 <= 0) return;
+        const v = g0 + (cN >= 0 ? num(r[cN]) : 0) + (cH >= 0 ? num(r[cH]) : 0) + (cE >= 0 ? num(r[cE]) : 0);
+        // R열 형태: "[발주처]사업명" → 대괄호 접두 제거 후 매칭
+        const raw = String((r[cP] != null ? r[cP] : '')).trim();
+        const nm = raw.replace(/^\[[^\]]*\]\s*/, '').trim();
+        if (nm && !nm.includes('#')) { const pid = mapFn(nm); if (pid) { out.worker[pid] = (out.worker[pid] || 0) + v; return; } if (raw) un.add(nm.slice(0, 30)); }
+        out.conTotal += v;   // 미기재·미매칭이면 총액에 누적
       });
     });
-  } else if (wb.SheetNames.includes('프로젝트별 집계')) {   // (B) 지출정리 → 제경비
-    kind = '사업경비(외주·직접)';
-    grid('프로젝트별 집계').slice(3).forEach(r => {
-      if (!r || !r[0]) return; const nm = String(r[0]).trim();
-      if (['프로젝트', '참고', '관련사업명', '합계'].includes(nm)) return;
-      const v = num(r[2]) + num(r[3]) + num(r[4]); if (v <= 0) return;
-      const pid = mapFn(nm); if (pid) out.oh[pid] = (out.oh[pid] || 0) + v; else un.add(nm);
-    });
+    // 소득세 시트: 사업소득 원천징수 직원 (적요=사업명). 지급총액을 사업별 합산.
+    if (wb.SheetNames.includes('소득세')) {
+      const rows = grid('소득세'); const hdr = rows[1] || [];
+      const col = (kw) => hdr.findIndex(c => String(c || '').replace(/\s/g, '').includes(kw));
+      const cG = col('지급총액'), cJ = (() => { const i = col('적요'); return i >= 0 ? i : 6; })();
+      rows.slice(2).forEach(r => {
+        if (!r) return; const g0 = cG >= 0 ? num(r[cG]) : 0; if (g0 <= 0) return;
+        const raw = String((r[cJ] != null ? r[cJ] : '')).trim();
+        // 적요에서 사업명 추출: 대괄호·'25.12월 급여' 같은 꼬리말 제거
+        const nm = raw.replace(/^\[[^\]]*\]\s*/, '').replace(/\s*\d{2}\.?\d{0,2}월?\s*급여.*$/, '').trim();
+        if (nm && !nm.includes('#')) { const pid = mapFn(nm); if (pid) { out.worker[pid] = (out.worker[pid] || 0) + g0; return; } if (raw) un.add(nm.slice(0, 30)); }
+        out.conTotal += g0;
+      });
+    }
   } else if (wb.SheetNames.includes('인력운영현황')) {       // (C) 관리자 인건비
     kind = '관리자 인건비';
     const rows = grid('인력운영현황'); let cur = '';
     rows.slice(2).forEach(r => {
       if (!r) return; if (r[5]) cur = String(r[5]);
       if (String(r[6] || '').includes('수행별인건비')) {
-        const v = r.slice(8, 8 + Math.min(12, new Date().getMonth() + 1)).reduce((a, c) => a + num(c), 0); if (v <= 0) return;   // 경과월까지만 합산(미래 계획 제외)
+        const v = r.slice(8, 8 + Math.min(12, new Date().getMonth() + 1)).reduce((a, c) => a + num(c), 0); if (v <= 0) return;
         const pid = mapFn(cur); if (pid) out.mgr[pid] = (out.mgr[pid] || 0) + v; else un.add(cur.slice(0, 30));
       }
     });
@@ -11025,31 +11060,75 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
   const [analId, setAnalId] = React.useState('');
   const [analEdit, setAnalEdit] = React.useState(false);
   const actRef = React.useRef(null);
+  const [actPreview, setActPreview] = useState(null);   // 월 실적 반영 미리보기 (승인 전)
   const handleActuals = async (e) => {
     const files = Array.from(e.target.files || []); if (!files.length) return;
     const pm = (policy && policy.projMap) || [];
-    const mapFn = (nm) => { const hit = pm.find(m => m.kw && String(nm).includes(m.kw)); return hit ? hit.id : null; };
-    const acc = { worker: {}, mgr: {}, oh: {} }; const kinds = []; let unAll = [];
+    const norm = (x) => String(x || '').replace(/\s|·|\(|\)|\[|\]|,|\.|、/g, '').toLowerCase();
+    // 토큰화: 괄호 내용·연도·조사 제거 후 의미 단어 추출
+    const tokenize = (x) => String(x || '').replace(/\([^)]*\)|\[[^\]]*\]/g, ' ').replace(/\d{4}년?|용역|사업|구축|개발|및|관련|전수조사|유지관리|유지보수/g, ' ').split(/[\s·,]+/).map(t => t.trim()).filter(t => t.length >= 2);
+    // 매칭: ①projMap 키워드 ②정규화 부분일치 ③토큰 교집합(핵심 단어 2개+ 또는 50%+ 겹침)
+    const mapFn = (nm) => {
+      const hit = pm.find(m => m.kw && String(nm).includes(m.kw)); if (hit) return hit.id;
+      const n = norm(nm); if (n.length < 3) return null;
+      let p = (projects || []).find(p => { const pn = norm(p.name); return pn && (pn.includes(n) || n.includes(pn)); });
+      if (p) return p.id;
+      // 토큰 교집합 스코어링
+      const nt = tokenize(nm); if (!nt.length) return null;
+      let best = null, bestScore = 0;
+      (projects || []).forEach(pr => {
+        const pt = tokenize(pr.name); if (!pt.length) return;
+        const inter = nt.filter(t => pt.some(u => u.includes(t) || t.includes(u))).length;
+        const score = inter / Math.max(nt.length, pt.length);
+        if (inter >= 2 && score > bestScore) { bestScore = score; best = pr.id; }
+      });
+      return bestScore >= 0.4 ? best : null;
+    };
+    const acc = { worker: {}, mgr: {}, oh: {}, revenue: {} }; const kinds = []; let unAll = []; let conTotal = 0;
     for (const f of files) {
       try {
         const { kind, out, unmatched } = await parseMonthlyActuals(await f.arrayBuffer(), f.name, mapFn);
         if (!kind) { unAll.push(f.name + ': 양식 인식 실패'); continue; }
         kinds.push(kind); unAll = unAll.concat(unmatched);
-        ['worker', 'mgr', 'oh'].forEach(k => Object.entries(out[k]).forEach(([pid, v]) => { acc[k][pid] = (acc[k][pid] || 0) + v; }));
+        ['worker', 'mgr', 'oh', 'revenue'].forEach(k => Object.entries(out[k] || {}).forEach(([pid, v]) => { acc[k][pid] = (acc[k][pid] || 0) + v; }));
+        conTotal += out.conTotal || 0;
       } catch (err) { unAll.push(f.name + ': 오류'); }
     }
-    const touched = new Set([...Object.keys(acc.worker), ...Object.keys(acc.mgr), ...Object.keys(acc.oh)]);
-    if (!touched.size) { alert('반영할 데이터를 찾지 못했습니다.\n' + unAll.join('\n')); if (actRef.current) actRef.current.value = ''; return; }
-    const updated = (projects || []).filter(p => touched.has(p.id)).map(p => ({
-      ...p,
-      ...(acc.worker[p.id] != null ? { workerLabor: Math.round(acc.worker[p.id]) } : {}),
-      ...(acc.mgr[p.id] != null ? { mgrLabor: Math.round(acc.mgr[p.id]) } : {}),
-      ...(acc.oh[p.id] != null ? { overhead: Math.round(acc.oh[p.id]) } : {}),
-    }));
-    bulkUpsertProjects(updated);
-    alert('월 실적 반영 완료 (누계 기준 대체)\n· ' + kinds.join('\n· ') + '\n· 사업 ' + touched.size + '건 갱신 — 수익성·기여도·자금예측에 즉시 반영'
-      + (unAll.length ? '\n\n⚠ 미매핑(정책 설정→사업명 매핑표에 추가):\n' + unAll.slice(0, 8).join('\n') : ''));
+    const touched = new Set([...Object.keys(acc.worker), ...Object.keys(acc.mgr), ...Object.keys(acc.oh), ...Object.keys(acc.revenue)]);
+    if (!touched.size && !conTotal) { alert('반영할 데이터를 찾지 못했습니다.\n' + unAll.join('\n')); if (actRef.current) actRef.current.value = ''; return; }
+    // 미리보기 항목 구성: 각 사업의 현재값 vs 파일값 비교 (덮어쓰기 전 확인)
+    const changes = [...touched].map(pid => {
+      const p = (projects || []).find(x => x.id === pid); if (!p) return null;
+      const c = { id: pid, name: p.name };
+      if (acc.revenue[pid] != null) { c.revenue = { cur: Number(p.revenue) || 0, next: Math.round(acc.revenue[pid]) }; }
+      if (acc.worker[pid] != null) { c.worker = { cur: Number(p.workerLabor) || 0, next: Math.round(acc.worker[pid]) }; }
+      if (acc.mgr[pid] != null) { c.mgr = { cur: Number(p.mgrLabor) || 0, next: Math.round(acc.mgr[pid]) }; }
+      if (acc.oh[pid] != null) { c.oh = { cur: Number(p.overhead) || 0, next: Math.round(acc.oh[pid]) }; }
+      return c;
+    }).filter(Boolean);
+    setActPreview({ changes, kinds, unAll, conTotal, acc,
+      // 기본 선택: 매출은 덮어쓰기 위험이 커서 기본 해제, 나머지는 기본 선택
+      apply: { revenue: false, worker: true, mgr: true, oh: true },
+      skip: {} });   // 사업별 제외 (skip[pid]=true면 그 사업 반영 안 함)
     if (actRef.current) actRef.current.value = '';
+  };
+  // 미리보기 승인 → 실제 반영
+  const applyActuals = (preview) => {
+    const { changes, conTotal, apply, skip } = preview;
+    const updated = changes.filter(c => !skip[c.id]).map(c => {
+      const p = (projects || []).find(x => x.id === c.id); if (!p) return null;
+      return {
+        ...p,
+        ...(apply.revenue && c.revenue ? { revenue: c.revenue.next } : {}),
+        ...(apply.worker && c.worker ? { workerLabor: c.worker.next } : {}),
+        ...(apply.mgr && c.mgr ? { mgrLabor: c.mgr.next } : {}),
+        ...(apply.oh && c.oh ? { overhead: c.oh.next } : {}),
+      };
+    }).filter(Boolean);
+    if (updated.length) bulkUpsertProjects(updated);
+    if (conTotal > 0 && setCashCfg) setCashCfg(prev => ({ ...prev, conTotalActual: Math.round(conTotal) }));
+    setActPreview(null);
+    alert('월 실적 반영 완료\n· 사업 ' + updated.length + '건 갱신' + (conTotal > 0 ? '\n· 계약직 미배정 총액 ' + fmtMoney(Math.round(conTotal)) + '원' : ''));
   };
   const canEdit = user.role === 'admin' || user.deptScope === '경영지원부';
   const cfg = (policy && policy.diag) || {};
@@ -11600,13 +11679,75 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
           employees={employees}
           currentYear={currentYear}
           pmFloor={pmFloor}
-          onApply={(rows) => { bulkUpsertProjects(rows); setSagwanOpen(false); }}
+          onApply={(rows) => {
+            // 사업관리 업로드: 화면에서 관리하는 참여인력(members)·관리자인건비·수작업 매출은 보존.
+            //   파일이 그 값을 비워서 덮어쓰지 않도록, 기존 값이 있으면 유지하고 새 정보(신규 사업·기간 등)만 반영.
+            const merged = rows.map(r => {
+              const old = (projects || []).find(p => p.id === r.id);
+              if (!old) return r;   // 신규 사업은 그대로 추가
+              return {
+                ...old, ...r,
+                members: (old.members && old.members.length) ? old.members : (r.members || []),   // 화면 참여인력 우선
+                mgrLabor: (old.mgrLabor != null && old.mgrLabor !== '' && Number(old.mgrLabor) > 0) ? old.mgrLabor : r.mgrLabor,
+                revenue: (old.revenue != null && Number(old.revenue) > 0) ? old.revenue : r.revenue,   // 수작업 계약금액 보존
+              };
+            });
+            bulkUpsertProjects(merged); setSagwanOpen(false);
+          }}
           onApplyProposals={(props) => bulkUpsertProposals(props)}
           onApplyOverheads={(ohs) => bulkUpsertOverheads(ohs)}
           onApplyLedger={(l) => bulkSetEmpLedger && bulkSetEmpLedger(l)}
           onClose={() => setSagwanOpen(false)}
         />
       )}
+      {actPreview && (() => {
+        const pv = actPreview;
+        const fld = [['revenue', '매출', T.brand], ['worker', '작업자 인건비', T.warning], ['mgr', '관리자 인건비', '#7C5CBF'], ['oh', '제경비', T.textMute]];
+        const hasField = (k) => pv.changes.some(c => c[k]);
+        const toggle = (k) => setActPreview(p => ({ ...p, apply: { ...p.apply, [k]: !p.apply[k] } }));
+        return (
+          <div onClick={() => setActPreview(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div onClick={e => e.stopPropagation()} style={{ ...card(), padding: S[5], width: 720, maxWidth: '100%', maxHeight: '88vh', overflow: 'auto' }}>
+              <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 4 }}>월 실적 반영 — 미리보기 확인</div>
+              <div style={{ fontSize: 12, color: T.textMute, marginBottom: S[3] }}>인식: {pv.kinds.join(' · ') || '-'}. <strong style={{ color: T.danger }}>아래 항목이 파일 값으로 덮어써집니다.</strong> 반영할 항목만 체크하세요. (현재값 → 파일값)</div>
+              <div style={{ display: 'flex', gap: S[3], flexWrap: 'wrap', marginBottom: S[3], padding: S[3], background: T.surfaceAlt, borderRadius: 8 }}>
+                {fld.filter(([k]) => hasField(k)).map(([k, label, color]) => (
+                  <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: pv.apply[k] ? color : T.textMute }}>
+                    <input type="checkbox" checked={pv.apply[k]} onChange={() => toggle(k)} />{label} 반영{k === 'revenue' ? ' (주의: 계약금액 덮어씀)' : ''}
+                  </label>
+                ))}
+              </div>
+              <div style={{ overflow: 'auto', maxHeight: '48vh' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead><tr style={{ background: T.surfaceAlt }}>
+                    <Th align="center"><input type="checkbox" checked={pv.changes.every(c => !pv.skip[c.id])} onChange={e => setActPreview(p => ({ ...p, skip: e.target.checked ? {} : Object.fromEntries(p.changes.map(c => [c.id, true])) }))} /></Th>
+                    <Th>사업</Th>{fld.filter(([k]) => hasField(k) && pv.apply[k]).map(([k, label]) => <Th key={k} align="right">{label}</Th>)}
+                  </tr></thead>
+                  <tbody>
+                    {pv.changes.map(c => (
+                      <tr key={c.id} style={{ borderBottom: `1px solid ${T.divider}`, opacity: pv.skip[c.id] ? 0.4 : 1 }}>
+                        <Td align="center"><input type="checkbox" checked={!pv.skip[c.id]} onChange={() => setActPreview(p => ({ ...p, skip: { ...p.skip, [c.id]: !p.skip[c.id] } }))} /></Td>
+                        <Td style={{ fontSize: 11.5 }}>{c.name}</Td>
+                        {fld.filter(([k]) => hasField(k) && pv.apply[k]).map(([k]) => (
+                          <Td key={k} align="right" mono style={{ fontSize: 11 }}>
+                            {c[k] ? (<><span style={{ color: T.textLight, textDecoration: c[k].cur !== c[k].next ? 'line-through' : 'none' }}>{fmtMoney(c[k].cur)}</span>{c[k].cur !== c[k].next && <><br /><span style={{ color: c[k].next > c[k].cur ? T.success : T.danger, fontWeight: 700 }}>→ {fmtMoney(c[k].next)}</span></>}</>) : <span style={{ color: T.textLight }}>-</span>}
+                          </Td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {pv.conTotal > 0 && <div style={{ fontSize: 11.5, color: T.textMute, marginTop: S[2] }}>· 계약직 미배정(R열 없음) 총액 {fmtMoney(Math.round(pv.conTotal))}원 — 자금예측 참고용으로만 저장</div>}
+              {pv.unAll.length > 0 && <div style={{ fontSize: 11, color: T.warning, marginTop: 6, lineHeight: 1.6 }}>⚠ 미매칭(반영 안 됨): {pv.unAll.slice(0, 8).join(' / ')}</div>}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: S[2], marginTop: S[4] }}>
+                <Button variant="outline" size="sm" onClick={() => setActPreview(null)}>취소</Button>
+                <Button variant="primary" size="sm" onClick={() => applyActuals(pv)}>선택 항목 반영</Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -11865,7 +12006,7 @@ function _sgYM(cell) {
 function parseSagwanWorkbook(XLSX, arrayBuffer, yearDefault, pmFloor) {
   const floor = pmFloor != null ? pmFloor : PM_MIN_CONTRIBUTION;
   const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
-  for (const n of ['사업진행현황', '사업별집행내역', '인력운영현황']) {
+  for (const n of ['사업진행현황', '사업별집행내역']) {
     if (!wb.Sheets[n]) throw new Error(`필수 시트가 없습니다: "${n}". 표준 사업관리 워크북인지 확인하세요.`);
   }
   // 1) 프로젝트 마스터
@@ -11914,9 +12055,11 @@ function parseSagwanWorkbook(XLSX, arrayBuffer, yearDefault, pmFloor) {
     else if (F === '사업경비') { projects[cur]._ee = AG; projects[cur]._plan += (AH || 0); }
     else if (F === '소계') projects[cur]._et = AG;
   }
-  // 3) 인력운영현황 → 참여자·투입 인건비
-  const ws3 = wb.Sheets['인력운영현황']; const rng3 = XLSX.utils.decode_range(ws3['!ref']);
+  // 3) 인력운영현황 → 참여자·투입 인건비 (선택 시트 — 없으면 화면에서 배분한 참여인력 유지)
+  const ws3 = wb.Sheets['인력운영현황']; 
   let emp = null, proj = null; const mm = {}; const unmatched = new Set();
+  if (ws3) {
+  const rng3 = XLSX.utils.decode_range(ws3['!ref']);
   for (let r = 2; r <= rng3.e.r; r++) {
     const A = _sgStr(ws3, XLSX, r, 0);
     if (A.indexOf('K-') === 0) emp = { id: A, name: _sgStr(ws3, XLSX, r, 1), pos: _sgStr(ws3, XLSX, r, 3) };
@@ -11930,6 +12073,7 @@ function parseSagwanWorkbook(XLSX, arrayBuffer, yearDefault, pmFloor) {
       if (!mm[no][emp.id]) mm[no][emp.id] = { name: emp.name, pos: emp.pos, labor: 0 };
       mm[no][emp.id].labor += V;
     }
+  }
   }
   // 4) 합산 + 기여도
   Object.keys(projects).forEach(no => {
@@ -12067,7 +12211,7 @@ function SagwanUploadModal({ employees, currentYear, onApply, onApplyProposals, 
               <div style={{ fontSize: 11, fontWeight: 600, color: T.brand, letterSpacing: '0.15em', textTransform: 'uppercase' }}>사업관리 워크북 자동 변환</div>
             </div>
             <h2 style={{ margin: `${S[1]}px 0 0`, fontSize: 20, fontWeight: 700, color: T.ink }}>사업관리 엑셀 업로드</h2>
-            <div style={{ fontSize: 12, color: T.textMute, marginTop: 4 }}>사업진행현황·사업별집행내역·인력운영현황을 읽어 프로젝트 수익성·기여도를 자동 산정합니다.</div>
+            <div style={{ fontSize: 12, color: T.textMute, marginTop: 4 }}>사업진행현황·사업별집행내역을 읽어 프로젝트·매출·경비를 반영합니다. <strong>인력운영현황 시트는 선택</strong> — 화면에서 참여인력을 배분 중이면 넣지 않아도 되며, 넣더라도 화면 입력이 우선 보존됩니다.</div>
           </div>
           <button onClick={onClose} style={{ padding: 8, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}><X size={20} /></button>
         </div>
