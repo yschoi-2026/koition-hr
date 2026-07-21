@@ -2213,8 +2213,17 @@ function applyPmFloor(members, floor) {
 }
 
 // 프로젝트 1건의 파생 지표 계산
+// 실효 매출: 컨소시엄에서 매출에 '총계약액'을 넣고 revIsTotal=true면 지분율(shareRate)만큼만 우리 몫으로 인식.
+//   기존 데이터(우리 몫을 직접 입력)는 revIsTotal 없으므로 그대로 사용 → 하위호환.
+function effectiveRevenue(p) {
+  const raw = Number(p.revenue) || 0;
+  if (p.revIsTotal && p.shareRate != null && p.shareRate !== '' && Number(p.shareRate) > 0) {
+    return Math.round(raw * Number(p.shareRate) / 100);
+  }
+  return raw;
+}
 function projectMetrics(p) {
-  const revenue = Number(p.revenue) || 0;      // 매출
+  const revenue = effectiveRevenue(p);          // 매출 (컨소시엄이면 지분 반영된 우리 몫)
   const labor = Number(p.laborCost) || 0;      // 인건비(작업자+관리자)
   const overhead = Number(p.overhead) || 0;    // 제경비
   const other = Number(p.otherCost) || 0;      // 외주·기타 직접비
@@ -9946,10 +9955,11 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           }
           const pr = parsePeriod(p.period); if (!pr) return;
           const adv = advOf(p.id);
+          const rev = effectiveRevenue(p);   // 컨소시엄이면 지분 반영된 우리 몫
           const si = idxOf(pr.sy, pr.sm), eiRaw = idxOf(pr.ey, pr.em) + 1; // 잔금 = 검수 익월
-          if (si >= 0 && si < 12 && adv > 0) { const a = p.revenue * adv; inc[si] += a; incSched[si] += a; incNote[si].push(`${p.id} 선급 ${fmtEok(a)}`); }
+          if (si >= 0 && si < 12 && adv > 0) { const a = rev * adv; inc[si] += a; incSched[si] += a; incNote[si].push(`${p.id} 선급 ${fmtEok(a)}`); }
           const ei = eiRaw < 0 ? 0 : eiRaw; // 이미 종료됐는데 미수금 → 이번 달 수금 가정
-          if (ei < 12) { const rem = p.revenue * (1 - adv); inc[ei] += rem; incSched[ei] += rem; incNote[ei].push(`${p.id} 잔금 ${fmtEok(rem)}${eiRaw < 0 ? '(지연)' : ''}`); }
+          if (ei < 12) { const rem = rev * (1 - adv); inc[ei] += rem; incSched[ei] += rem; incNote[ei].push(`${p.id} 잔금 ${fmtEok(rem)}${eiRaw < 0 ? '(지연)' : ''}`); }
         });
         // ②-B 기타 예정 수입 (사용자 직접 등록: 소규모 매출·비매출조직 수익 등) — cfg.extraIncome[]
         (cfg.extraIncome || []).forEach(e => {
@@ -11858,13 +11868,25 @@ function ProjectEditModal({ project, employees, currentYear, onSave, onClose }) 
             💡 <strong>회계연도를 걸치는 사업</strong>(예: 2025.11~2026.03)은 사업을 나누지 말고 <strong>하나로</strong> 두고, 귀속연도를 <strong>완료연도(2026)</strong>로 지정하세요. 자금예측은 계약기간 기준으로 선급(착수월)·잔금(완료 익월)을 자동 배치하므로, 2025년에 받은 선급도 정확히 반영됩니다.
           </div>
           {/* 컨소시엄(공동수급) 정보 — 우리 회사 지분만 매출로 반영 */}
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: S[3], marginBottom: S[5] }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: S[3], marginBottom: S[3] }}>
             <div><label style={labelStyle}>컨소시엄/공동수급 (선택 · 표시용)</label><input style={inputStyle} value={form.consortium || ''} onChange={e => set('consortium', e.target.value)} placeholder="예) ○○기록물+△△소프트 공동수급 (주관: ○○)" /></div>
-            <div><label style={labelStyle}>우리 지분율(%) · 선택</label><input style={numStyle} inputMode="numeric" value={form.shareRate ?? ''} onChange={e => set('shareRate', e.target.value === '' ? '' : Number(e.target.value))} placeholder="예: 40" /></div>
+            <div><label style={labelStyle}>우리 지분율(%)</label><input style={numStyle} inputMode="numeric" value={form.shareRate ?? ''} onChange={e => set('shareRate', e.target.value === '' ? '' : Number(e.target.value))} placeholder="예: 40" /></div>
           </div>
-          <div style={{ fontSize: 10.5, color: T.textMute, marginTop: -12, marginBottom: S[4] }}>
-            ※ 컨소시엄이면 <strong>매출에 우리 지분 금액</strong>을 입력하세요(총계약액이 아니라 우리 몫). 지분율은 참고 표시용이며, 매출 금액 자체가 손익·수익성 기준이 됩니다.
-          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.ink, marginBottom: 6, cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!form.revIsTotal} onChange={e => set('revIsTotal', e.target.checked)} />
+            <strong>위 매출은 총계약액</strong> — 지분율만큼 자동으로 우리 몫 계산 (선급·잔금·수익성에 반영)
+          </label>
+          {form.revIsTotal && form.shareRate > 0 && (
+            <div style={{ fontSize: 11.5, color: T.brand, background: 'rgba(21,35,63,0.05)', borderRadius: 6, padding: '7px 11px', marginBottom: S[4], lineHeight: 1.6 }}>
+              총계약액 {fmtMoney(Number(form.revenue) || 0)}원 × 지분 {form.shareRate}% = <strong>우리 몫 {fmtMoney(Math.round((Number(form.revenue) || 0) * Number(form.shareRate) / 100))}원</strong><br />
+              <span style={{ color: T.textMute }}>이 금액이 선급({(form.advRate ?? '')||'기본'}%)·잔금으로 나뉘어 계약기간({form.period || '기간 입력 필요'})에 반영됩니다.</span>
+            </div>
+          )}
+          {!form.revIsTotal && (
+            <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: S[4] }}>
+              ※ 체크 해제 시: 매출칸에 <strong>우리 몫 금액</strong>을 직접 입력하세요. 체크 시: 매출칸에 <strong>총계약액</strong>을 넣으면 지분율만큼 자동 계산됩니다.
+            </div>
+          )}
 
           {/* 재무 입력 */}
           <div style={{ fontSize: 12, fontWeight: 700, color: T.brand, marginBottom: S[3], paddingBottom: 6, borderBottom: `2px solid ${T.brand}` }}>재무 (원 단위)</div>
