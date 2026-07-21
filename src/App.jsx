@@ -3380,7 +3380,6 @@ function App() {
     { id: 'projects', label: '프로젝트 수익성', icon: Briefcase, roles: ['admin', 'manager'] },
     { id: 'report', label: '경영보고서', icon: FileBarChart, roles: ['admin'] },
     { id: 'cms', label: '경영회계 CMS', icon: Layers, roles: ['admin'] },
-    { id: 'monthclose', label: '월마감 변환', icon: Upload, roles: ['admin', 'manager'] },
     { id: 'loans', label: '대여금 관리', icon: Wallet, roles: ['admin'] },
     { id: 'receivables', label: '수금 관리', icon: Calendar, roles: ['admin'] },
     { id: 'results', label: '평가 결과', icon: Award, roles: ['admin', 'manager'] },
@@ -3606,9 +3605,10 @@ const card = (extra = {}) => ({
 
 const pageHeader = (subtitle) => ({ marginBottom: S[7] });
 
-function PageHeader({ eyebrow, title, subtitle, action }) {
+function PageHeader({ eyebrow, title, subtitle, action, help }) {
   return (
-    <div style={{ marginBottom: S[7], display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: S[4] }}>
+    <div style={{ marginBottom: S[7] }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: S[4] }}>
       <div>
         {eyebrow && (
           <div style={{ 
@@ -3631,6 +3631,8 @@ function PageHeader({ eyebrow, title, subtitle, action }) {
         )}
       </div>
       {action}
+      </div>
+      {help}
     </div>
   );
 }
@@ -9209,7 +9211,19 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
             <input ref={upRef} type="file" accept=".xlsx,.xls" multiple onChange={handleFinUpload} style={{ display: 'none' }} />
             <Button variant={edit ? 'primary' : 'outline'} size="sm" icon={edit ? CheckCircle2 : Settings} onClick={() => setEdit(e => !e)}>{edit ? '편집 완료' : '데이터 편집'}</Button>
           </span>
-        )} />
+        )}
+        help={canEdit ? (
+          <details style={{ marginTop: 4 }}>
+            <summary style={{ fontSize: 11.5, color: T.brand, cursor: 'pointer', fontWeight: 600 }}>📋 회계 엑셀 업로드 양식 안내</summary>
+            <div style={{ fontSize: 11, color: T.ink, lineHeight: 1.8, marginTop: 6, background: T.surfaceAlt, borderRadius: 8, padding: '10px 14px' }}>
+              이카운트에서 <strong>「월계표」(또는 일계표)</strong>를 엑셀로 내보내 그대로 업로드하세요. 시트명에 <code>월계표</code>가 포함돼야 인식합니다.<br />
+              · 구조: <strong>계정명 · 차변 · 대변</strong> 열<br />
+              · 자동 인식 계정: 용역매출·상품매출(매출), 부가세예수금·대급금(부가세), <code>(판)</code>으로 시작하는 판관비 계정(인건비·임차료·외주용역비 등), 당기순이익<br />
+              · 매월 최신 월계표를 올리면 누계 기준으로 매출·인건비·운영경비·세금이 자동 갱신되어 자금예측·경영보고서에 반영됩니다.<br />
+              <span style={{ color: T.textMute }}>※ 여러 달치를 한 번에 올려도 됩니다(각 파일 자동 인식). 양식 예시는 경영지원부에 요청하세요.</span>
+            </div>
+          </details>
+        ) : null} />
       {uploadMsg && <div style={{ background: uploadMsg.startsWith('반영') ? 'rgba(27,122,67,0.08)' : T.surfaceAlt, border: `1px solid ${uploadMsg.startsWith('반영') ? T.success : T.border}`, borderRadius: 8, padding: '9px 13px', marginBottom: S[3], fontSize: 12 }}>{uploadMsg}</div>}
 
       {/* 핵심 KPI */}
@@ -11122,6 +11136,20 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
             <Button variant="primary" size="sm" icon={Plus} onClick={() => setEditing('new')}>프로젝트 추가</Button>
           </div>
         )}
+        help={canEdit ? (
+          <details style={{ marginTop: 4 }}>
+            <summary style={{ fontSize: 11.5, color: T.brand, cursor: 'pointer', fontWeight: 600 }}>📋 업로드 파일 양식 안내 (월 실적 반영 · 사업관리 엑셀)</summary>
+            <div style={{ fontSize: 11, color: T.ink, lineHeight: 1.8, marginTop: 6, background: T.surfaceAlt, borderRadius: 8, padding: '10px 14px' }}>
+              <strong style={{ color: T.brand }}>▶ 월 실적 반영</strong> — 매달 사업별 인건비·경비를 갱신 (여러 파일 동시 선택 가능):<br />
+              &nbsp;&nbsp;· <strong>계약직 인건비</strong>: 시트명을 <code>7월</code>처럼 'N월'로. 열 = 성명·사업명·직무·당월인건비<br />
+              &nbsp;&nbsp;· <strong>사업경비</strong>: 시트명 <code>프로젝트별 집계</code>. 열 = 관련사업명·비목·내용·금액<br />
+              &nbsp;&nbsp;· <strong>관리자 인건비</strong>: 시트명 <code>인력운영현황</code>. 열 = 사번·성명·소속·사업명·투입기간·참여율·수행별인건비<br />
+              <strong style={{ color: T.brand }}>▶ 사업관리 엑셀</strong> — 사업 목록 자체를 등록/갱신 (통합 워크북):<br />
+              &nbsp;&nbsp;· 시트 <code>사업목록</code>(프로젝트ID·사업명·발주처·귀속연도·계약기간·상태·매출·인건비…) + <code>사업제안현황</code> + <code>인력운영현황</code><br />
+              <span style={{ color: T.textMute }}>※ 사업명은 모든 파일에서 <strong>사업목록과 동일하게</strong> 적어야 자동 매칭됩니다. 양식 파일은 경영지원부에 요청하세요.</span>
+            </div>
+          </details>
+        ) : null}
       />
       {/* ── 사업별 손익 분석 패널 ── */}
       <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[4], marginBottom: S[4] }}>
