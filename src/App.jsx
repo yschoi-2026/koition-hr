@@ -9875,6 +9875,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         //    cfg.pipeline[id]={on,month,rate}: 개별 포함여부·예상 계약월·선급률. 기대금액 = 예산 × 수주율.
         const pipeCfg = cfg.pipeline || {};
         const incS = inc.slice();
+        const incPipe = Array(12).fill(0);   // 수주예정(파이프라인) 선급·잔금 추적 — 시각화용
         (proposals || []).filter(p => p.status !== '수주' && Number(p.budget) > 0).forEach(p => {
           const pc = pipeCfg[p.id] || {};
           if (pc.on === false) return;
@@ -9886,8 +9887,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           if (start == null) { const bm = String(p.bidDate || '').match(/(\d{4})[.\-\/](\d{1,2})/); start = bm ? idxOf(+bm[1], +bm[2]) + 1 : 2; }
           if (start < 1) start = 1;
           const advP = ((pc.rate != null && pc.rate !== '') ? Number(pc.rate) : (Number(cfg.advRate) || 0)) / 100;
-          if (start < 12 && advP > 0) incS[start] += expBudget * advP;
-          const end = start + 6; if (end < 12) incS[end] += expBudget * (1 - advP);
+          if (start < 12 && advP > 0) { const a = expBudget * advP; incS[start] += a; incPipe[start] += a; incNote[start].push(`${p.name} 수주예정 선급 ${fmtEok(a)}(수주율 ${Math.round(winW*100)}%)`); }
+          const end = start + 6; if (end < 12) { const rem = expBudget * (1 - advP); incS[end] += rem; incPipe[end] += rem; }
         });
         // 지출: 인건비 + 운영경비 + 세금(부가세 1·4·7·10월, 법인세 3월)
         // 계약직 인건비 자동 증감: 각 사업의 작업자인건비(계약직, 월액)를 계약기간 동안만 배분.
@@ -10236,7 +10237,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               const safeM = Math.round(safety / 1000000);
               const belowSafe = minPt.예측잔고 < safeM;
               return (
-                <div style={{ height: 300, background: 'linear-gradient(180deg,#FBFCFE 0%,#F4F7FB 100%)', borderRadius: 12, padding: `${S[3]}px ${S[2]}px ${S[2]}px`, border: `1px solid ${T.border}` }}>
+                <div style={{ height: 300, background: 'linear-gradient(180deg,#FBFCFE 0%,#EEF3FA 100%)', borderRadius: 14, padding: `${S[3]}px ${S[2]}px ${S[2]}px`, border: `1px solid ${T.border}`, boxShadow: 'inset 0 1px 0 #fff, 0 4px 16px rgba(21,35,63,0.08)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: `0 ${S[3]}px`, marginBottom: 2 }}>
                     <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, letterSpacing: '-0.01em' }}>12개월 자금 잔고 추이 <span style={{ fontSize: 10.5, fontWeight: 600, color: T.textMute }}>(단위: 백만원)</span></span>
                     <span style={{ fontSize: 11, fontWeight: 700, color: belowSafe ? T.danger : T.success }}>최저 {minPt.name} {minPt.예측잔고.toLocaleString()}M {belowSafe ? '⚠ 안전선 이하' : '✓ 안전'}</span>
@@ -10245,26 +10246,33 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                     <ComposedChart data={chartData} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
                       <defs>
                         <linearGradient id="balFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={T.brand} stopOpacity={0.28} />
+                          <stop offset="0%" stopColor={T.brand} stopOpacity={0.42} />
+                          <stop offset="55%" stopColor={T.brand} stopOpacity={0.16} />
                           <stop offset="100%" stopColor={T.brand} stopOpacity={0.02} />
                         </linearGradient>
                         <linearGradient id="pipeFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={T.success} stopOpacity={0.14} />
+                          <stop offset="0%" stopColor={T.success} stopOpacity={0.18} />
                           <stop offset="100%" stopColor={T.success} stopOpacity={0} />
                         </linearGradient>
+                        <filter id="lineGlow" x="-20%" y="-20%" width="140%" height="140%">
+                          <feDropShadow dx="0" dy="2.5" stdDeviation="3" floodColor={T.brand} floodOpacity="0.35" />
+                        </filter>
+                        <filter id="actGlow" x="-20%" y="-20%" width="140%" height="140%">
+                          <feDropShadow dx="0" dy="2" stdDeviation="2.5" floodColor={T.gold || '#B8892B'} floodOpacity="0.4" />
+                        </filter>
                       </defs>
                       <CartesianGrid strokeDasharray="2 4" stroke="#E2E8F0" vertical={false} />
                       <XAxis dataKey="name" tick={{ fontSize: 10.5, fill: T.textMute }} axisLine={{ stroke: '#CBD5E1' }} tickLine={false} />
                       <YAxis tick={{ fontSize: 10, fill: T.textMute }} axisLine={false} tickLine={false} width={44} />
-                      <Tooltip formatter={(v) => (v == null ? '-' : v.toLocaleString() + '백만원')} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${T.border}`, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }} />
+                      <Tooltip formatter={(v) => (v == null ? '-' : v.toLocaleString() + '백만원')} contentStyle={{ fontSize: 12, borderRadius: 10, border: 'none', boxShadow: '0 6px 20px rgba(21,35,63,0.15)' }} />
                       <Legend wrapperStyle={{ fontSize: 11 }} iconType="plainline" />
                       {safeM > 0 && <ReferenceLine y={safeM} stroke={T.danger} strokeDasharray="5 4" strokeWidth={1.2} label={{ value: `안전선 ${safeM}M`, position: 'insideTopRight', fontSize: 10, fill: T.danger }} />}
                       {cfg.showBand !== false && <Area type="monotone" dataKey="낙관" name="낙관(수주율+20%p)" stroke="#94C79A" strokeWidth={1} strokeDasharray="2 3" fill="none" dot={false} />}
                       {cfg.showBand !== false && <Area type="monotone" dataKey="보수" name="보수(수주율-20%p·경비+10%)" stroke="#E3A6A0" strokeWidth={1} strokeDasharray="2 3" fill="none" dot={false} />}
-                      <Area type="monotone" dataKey="예측(파이프라인)" name="수주 반영(시나리오)" stroke={T.success} strokeWidth={1.6} strokeDasharray="6 3" fill="url(#pipeFill)" dot={false} />
-                      <Area type="monotone" dataKey="예측잔고" name="예측 잔고(기준)" stroke={T.brand} strokeWidth={3} fill="url(#balFill)" dot={{ r: 2.5, fill: T.brand }} activeDot={{ r: 5 }} />
-                      {hasActual && <Line type="monotone" dataKey="실제잔고" name="실제 잔고" stroke={T.gold || '#B8892B'} strokeWidth={2.5} dot={{ r: 3.5, fill: T.gold || '#B8892B' }} connectNulls />}
-                      <ReferenceDot x={minPt.name} y={minPt.예측잔고} r={5} fill={belowSafe ? T.danger : T.warning} stroke="#fff" strokeWidth={1.5} label={{ value: '최저점', position: 'bottom', fontSize: 9.5, fill: belowSafe ? T.danger : T.warning }} />
+                      <Area type="monotone" dataKey="예측(파이프라인)" name="수주 반영(시나리오)" stroke={T.success} strokeWidth={1.8} strokeDasharray="6 3" fill="url(#pipeFill)" dot={false} />
+                      <Area type="monotone" dataKey="예측잔고" name="예측 잔고(기준)" stroke={T.brand} strokeWidth={3.5} fill="url(#balFill)" dot={{ r: 3, fill: '#fff', stroke: T.brand, strokeWidth: 2 }} activeDot={{ r: 6, strokeWidth: 2, stroke: '#fff' }} style={{ filter: 'url(#lineGlow)' }} />
+                      {hasActual && <Line type="monotone" dataKey="실제잔고" name="실제 잔고" stroke={T.gold || '#B8892B'} strokeWidth={3} dot={{ r: 4, fill: '#fff', stroke: T.gold || '#B8892B', strokeWidth: 2 }} activeDot={{ r: 6 }} connectNulls style={{ filter: 'url(#actGlow)' }} />}
+                      <ReferenceDot x={minPt.name} y={minPt.예측잔고} r={6} fill={belowSafe ? T.danger : T.warning} stroke="#fff" strokeWidth={2} label={{ value: '최저점', position: 'bottom', fontSize: 9.5, fill: belowSafe ? T.danger : T.warning, fontWeight: 700 }} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
@@ -10278,7 +10286,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               const mape = Math.round(diffs.reduce((a, d) => a + Math.abs(d.diff) / Math.max(1, Math.abs(d.act)), 0) / diffs.length * 100);
               return (
                 <div style={{ background: T.surfaceAlt, borderRadius: 8, padding: '10px 14px', margin: `${S[3]}px 0`, fontSize: 12 }}>
-                  <strong style={{ color: T.brand }}>📊 예측 정확도</strong> — 실제 입력 {diffs.length}개월 기준 평균 오차율 <strong>{mape}%</strong>.
+                  <strong style={{ color: T.brand }}>📊 예측 정확도 {Math.max(0, 100 - mape)}%</strong> <span style={{ color: T.textMute }}>(실제 입력 {diffs.length}개월 기준 · 평균 오차율 {mape}%)</span>.
                   최근({last.label}) 예측 {fmtMoney(last.pred)} vs 실제 {fmtMoney(last.act)} · 차이 <strong style={{ color: Math.abs(last.diff) > safety ? T.danger : T.textMute }}>{last.diff >= 0 ? '+' : ''}{fmtMoney(last.diff)}원</strong>
                   {Math.abs(last.diff) > safety ? ' — 예측 가정(선급률·수금시점·경비)을 재점검하세요.' : ' — 예측이 실제와 잘 맞습니다.'}
                 </div>
@@ -10294,6 +10302,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                   '선급·잔금(자동)': Math.round(incSched[i] / 1000000),
                   '수동회차(기성)': Math.round(incManual[i] / 1000000),
                   기타예정: Math.round(incExtra[i] / 1000000),
+                  '수주예정(파이프라인)': Math.round(incPipe[i] / 1000000),
                 }));
                 return (
                   <div style={{ height: 200, marginTop: S[2] }}>
@@ -10304,10 +10313,16 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                         <YAxis tick={{ fontSize: 10, fill: T.textMute }} axisLine={false} tickLine={false} width={40} unit="M" />
                         <Tooltip formatter={(v) => (v ? v.toLocaleString() + '백만원' : '-')} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${T.border}` }} />
                         <Legend wrapperStyle={{ fontSize: 10.5 }} />
-                        <Bar dataKey="수금등록" stackId="a" fill={T.success} />
-                        <Bar dataKey="선급·잔금(자동)" stackId="a" fill={T.brand} />
-                        <Bar dataKey="수동회차(기성)" stackId="a" fill="#7C5CBF" />
-                        <Bar dataKey="기타예정" stackId="a" fill={T.warning} radius={[3, 3, 0, 0]} />
+                        <defs>
+                          <linearGradient id="incColl" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={T.success} stopOpacity={1} /><stop offset="100%" stopColor={T.success} stopOpacity={0.75} /></linearGradient>
+                          <linearGradient id="incSch" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={T.brand} stopOpacity={1} /><stop offset="100%" stopColor={T.brand} stopOpacity={0.75} /></linearGradient>
+                          <linearGradient id="incMan" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#7C5CBF" stopOpacity={1} /><stop offset="100%" stopColor="#7C5CBF" stopOpacity={0.75} /></linearGradient>
+                        </defs>
+                        <Bar dataKey="수금등록" stackId="a" fill="url(#incColl)" />
+                        <Bar dataKey="선급·잔금(자동)" stackId="a" fill="url(#incSch)" />
+                        <Bar dataKey="수동회차(기성)" stackId="a" fill="url(#incMan)" />
+                        <Bar dataKey="기타예정" stackId="a" fill={T.warning} />
+                        <Bar dataKey="수주예정(파이프라인)" stackId="a" fill="#B8C5D6" radius={[3, 3, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
