@@ -2266,6 +2266,7 @@ function isEtcProject(p) { return !!p && (p.etc === true || ETC_PROJECT_IDS.incl
 // 진행중 사업의 '계약 전액 매출' 왜곡(초기 사업 과대·기간 불일치)이 개인 평가에 흘러들지 않게 보정.
 function evalProjectScore(p, mm) {
   if (!mm) return null;
+  if (p && p.status === 'preparing') return null;   // 준비단계(수주확정·착수전): 수익률 산출 안 함
   if (p && p.status === 'completed') return rateToScore(mm.rate);
   const r = (mm.pocRate != null) ? mm.pocRate : mm.rate;
   return rateToScore(r);
@@ -8239,9 +8240,9 @@ function parseMembers(str) {
 }
 
 function StatusBadge({ status }) {
-  return status === 'completed'
-    ? <Badge color={T.success} variant="outline" size="sm">종료</Badge>
-    : <Badge color={T.warning} variant="outline" size="sm">진행중</Badge>;
+  if (status === 'completed') return <Badge color={T.success} variant="outline" size="sm">종료</Badge>;
+  if (status === 'preparing') return <Badge color="#7C5CBF" variant="outline" size="sm">준비단계</Badge>;
+  return <Badge color={T.warning} variant="outline" size="sm">진행중</Badge>;
 }
 
 // 공통비(간접비) 풀 관리 + 배부 → 공헌이익 / 완전영업이익
@@ -10281,6 +10282,14 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                           <stop offset="0%" stopColor={T.success} stopOpacity={0.18} />
                           <stop offset="100%" stopColor={T.success} stopOpacity={0} />
                         </linearGradient>
+                        <linearGradient id="pipeFillHi" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={T.success} stopOpacity={0.34} />
+                          <stop offset="60%" stopColor={T.success} stopOpacity={0.12} />
+                          <stop offset="100%" stopColor={T.success} stopOpacity={0} />
+                        </linearGradient>
+                        <filter id="pipeGlow" x="-20%" y="-20%" width="140%" height="140%">
+                          <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor={T.success} floodOpacity="0.4" />
+                        </filter>
                         <filter id="lineGlow" x="-20%" y="-20%" width="140%" height="140%">
                           <feDropShadow dx="0" dy="2.5" stdDeviation="3" floodColor={T.brand} floodOpacity="0.35" />
                         </filter>
@@ -10296,8 +10305,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                       {safeM > 0 && <ReferenceLine y={safeM} stroke={T.danger} strokeDasharray="5 4" strokeWidth={1.2} label={{ value: `안전선 ${safeM}M`, position: 'insideTopRight', fontSize: 10, fill: T.danger }} />}
                       {cfg.showBand !== false && <Area type="monotone" dataKey="낙관" name="낙관(수주율+20%p)" stroke="#94C79A" strokeWidth={1} strokeDasharray="2 3" fill="none" dot={false} />}
                       {cfg.showBand !== false && <Area type="monotone" dataKey="보수" name="보수(수주율-20%p·경비+10%)" stroke="#E3A6A0" strokeWidth={1} strokeDasharray="2 3" fill="none" dot={false} />}
-                      <Area type="monotone" dataKey="예측(파이프라인)" name="수주 반영(시나리오)" stroke={T.success} strokeWidth={1.8} strokeDasharray="6 3" fill="url(#pipeFill)" dot={false} />
-                      <Area type="monotone" dataKey="예측잔고" name="예측 잔고(기준)" stroke={T.brand} strokeWidth={3.5} fill="url(#balFill)" dot={{ r: 3, fill: '#fff', stroke: T.brand, strokeWidth: 2 }} activeDot={{ r: 6, strokeWidth: 2, stroke: '#fff' }} style={{ filter: 'url(#lineGlow)' }} />
+                      <Area type="monotone" dataKey="예측(파이프라인)" name="🎯 수주 반영 시나리오" stroke={T.success} strokeWidth={3} fill="url(#pipeFillHi)" dot={{ r: 3, fill: '#fff', stroke: T.success, strokeWidth: 2 }} activeDot={{ r: 6, strokeWidth: 2, stroke: '#fff' }} style={{ filter: 'url(#pipeGlow)' }} />
+                      <Area type="monotone" dataKey="예측잔고" name="예측 잔고(수주 미반영)" stroke={T.brand} strokeWidth={2.5} strokeDasharray="5 3" fill="url(#balFill)" dot={{ r: 2.5, fill: '#fff', stroke: T.brand, strokeWidth: 1.5 }} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} style={{ filter: 'url(#lineGlow)' }} />
                       {hasActual && <Line type="monotone" dataKey="실제잔고" name="실제 잔고" stroke={T.gold || '#B8892B'} strokeWidth={3} dot={{ r: 4, fill: '#fff', stroke: T.gold || '#B8892B', strokeWidth: 2 }} activeDot={{ r: 6 }} connectNulls style={{ filter: 'url(#actGlow)' }} />}
                       <ReferenceDot x={minPt.name} y={minPt.예측잔고} r={6} fill={belowSafe ? T.danger : T.warning} stroke="#fff" strokeWidth={2} label={{ value: '최저점', position: 'bottom', fontSize: 9.5, fill: belowSafe ? T.danger : T.warning, fontWeight: 700 }} />
                     </ComposedChart>
@@ -11319,7 +11328,8 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
       {/* 완료/진행중 분리 요약 */}
       {(() => {
         const done = shown.filter(p => p.status === 'completed').map(projectMetrics);
-        const wip = shown.filter(p => p.status !== 'completed').map(projectMetrics);
+        const prep = shown.filter(p => p.status === 'preparing');
+        const wip = shown.filter(p => p.status !== 'completed' && p.status !== 'preparing').map(projectMetrics);
         const dRev = done.reduce((a, m) => a + m.revenue, 0), dPro = done.reduce((a, m) => a + m.profit, 0);
         const dRate = dRev > 0 ? dPro / dRev * 100 : null;
         const wRec = wip.reduce((a, m) => a + (m.recognizedRevenue || 0), 0), wPoc = wip.reduce((a, m) => a + (m.pocProfit || 0), 0);
@@ -11574,6 +11584,7 @@ function ProjectEditModal({ project, employees, currentYear, onSave, onClose }) 
             <div>
               <label style={labelStyle}>상태</label>
               <select style={inputStyle} value={form.status} onChange={e => set('status', e.target.value)}>
+                <option value="preparing">준비단계(수주확정·착수전)</option>
                 <option value="ongoing">진행중</option>
                 <option value="completed">종료</option>
               </select>
