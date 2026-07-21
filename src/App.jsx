@@ -8375,7 +8375,10 @@ function OverheadView({ projects, overheads, currentYear, yearFilter, policy, se
 function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal, updateProposal, upsertProposal }) {
   const [edit, setEdit] = React.useState(null); // 인력 편집
   const [form, setForm] = React.useState(null); // 관심사업 등록/편집
-  const blank = () => ({ id: 'P:' + Date.now(), name: '', client: '', budget: '', bidDate: '', period: '', docs: '', winRate: 50, pm: '', status: '관심', memo: '' });
+  const [typeFilter, setTypeFilter] = React.useState('전체'); // 사업 유형 토글: 전체/경쟁입찰/수의계약/유지보수
+  const typeOf = (p) => p.bizType || (/유지보수|OPT/i.test(String(p.name)) ? '유지보수' : '경쟁입찰');   // 미지정 시 이름으로 추정
+  const typeColor = { '경쟁입찰': T.brand, '수의계약': T.warning, '유지보수': T.textMute };
+  const blank = () => ({ id: 'P:' + Date.now(), name: '', client: '', budget: '', bidDate: '', period: '', docs: '', winRate: 50, pm: '', status: '관심', bizType: '경쟁입찰', memo: '' });
   const openNew = () => setForm(blank());
   const openEdit = (p) => setForm({ ...blank(), ...p, budget: p.budget || '', winRate: p.winRate != null ? p.winRate : 50 });
   const save = () => {
@@ -8384,24 +8387,32 @@ function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal, upda
     setForm(null);
   };
   const hasData = proposals && proposals.length > 0;
-  const total = proposals.length;
-  const won = proposals.filter(p => p.status === '수주').length;
+  const filtered = (proposals || []).filter(p => typeFilter === '전체' || typeOf(p) === typeFilter);
+  const total = filtered.length;
+  const won = filtered.filter(p => p.status === '수주').length;
   const convRate = total > 0 ? Math.round(won / total * 100) : 0;
-  const openProps = proposals.filter(p => p.status !== '수주');
+  const openProps = filtered.filter(p => p.status !== '수주');
   const pipelineBudget = openProps.reduce((s, p) => s + (p.budget || 0), 0);
   const weightedBudget = openProps.reduce((s, p) => s + (p.budget || 0) * ((p.winRate != null ? p.winRate : 50) / 100), 0);   // 수주율 가중 기대매출
-  const wonBudget = proposals.filter(p => p.status === '수주').reduce((s, p) => s + (p.budget || 0), 0);
+  const wonBudget = filtered.filter(p => p.status === '수주').reduce((s, p) => s + (p.budget || 0), 0);
   const chartData = [
     { name: '제안중(전액)', 금액: pipelineBudget, key: 'p' },
     { name: '기대매출(수주율)', 금액: Math.round(weightedBudget), key: 'e' },
     { name: '수주 확정', 금액: wonBudget, key: 'w' },
   ];
   const statusOrder = { '수주': 0, '제안': 1, '입찰예정': 2, '관심': 3 };
-  const sorted = [...proposals].sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9) || (b.budget || 0) - (a.budget || 0));
+  const sorted = [...filtered].sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9) || (b.budget || 0) - (a.budget || 0));
   const winColor = (r) => r >= 70 ? T.success : r >= 40 ? T.warning : T.textMute;
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: S[3] }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: S[2], marginBottom: S[3] }}>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {['전체', '경쟁입찰', '수의계약', '유지보수'].map(t => (
+            <button key={t} onClick={() => setTypeFilter(t)} style={{ padding: '5px 12px', borderRadius: 16, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', border: `1.5px solid ${typeFilter === t ? T.brand : T.border}`, background: typeFilter === t ? T.brand : '#fff', color: typeFilter === t ? '#fff' : T.textMute, fontFamily: FONT }}>
+              {t}{t !== '전체' && ` ${(proposals || []).filter(p => typeOf(p) === t).length}`}
+            </button>
+          ))}
+        </div>
         {canEdit && <Button variant="primary" size="sm" icon={Plus} onClick={openNew}>관심 사업 등록</Button>}
       </div>
       {!hasData ? (
@@ -8445,7 +8456,7 @@ function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal, upda
             <tbody>
               {sorted.map(p => (
                 <tr key={p.id} style={{ borderBottom: `1px solid ${T.divider}` }}>
-                  <Td><div style={{ whiteSpace: 'normal', maxWidth: 240, fontWeight: 600, color: T.ink }}>{p.name}</div>{p.consortium && <div style={{ fontSize: 10, color: T.textMute }}>{p.consortium}</div>}</Td>
+                  <Td><div style={{ whiteSpace: 'normal', maxWidth: 240, fontWeight: 600, color: T.ink }}>{p.name}</div><div style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: 2 }}><span style={{ fontSize: 9.5, fontWeight: 700, color: typeColor[typeOf(p)] || T.textMute, border: `1px solid ${typeColor[typeOf(p)] || T.border}`, borderRadius: 4, padding: '0 5px' }}>{typeOf(p)}</span>{p.consortium && <span style={{ fontSize: 10, color: T.textMute }}>{p.consortium}</span>}</div></Td>
                   <Td>{p.client}</Td>
                   <Td align="right" mono>{fmtMoney(p.budget)}</Td>
                   <Td style={{ fontSize: 11.5 }}>{p.bidDate || '-'}</Td>
@@ -8498,9 +8509,13 @@ function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal, upda
               </div>
               <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>제출서류 (준비 항목)</div>
                 <textarea value={form.docs} onChange={e => setForm(f => ({ ...f, docs: e.target.value }))} placeholder="예) 제안서, 사업수행계획서, 참여인력 이력, 유사실적증명, 재무제표" rows={2} style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, resize: 'vertical' }} /></div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: S[2] }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: S[2] }}>
                 <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>PM</div>
                   <input value={form.pm} onChange={e => setForm(f => ({ ...f, pm: e.target.value }))} placeholder="예) 오창민" style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', fontFamily: FONT }} /></div>
+                <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>사업 유형</div>
+                  <select value={form.bizType || '경쟁입찰'} onChange={e => setForm(f => ({ ...f, bizType: e.target.value }))} style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', fontFamily: FONT }}>
+                    <option value="경쟁입찰">경쟁입찰</option><option value="수의계약">수의계약</option><option value="유지보수">유지보수</option>
+                  </select></div>
                 <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>상태</div>
                   <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', fontFamily: FONT }}>
                     <option value="관심">관심</option><option value="입찰예정">입찰예정</option><option value="제안">제안(제출)</option><option value="수주">수주</option>
@@ -9802,28 +9817,45 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const advOf = (pid) => ((advRates[pid] != null && advRates[pid] !== '') ? Number(advRates[pid]) : effAdvRate) / 100;
         const inc = Array(12).fill(0); const incNote = Array.from({ length: 12 }, () => []);
         const covered = new Set();
+        // 수입 카테고리별 추적 (월별 구성 시각화용)
+        const incColl = Array(12).fill(0), incSched = Array(12).fill(0), incManual = Array(12).fill(0), incExtra = Array(12).fill(0);
         // ① 수금 관리 등록분 (미입금) — 가장 확정적
         (receivables || []).filter(r => !r.paidDate && r.dueDate && Number(r.amount) > 0).forEach(r => {
           const d = new Date(r.dueDate); if (isNaN(d)) return;
           const i = idxOf(d.getFullYear(), d.getMonth() + 1);
           const at = i < 0 ? 0 : i;   // 연체분은 이번 달 수금 가정
-          if (at < 12) { inc[at] += Number(r.amount); incNote[at].push((r.project || '수금') + (i < 0 ? '(연체)' : '')); if (r.project) covered.add(String(r.project).trim()); }
+          if (at < 12) { inc[at] += Number(r.amount); incColl[at] += Number(r.amount); incNote[at].push((r.project || '수금') + (i < 0 ? '(연체)' : '')); if (r.project) covered.add(String(r.project).trim()); }
         });
-        // ② 진행 사업: 선급금(착수월) + 잔금(종료 익월) — 수금관리에 등록된 사업은 제외(중복 방지)
-        (projects || []).filter(p => !isEtcProject(p) && p.status !== 'completed' && Number(p.revenue) > 0 && !covered.has(String(p.name || '').trim())).forEach(p => {
+        // ② 진행 사업: 선급금(착수월) + 잔금(종료 익월) — 수금관리 등록 사업은 제외(중복 방지)
+        //    선급은 착수월이 예측창 안일 때만 계상. 착수가 과거면 이미 수령해 통장잔고에 반영된 것으로 보고,
+        //    잔금은 항상 매출×(1−선급률)만 반영 (기존: 과거 착수 사업 매출 100% 계상 → 수입 과대 버그 수정).
+        const fmtEok = (v) => v >= 100000000 ? (v / 100000000).toFixed(1) + '억' : Math.round(v / 10000).toLocaleString() + '만';
+        const incomeOff = cfg.incomeOff || {};   // 사업별 [예측 제외] 토글 (이미 전액 수금 등)
+        const paySched = cfg.paySched || {};   // 사업별 수동 지급 스케줄: {pid: [{month:'2026.09', amount, memo}]}
+        (projects || []).filter(p => !isEtcProject(p) && p.status !== 'completed' && Number(p.revenue) > 0 && !covered.has(String(p.name || '').trim()) && !incomeOff[p.id]).forEach(p => {
+          const sched = (paySched[p.id] || []).filter(e => Number(e.amount) > 0);
+          if (sched.length > 0) {
+            // 수동 회차 우선 (선급·기성·잔금을 직접 입력한 경우 자동 계산 대체)
+            sched.forEach(e => {
+              const mm = String(e.month || '').match(/(\d{4})[.\-\/](\d{1,2})/); if (!mm) return;
+              const i = idxOf(+mm[1], +mm[2]); const amt = Number(e.amount) || 0;
+              if (i >= 0 && i < 12 && amt > 0) { inc[i] += amt; incManual[i] += amt; incNote[i].push(`${p.id} ${e.memo || '회차'} ${fmtEok(amt)}`); }
+            });
+            return;
+          }
           const pr = parsePeriod(p.period); if (!pr) return;
           const adv = advOf(p.id);
           const si = idxOf(pr.sy, pr.sm), eiRaw = idxOf(pr.ey, pr.em) + 1; // 잔금 = 검수 익월
-          if (si >= 0 && si < 12 && adv > 0) { inc[si] += p.revenue * adv; incNote[si].push(p.id + ' 선급'); }
+          if (si >= 0 && si < 12 && adv > 0) { const a = p.revenue * adv; inc[si] += a; incSched[si] += a; incNote[si].push(`${p.id} 선급 ${fmtEok(a)}`); }
           const ei = eiRaw < 0 ? 0 : eiRaw; // 이미 종료됐는데 미수금 → 이번 달 수금 가정
-          if (ei < 12) { const rem = p.revenue * (si >= 0 ? (1 - adv) : 1); inc[ei] += rem; incNote[ei].push(p.id + ' 잔금' + (eiRaw < 0 ? '(지연)' : '')); }
+          if (ei < 12) { const rem = p.revenue * (1 - adv); inc[ei] += rem; incSched[ei] += rem; incNote[ei].push(`${p.id} 잔금 ${fmtEok(rem)}${eiRaw < 0 ? '(지연)' : ''}`); }
         });
         // ②-B 기타 예정 수입 (사용자 직접 등록: 소규모 매출·비매출조직 수익 등) — cfg.extraIncome[]
         (cfg.extraIncome || []).forEach(e => {
           const mm = String(e.month || '').match(/(\d{4})[.\-\/](\d{1,2})/);
           if (!mm) return;
           const i = idxOf(+mm[1], +mm[2]); const amt = Number(e.amount) || 0;
-          if (i >= 0 && i < 12 && amt > 0) { inc[i] += amt; incNote[i].push((e.memo || '예정수입')); }
+          if (i >= 0 && i < 12 && amt > 0) { inc[i] += amt; incExtra[i] += amt; incNote[i].push((e.memo || '예정수입') + ' ' + fmtEok(amt)); }
         });
         // ③ 파이프라인 시나리오: 미수주 제안을 수주율(%)로 가중해 반영 (계약기간 시작월 선급, +6개월 잔금)
         //    cfg.pipeline[id]={on,month,rate}: 개별 포함여부·예상 계약월·선급률. 기대금액 = 예산 × 수주율.
@@ -10041,6 +10073,54 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                           style={{ width: '100%', padding: '5px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, textAlign: 'right', boxSizing: 'border-box' }} />
                       </div>
                     </div>
+                    {/* 예측 반영 내역 감사 + 제외 토글 + 회차 직접 편집 */}
+                    {(() => {
+                      const pr2 = parsePeriod(p.period);
+                      const off = (cfg.incomeOff || {})[p.id];
+                      const sched2 = ((cfg.paySched || {})[p.id]) || [];
+                      const covered2 = (receivables || []).some(r => !r.paidDate && String(r.project || '').trim() === String(p.name || '').trim());
+                      let line;
+                      if (covered2) line = <span style={{ color: T.success }}>수금관리 등록분으로 반영 중 (이 카드 설정 무시)</span>;
+                      else if (sched2.length > 0) line = <span style={{ color: '#7C5CBF', fontWeight: 700 }}>수동 회차 {sched2.filter(e => Number(e.amount) > 0).length}건 · 합계 {fmtMoney(sched2.reduce((a, e) => a + (Number(e.amount) || 0), 0))}원 (자동 선급·잔금 대체)</span>;
+                      else if (!pr2) line = <span style={{ color: T.warning }}>기간 미입력 — 예측에 반영 안 됨</span>;
+                      else {
+                        const adv2 = ((cfg.advRates || {})[p.id] != null && (cfg.advRates || {})[p.id] !== '' ? Number((cfg.advRates || {})[p.id]) : (Number(cfg.advRate) || 0)) / 100;
+                        const advAmt = Math.round(p.revenue * adv2), remAmt = Math.round(p.revenue * (1 - adv2));
+                        const eiY = pr2.em === 12 ? pr2.ey + 1 : pr2.ey, eiM = pr2.em === 12 ? 1 : pr2.em + 1;
+                        line = <>선급 <strong>{fmtMoney(advAmt)}</strong> ({pr2.sy}.{pr2.sm}) + 잔금 <strong>{fmtMoney(remAmt)}</strong> ({eiY}.{eiM})</>;
+                      }
+                      const upSched = (arr) => setCashCfg(prev => ({ ...prev, paySched: { ...(prev.paySched || {}), [p.id]: arr } }));
+                      return (
+                        <div style={{ marginTop: 6 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 10.5, color: T.ink, flexWrap: 'wrap' }}>
+                            <div>{off ? <span style={{ color: T.textMute, textDecoration: 'line-through' }}>{line}</span> : line}</div>
+                            <label style={{ cursor: 'pointer', whiteSpace: 'nowrap', color: off ? T.danger : T.textMute, fontWeight: 600 }}>
+                              <input type="checkbox" checked={!!off} onChange={ev => setCashCfg(prev => ({ ...prev, incomeOff: { ...(prev.incomeOff || {}), [p.id]: ev.target.checked } }))} style={{ verticalAlign: 'middle', marginRight: 3 }} />예측 제외{off ? ' 중' : ''}
+                            </label>
+                          </div>
+                          {!covered2 && !off && (
+                            <details style={{ marginTop: 4 }} open={sched2.length > 0}>
+                              <summary style={{ fontSize: 10.5, fontWeight: 700, color: '#7C5CBF', cursor: 'pointer' }}>회차 직접 편집 (선급·기성·잔금 — 입력 시 자동 계산 대체)</summary>
+                              {sched2.map((e, i) => (
+                                <div key={i} style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: 4 }}>
+                                  <input placeholder="2026.09" value={e.month || ''} onChange={ev => upSched(sched2.map((x, j) => j === i ? { ...x, month: ev.target.value } : x))} style={{ width: 74, padding: '3px 6px', border: `1px solid ${T.border}`, borderRadius: 4, fontSize: 10.5, fontFamily: FONT }} />
+                                  <input inputMode="numeric" placeholder="금액" value={e.amount != null && e.amount !== '' ? fmtInput(e.amount) : ''} onChange={ev => upSched(sched2.map((x, j) => j === i ? { ...x, amount: parseInput(ev.target.value) } : x))} style={{ width: 100, padding: '3px 6px', border: `1px solid ${T.border}`, borderRadius: 4, fontSize: 10.5, textAlign: 'right', fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }} />
+                                  <select value={e.memo || '기성'} onChange={ev => upSched(sched2.map((x, j) => j === i ? { ...x, memo: ev.target.value } : x))} style={{ padding: '3px 4px', border: `1px solid ${T.border}`, borderRadius: 4, fontSize: 10.5, fontFamily: FONT }}>
+                                    <option value="선급">선급</option><option value="기성">기성</option><option value="잔금">잔금</option>
+                                  </select>
+                                  <button onClick={() => upSched(sched2.filter((_, j) => j !== i))} style={{ border: 'none', background: 'transparent', color: T.danger, cursor: 'pointer', fontSize: 12 }}>🗑</button>
+                                </div>
+                              ))}
+                              <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
+                                <button onClick={() => upSched([...sched2, { month: '', amount: '', memo: sched2.length === 0 ? '선급' : '기성' }])} style={{ padding: '3px 8px', border: `1px solid #7C5CBF`, background: '#fff', color: '#7C5CBF', borderRadius: 4, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT }}>+ 회차 추가</button>
+                                {sched2.length > 0 && <button onClick={() => upSched([])} style={{ padding: '3px 8px', border: `1px solid ${T.border}`, background: '#fff', color: T.textMute, borderRadius: 4, fontSize: 10.5, cursor: 'pointer', fontFamily: FONT }}>자동 계산으로 되돌리기</button>}
+                                {sched2.length > 0 && Math.abs(sched2.reduce((a, e) => a + (Number(e.amount) || 0), 0) - p.revenue) > 1000 && <span style={{ fontSize: 10, color: T.warning }}>합계 {fmtMoney(sched2.reduce((a, e) => a + (Number(e.amount) || 0), 0))} ≠ 계약 {fmtMoney(p.revenue)}</span>}
+                              </div>
+                            </details>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 ))}
               </div>
@@ -10190,6 +10270,37 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 </div>
               );
             })()}
+            {/* 월별 수입 구성 시각화 (스택 막대) */}
+            <details className="no-print" open style={{ marginTop: S[3] }}>
+              <summary style={{ fontSize: 12.5, fontWeight: 700, color: T.brand, cursor: 'pointer', padding: '6px 0' }}>📊 월별 수입 구성 (수금등록·계약 선급/잔금·수동회차·기타예정)</summary>
+              {(() => {
+                const compData = months.map((mo, i) => ({
+                  name: mo.label,
+                  수금등록: Math.round(incColl[i] / 1000000),
+                  '선급·잔금(자동)': Math.round(incSched[i] / 1000000),
+                  '수동회차(기성)': Math.round(incManual[i] / 1000000),
+                  기타예정: Math.round(incExtra[i] / 1000000),
+                }));
+                return (
+                  <div style={{ height: 200, marginTop: S[2] }}>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                      <BarChart data={compData} margin={{ top: 6, right: 12, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="2 4" stroke="#E2E8F0" vertical={false} />
+                        <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textMute }} axisLine={{ stroke: '#CBD5E1' }} tickLine={false} />
+                        <YAxis tick={{ fontSize: 10, fill: T.textMute }} axisLine={false} tickLine={false} width={40} unit="M" />
+                        <Tooltip formatter={(v) => (v ? v.toLocaleString() + '백만원' : '-')} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${T.border}` }} />
+                        <Legend wrapperStyle={{ fontSize: 10.5 }} />
+                        <Bar dataKey="수금등록" stackId="a" fill={T.success} />
+                        <Bar dataKey="선급·잔금(자동)" stackId="a" fill={T.brand} />
+                        <Bar dataKey="수동회차(기성)" stackId="a" fill="#7C5CBF" />
+                        <Bar dataKey="기타예정" stackId="a" fill={T.warning} radius={[3, 3, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                );
+              })()}
+              <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 4 }}>막대에 마우스를 올리면 각 출처별 금액이 보입니다. 특정 월 수입이 이상하면 「사업별 기간·선급률 편집」에서 그 사업의 반영 내역·회차를 확인·수정하세요.</div>
+            </details>
             {/* 월별 표 (접기/펼치기 · 지출 세부 포함) */}
             <details className="no-print" style={{ marginTop: S[3] }}>
               <summary style={{ fontSize: 12.5, fontWeight: 700, color: T.brand, cursor: 'pointer', padding: '6px 0' }}>📋 월별 상세 표 펼치기 (수입·지출 세부·잔고)</summary>
@@ -10983,6 +11094,23 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
                 const pctSum = Math.round(norm.reduce((a, x) => a + x._pct, 0));
                 const totMonths = norm.reduce((a, x) => a + x._w, 0);   // 총 인·월
                 const usesPeriod = rawMem.some(m => Number(m.months) > 0 && Number(m.rate) > 0);
+                // 동시 총참여 검증: 같은 달에 여러 사업 참여율 합이 100%를 넘으면 관리자 인건비 이중 계상
+                const pp = (str) => { const m2 = String(str || '').match(/(\d{4})[.\-\/](\d{1,2})\s*~\s*(\d{4})[.\-\/](\d{1,2})/); return m2 ? { s: (+m2[1]) * 12 + (+m2[2]), e: (+m2[3]) * 12 + (+m2[4]) } : null; };
+                const peakOf = (empId2) => {
+                  const ents = [];
+                  (projects || []).forEach(pj => {
+                    const pr = pp(pj.period); if (!pr) return;
+                    const mb = (pj.members || []).find(x => x.empId === empId2);
+                    const rt = Number(mb && mb.rate); if (!(rt > 0)) return;
+                    ents.push({ s: pr.s, e: pr.e, rt, nm: shortName(pj.name) });
+                  });
+                  if (ents.length < 2) return null;   // 1개 사업뿐이면 검증 불필요
+                  let peak = 0, names = [];
+                  const ms = new Set(); ents.forEach(x => { for (let t = x.s; t <= x.e; t++) ms.add(t); });
+                  ms.forEach(t => { const act = ents.filter(x => x.s <= t && x.e >= t); const sum = act.reduce((a2, x) => a2 + x.rt, 0); if (sum > peak) { peak = sum; names = act.map(x => `${x.nm} ${x.rt}%`); } });
+                  return { peak, names };
+                };
+                const overloads = withPct.map(m => ({ m, pk: peakOf(m.empId) })).filter(x => x.pk && x.pk.peak > 100);
                 const updM = (idx, key, val) => {
                   const arr = (p.members || []).map((x, j) => j === idx ? { ...x, [key]: (val === '' ? '' : Number(val)) } : x);
                   // 관리자 인건비 자동 산출: 정규직 참여자의 (월인건비 × 투입기간 × 참여율) 합 — 입력 시 엑셀보다 우선
@@ -11012,7 +11140,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
                       <div style={{ fontSize: 11.5, color: T.textMute, marginTop: 8 }}>투입인원이 없습니다. 아래 프로젝트 표에서 ✏ → 참여인력을 추가하고, 여기서 [✏편집]으로 투입기간·참여율을 입력하세요.</div>
                     ) : (
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, marginTop: 8 }}>
-                        <thead><tr style={{ color: T.textMute }}><Th align="left">투입인원</Th><Th align="center">역할</Th><Th align="center">투입기간(개월)</Th><Th align="center">참여율%</Th><Th align="right">기여도(산출)</Th><Th align="right">기여 인건비</Th><Th align="right">환산 점수</Th></tr></thead>
+                        <thead><tr style={{ color: T.textMute }}><Th align="left">투입인원</Th><Th align="center">역할</Th><Th align="center">투입기간(개월)</Th><Th align="center">참여율%</Th><Th align="center">동시 총참여</Th><Th align="right">기여도(산출)</Th><Th align="right">기여 인건비</Th><Th align="right">환산 점수</Th></tr></thead>
                         <tbody>
                           {withPct.map((m) => {
                             const idx = rawMem.findIndex(x => x === rawMem.find(y => y.empId === m.empId && (y.role === m.role)));
@@ -11028,6 +11156,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
                                 <Td align="center">{m.role || '-'}</Td>
                                 <Td align="center">{analEdit ? <input type="number" value={m.months ?? ''} onChange={e => updM(ri, 'months', e.target.value)} placeholder="-" style={{ width: 52, textAlign: 'center', border: `1px solid ${T.border}`, borderRadius: 5, padding: '2px', fontSize: 11 }} /> : (m.months || '-')}</Td>
                                 <Td align="center">{analEdit ? <input type="number" value={m.rate ?? ''} onChange={e => updM(ri, 'rate', e.target.value)} placeholder="-" style={{ width: 52, textAlign: 'center', border: `1px solid ${T.border}`, borderRadius: 5, padding: '2px', fontSize: 11 }} /> : (m.rate != null && m.rate !== '' ? m.rate + '%' : '-')}</Td>
+                                <Td align="center">{(() => { const pk = peakOf(m.empId); if (!pk) return <span style={{ color: T.textLight }}>-</span>; return <span title={pk.names.join(' + ')} style={{ fontWeight: 700, color: pk.peak > 100 ? T.danger : T.success }}>{pk.peak}%{pk.peak > 100 ? ' ⚠' : ''}</span>; })()}</Td>
                                 <Td align="right" mono style={{ fontWeight: 600 }}>{pct.toFixed(0)}%{low ? <span style={{ color: T.textMute, fontSize: 9.5 }}> (소액)</span> : ''}</Td>
                                 <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(laborShare)}</Td>
                                 <Td align="right" mono><strong style={{ color: cScore >= 70 ? T.success : cScore >= 50 ? T.warning : T.danger }}>{low ? '수행 제외' : cScore + '점'}</strong></Td>
@@ -11035,8 +11164,14 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
                             );
                           })}
                         </tbody>
-                        <tfoot><tr style={{ borderTop: `2px solid ${T.border}` }}><Td style={{ fontWeight: 700 }}>합계</Td><Td></Td><Td align="center" mono>{totMonths > 0 ? totMonths.toFixed(1) + '인·월' : '-'}</Td><Td></Td><Td align="right" mono style={{ fontWeight: 700, color: pctSum === 100 ? T.success : T.warning }}>{pctSum}%</Td><Td align="right" mono>{fmtMoney(mm2.labor)}</Td><Td></Td></tr></tfoot>
+                        <tfoot><tr style={{ borderTop: `2px solid ${T.border}` }}><Td style={{ fontWeight: 700 }}>합계</Td><Td></Td><Td align="center" mono>{totMonths > 0 ? totMonths.toFixed(1) + '인·월' : '-'}</Td><Td></Td><Td></Td><Td align="right" mono style={{ fontWeight: 700, color: pctSum === 100 ? T.success : T.warning }}>{pctSum}%</Td><Td align="right" mono>{fmtMoney(mm2.labor)}</Td><Td></Td></tr></tfoot>
                       </table>
+                    )}
+                    {overloads.length > 0 && (
+                      <div style={{ marginTop: 8, padding: '8px 10px', background: 'rgba(180,35,24,0.06)', border: `1px solid rgba(180,35,24,0.25)`, borderRadius: 6, fontSize: 11, color: T.danger, lineHeight: 1.7 }}>
+                        <strong>⚠ 참여율 합계 초과</strong> — 같은 기간에 여러 사업의 참여율 합이 100%를 넘어 관리자 인건비가 이중 계상됩니다:
+                        {overloads.map((o, i) => <div key={i}>· {empName2(o.m.empId)}: 동시 <strong>{o.pk.peak}%</strong> ({o.pk.names.join(' + ')}) → 각 사업의 참여율을 합계 100% 이하로 조정하세요</div>)}
+                      </div>
                     )}
                     <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6, lineHeight: 1.6 }}>
                       기여도(산출) = 각 인원의 <strong>투입기간(개월)×참여율(%)</strong>을 사업 전체 대비 정규화한 값입니다(둘 다 입력해야 적용, 미입력 시 기존 기여도% 사용). 이 값이 개인 업적평가 '프로젝트 기여도'(모든 사업 가중평균)와 관리자 인건비 배분에 반영됩니다. {EVAL_CFG.coreMin}% 미만은 수행 기여 제외. [✏편집]으로 입력하세요.
