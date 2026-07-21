@@ -13258,31 +13258,67 @@ function HistoryView({ history, employees, results, currentYear, highlight }) {
 // ============================================================
 function NotifyView({ employees, results, currentYear }) {
   const [selected, setSelected] = useState([]);
-  const targets = employees.filter(e => e.evalTarget && results[e.id]?.grade);
+  const [mode, setMode] = useState('eval');   // 'eval' = 평가결과 통보, 'all' = 전 직원 안내(공지 등)
+  const [subject, setSubject] = useState('');
+  const [customBody, setCustomBody] = useState('');
+  const evalTargets = employees.filter(e => e.evalTarget && results[e.id]?.grade);
+  const allTargets = employees.filter(e => e.email);   // 이메일 있는 전 직원
+  const targets = mode === 'eval' ? evalTargets : allTargets;
 
   const generateBody = (emp) => {
+    if (mode === 'all') return (customBody || '').replace(/\{이름\}/g, emp.name).replace(/\{부서\}/g, emp.dept || '');
     const r = results[emp.id];
     return `안녕하세요 ${emp.name}님,\n\n${currentYear}년 정기 인사평가 결과를 안내드립니다.\n\n▶ 평가 등급: ${r.grade.grade} (${r.grade.label})\n▶ 종합 점수: ${r.totalScore.toFixed(2)} / 100점\n\n▶ ${currentYear + 1}년 보상 산정\n  · 기본급 인상률: ${r.increase}%\n  · 신규 월 기본급: ${fmtKRW(r.newSalary)}원\n  · PI: ${r.pi > 0 ? fmtKRW(r.pi) + '원' : '해당없음'}\n  · PS: ${r.ps > 0 ? fmtKRW(r.ps) + '원' : '해당없음'}\n  · 연간 총 보상: ${fmtKRW(r.totalComp2026)}원\n\n이의신청은 통보일로부터 7일 이내에 가능합니다.\n\n주식회사 코이션 인사담당`;
   };
+  const subjOf = (emp) => mode === 'all'
+    ? (subject || '[코이션] 안내').replace(/\{이름\}/g, emp.name)
+    : `[코이션] ${currentYear}년 인사평가 결과 통보 - ${emp.name}님`;
 
   const sendOne = (emp) => {
-    window.location.href = `mailto:${emp.email}?subject=${encodeURIComponent(`[코이션] ${currentYear}년 인사평가 결과 통보 - ${emp.name}님`)}&body=${encodeURIComponent(generateBody(emp))}`;
+    window.location.href = `mailto:${emp.email}?subject=${encodeURIComponent(subjOf(emp))}&body=${encodeURIComponent(generateBody(emp))}`;
+  };
+  // 이카운트/대량 발송용 CSV 내보내기 (이름·이메일·제목·본문)
+  const exportCsv = () => {
+    const rows = [['이름', '부서', '이메일', '제목', '본문']];
+    (selected.length ? targets.filter(e => selected.includes(e.id)) : targets).forEach(emp => {
+      rows.push([emp.name, emp.dept || '', emp.email || '', subjOf(emp), generateBody(emp)]);
+    });
+    const csv = '\uFEFF' + rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `코이션_이메일발송_${mode === 'eval' ? '평가통보' : '안내'}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
   };
 
   return (
     <div>
-      <PageHeader eyebrow="Notify" title="이메일 통보" subtitle="평가 결과 통보 메일을 생성합니다 (mailto: 링크)" />
-      
+      <PageHeader eyebrow="Notify" title="이메일 통보" subtitle="평가 결과 통보 또는 전 직원 안내 메일을 생성합니다" />
+
+      {/* 모드 전환 */}
+      <div style={{ display: 'flex', gap: S[2], marginBottom: S[3] }}>
+        <button onClick={() => { setMode('eval'); setSelected([]); }} style={{ padding: '7px 16px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: `1.5px solid ${mode === 'eval' ? T.brand : T.border}`, background: mode === 'eval' ? T.brand : '#fff', color: mode === 'eval' ? '#fff' : T.textMute, fontFamily: FONT }}>평가 결과 통보 ({evalTargets.length})</button>
+        <button onClick={() => { setMode('all'); setSelected([]); }} style={{ padding: '7px 16px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: `1.5px solid ${mode === 'all' ? T.brand : T.border}`, background: mode === 'all' ? T.brand : '#fff', color: mode === 'all' ? '#fff' : T.textMute, fontFamily: FONT }}>전 직원 안내 ({allTargets.length})</button>
+      </div>
+
+      {mode === 'all' && (
+        <div style={{ ...card(), padding: S[4], marginBottom: S[3] }}>
+          <div style={{ fontSize: 12, color: T.textMute, marginBottom: 6 }}>제목·본문을 직접 작성하세요. <code style={{ background: T.surfaceAlt, padding: '1px 5px', borderRadius: 3 }}>{'{이름}'}</code> <code style={{ background: T.surfaceAlt, padding: '1px 5px', borderRadius: 3 }}>{'{부서}'}</code> 를 넣으면 각 직원 이름·부서로 자동 치환됩니다.</div>
+          <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="제목 (예: [코이션] 인사평가 시스템 안내)" style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', marginBottom: 8, fontFamily: FONT }} />
+          <textarea value={customBody} onChange={e => setCustomBody(e.target.value)} rows={5} placeholder={'본문 (예: {이름}님, 경영지원부입니다. ...)'} style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', fontFamily: FONT, resize: 'vertical' }} />
+        </div>
+      )}
+
       <div style={{ ...card(), padding: S[5], marginBottom: S[5] }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: S[2] }}>
           <div style={{ fontSize: 14 }}>
             <strong style={{ color: T.brand }}>{selected.length}명</strong>
             <span style={{ color: T.textMute }}> 선택됨 / 전체 {targets.length}명</span>
           </div>
-          <div style={{ display: 'flex', gap: S[2] }}>
+          <div style={{ display: 'flex', gap: S[2], flexWrap: 'wrap' }}>
             <Button variant="outline" size="sm" onClick={() => setSelected(targets.map(e => e.id))}>전체 선택</Button>
             <Button variant="outline" size="sm" onClick={() => setSelected([])}>선택 해제</Button>
-            <Button variant="primary" size="sm" icon={Mail} disabled={selected.length === 0}
+            <Button variant="outline" size="sm" onClick={exportCsv}>📥 CSV 내보내기 (이카운트·대량발송)</Button>
+            <Button variant="primary" size="sm" icon={Mail} disabled={selected.length === 0 || (mode === 'all' && !customBody.trim())}
               onClick={() => {
                 if (!confirm(`${selected.length}명에게 메일을 발송합니다.`)) return;
                 selected.forEach((id, i) => {
@@ -13290,9 +13326,12 @@ function NotifyView({ employees, results, currentYear }) {
                   if (emp) setTimeout(() => sendOne(emp), i * 500);
                 });
               }}>
-              선택 발송
+              선택 발송 (메일앱)
             </Button>
           </div>
+        </div>
+        <div style={{ fontSize: 11, color: T.textMute, marginTop: 8, lineHeight: 1.6 }}>
+          💡 <strong>메일앱 발송</strong>은 기본 메일 프로그램을 여러 번 엽니다(소수 인원용). <strong>대량 발송</strong>은 [CSV 내보내기]로 파일을 받아 이카운트 단체메일·그룹웨어·메일머지에 올리세요. CSV엔 이름·이메일·제목·본문이 각 행에 완성돼 있습니다.
         </div>
       </div>
       
@@ -13321,7 +13360,7 @@ function NotifyView({ employees, results, currentYear }) {
                 <Td><strong style={{ color: T.ink }}>{emp.name}</strong></Td>
                 <Td>{emp.dept}</Td>
                 <Td><code style={{ fontSize: 11, color: T.textMute }}>{emp.email}</code></Td>
-                <Td align="center"><GradeBadge grade={results[emp.id].grade.grade} size="sm" /></Td>
+                <Td align="center">{results[emp.id]?.grade ? <GradeBadge grade={results[emp.id].grade.grade} size="sm" /> : <span style={{ color: T.textLight, fontSize: 11 }}>-</span>}</Td>
                 <Td align="center"><Button variant="secondary" size="sm" icon={Mail} onClick={() => sendOne(emp)}>발송</Button></Td>
               </tr>
             ))}
