@@ -2395,6 +2395,36 @@ async function parseMonthlyActuals(buf, fname, mapFn) {
       if (pid) { if (rev > 0) out.revenue[pid] = (out.revenue[pid] || 0) + rev; if (ohv > 0) out.oh[pid] = (out.oh[pid] || 0) + ohv; }
       else un.add(nm);
     });
+    // ── 자산성 지출 자동 제외: 통합거래원장에서 '보증금·예치금·증거금·임차보증' 등 지출 건을 찾아 해당 사업 제경비에서 차감 ──
+    //    (보증금은 반환받는 자산이지 사업 원가가 아님)
+    if (wb.SheetNames.includes('통합거래원장')) {
+      const lg = grid('통합거래원장');
+      let lhr = lg.findIndex(r => r && r.some(c => String(c || '').includes('프로젝트')) && r.some(c => String(c || '').replace(/\s/g, '').includes('금액')));
+      if (lhr < 0) lhr = 2;
+      const lh = lg[lhr] || [];
+      const cGubun = lh.findIndex(c => String(c || '').includes('구분'));
+      const cItem = lh.findIndex(c => String(c || '').includes('거래처') || String(c || '').includes('항목'));
+      const cAmt = lh.findIndex(c => String(c || '').replace(/\s/g, '') === '금액');
+      const cTitle = lh.findIndex(c => String(c || '').includes('품목') || String(c || '').includes('제목'));
+      const cProj = lh.findIndex(c => String(c || '').includes('프로젝트'));
+      const assetKw = /보증금|예치금|증거금|임차보증/;
+      if (cAmt >= 0 && cProj >= 0) {
+        const deduct = {};
+        lg.slice(lhr + 1).forEach(r => {
+          if (!r) return;
+          const gubun = cGubun >= 0 ? String(r[cGubun] || '') : '';
+          if (/수입|매출|반환/.test(gubun)) return;   // 수입·반환은 제외 대상 아님
+          const txt = (cItem >= 0 ? String(r[cItem] || '') : '') + ' ' + (cTitle >= 0 ? String(r[cTitle] || '') : '');
+          if (!assetKw.test(txt)) return;
+          const amt = num(r[cAmt]); if (amt <= 0) return;
+          const pnm = String(r[cProj] || '').replace(/^\[[^\]]*\]\s*/, '').trim();
+          const pid = mapFn(pnm); if (!pid) return;
+          deduct[pid] = (deduct[pid] || 0) + amt;
+          out.assetExcluded = (out.assetExcluded || []); out.assetExcluded.push(`${pnm.slice(0, 20)}: ${txt.trim().slice(0, 24)} ${amt.toLocaleString()}원`);
+        });
+        Object.entries(deduct).forEach(([pid, amt]) => { if (out.oh[pid] != null) out.oh[pid] = Math.max(0, out.oh[pid] - amt); });
+      }
+    }
   } else if (monthSheets.length) {           // (A) 계약직 통합본 → R열 프로젝트명 기준 사업별 인건비
     kind = '계약직 인건비(사업별)';
     monthSheets.forEach(sn => {
@@ -11084,7 +11114,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
       });
       return bestScore >= 0.4 ? best : null;
     };
-    const acc = { worker: {}, mgr: {}, oh: {}, revenue: {} }; const kinds = []; let unAll = []; let conTotal = 0;
+    const acc = { worker: {}, mgr: {}, oh: {}, revenue: {} }; const kinds = []; let unAll = []; let conTotal = 0; let assetExcluded = [];
     for (const f of files) {
       try {
         const { kind, out, unmatched } = await parseMonthlyActuals(await f.arrayBuffer(), f.name, mapFn);
@@ -11092,6 +11122,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
         kinds.push(kind); unAll = unAll.concat(unmatched);
         ['worker', 'mgr', 'oh', 'revenue'].forEach(k => Object.entries(out[k] || {}).forEach(([pid, v]) => { acc[k][pid] = (acc[k][pid] || 0) + v; }));
         conTotal += out.conTotal || 0;
+        if (out.assetExcluded) assetExcluded = assetExcluded.concat(out.assetExcluded);
       } catch (err) { unAll.push(f.name + ': 오류'); }
     }
     const touched = new Set([...Object.keys(acc.worker), ...Object.keys(acc.mgr), ...Object.keys(acc.oh), ...Object.keys(acc.revenue)]);
@@ -11106,7 +11137,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
       if (acc.oh[pid] != null) { c.oh = { cur: Number(p.overhead) || 0, next: Math.round(acc.oh[pid]) }; }
       return c;
     }).filter(Boolean);
-    setActPreview({ changes, kinds, unAll, conTotal, acc,
+    setActPreview({ changes, kinds, unAll, conTotal, acc, assetExcluded,
       // 기본 선택: 매출은 덮어쓰기 위험이 커서 기본 해제, 나머지는 기본 선택
       apply: { revenue: false, worker: true, mgr: true, oh: true },
       skip: {} });   // 사업별 제외 (skip[pid]=true면 그 사업 반영 안 함)
@@ -11739,6 +11770,11 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
                 </table>
               </div>
               {pv.conTotal > 0 && <div style={{ fontSize: 11.5, color: T.textMute, marginTop: S[2] }}>· 계약직 미배정(R열 없음) 총액 {fmtMoney(Math.round(pv.conTotal))}원 — 자금예측 참고용으로만 저장</div>}
+              {pv.assetExcluded && pv.assetExcluded.length > 0 && (
+                <div style={{ fontSize: 11, color: T.success, marginTop: 6, background: 'rgba(16,185,129,0.08)', borderRadius: 6, padding: '6px 10px', lineHeight: 1.6 }}>
+                  ✓ 자산성 지출 자동 제외 (보증금 등은 반환받는 자산이라 제경비에서 차감): {pv.assetExcluded.slice(0, 5).join(' · ')}
+                </div>
+              )}
               {pv.unAll.length > 0 && <div style={{ fontSize: 11, color: T.warning, marginTop: 6, lineHeight: 1.6 }}>⚠ 미매칭(반영 안 됨): {pv.unAll.slice(0, 8).join(' / ')}</div>}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: S[2], marginTop: S[4] }}>
                 <Button variant="outline" size="sm" onClick={() => setActPreview(null)}>취소</Button>
