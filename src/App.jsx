@@ -11367,6 +11367,57 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
         </div>
       )}
 
+      {/* 연도별 분리 요약 (전체 보기일 때) */}
+      {yearFilter === 'all' && years.length > 1 && (() => {
+        const byYear = years.map(y => {
+          const ps = shown.filter(p => Number(p.year) === y);
+          const done = ps.filter(p => p.status === 'completed').map(projectMetrics);
+          const wip = ps.filter(p => p.status !== 'completed' && p.status !== 'preparing').map(projectMetrics);
+          const prep = ps.filter(p => p.status === 'preparing').length;
+          const rev = ps.reduce((a, p) => a + (Number(p.revenue) || 0), 0);
+          const dRev = done.reduce((a, m) => a + m.revenue, 0), dPro = done.reduce((a, m) => a + m.profit, 0);
+          const dRate = dRev > 0 ? dPro / dRev * 100 : null;
+          return { y, cnt: ps.length, doneCnt: done.length, wipCnt: wip.length, prep, rev, dRate };
+        });
+        return (
+          <div style={{ ...card(), padding: S[5], marginBottom: S[6] }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: S[3] }}>📅 연도별 요약</div>
+            <div style={{ overflow: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead>
+                  <tr style={{ background: T.surfaceAlt }}>
+                    <Th>연도</Th><Th align="center">사업 수</Th><Th align="center">완료</Th><Th align="center">진행중</Th><Th align="center">준비</Th><Th align="right">총 매출</Th><Th align="center">완료 수익률</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byYear.map(r => (
+                    <tr key={r.y} style={{ borderBottom: `1px solid ${T.divider}`, cursor: 'pointer' }} onClick={() => setYearFilter(r.y)} title="클릭하면 이 연도만 필터링">
+                      <Td style={{ fontWeight: 700, color: T.brand }}>{r.y}년 ▸</Td>
+                      <Td align="center">{r.cnt}건</Td>
+                      <Td align="center" style={{ color: T.success }}>{r.doneCnt}</Td>
+                      <Td align="center" style={{ color: T.warning }}>{r.wipCnt}</Td>
+                      <Td align="center" style={{ color: '#7C5CBF' }}>{r.prep || '-'}</Td>
+                      <Td align="right" mono style={{ fontWeight: 600 }}>{fmtMoney(r.rev)}</Td>
+                      <Td align="center" style={{ fontWeight: 700, color: r.dRate != null ? T[rateGrade(r.dRate)] : T.textLight }}>{r.dRate != null ? r.dRate.toFixed(1) + '%' : '-'}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{ borderTop: `2px solid ${T.border}`, fontWeight: 700 }}>
+                    <Td>합계</Td><Td align="center">{shown.length}건</Td>
+                    <Td align="center" style={{ color: T.success }}>{shown.filter(p => p.status === 'completed').length}</Td>
+                    <Td align="center" style={{ color: T.warning }}>{shown.filter(p => p.status !== 'completed' && p.status !== 'preparing').length}</Td>
+                    <Td align="center" style={{ color: '#7C5CBF' }}>{shown.filter(p => p.status === 'preparing').length || '-'}</Td>
+                    <Td align="right" mono>{fmtMoney(totals.revenue)}</Td><Td></Td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6 }}>연도 행을 클릭하면 그 해 사업만 필터링됩니다. 위 요약 카드는 현재 [전체] 기준 합계입니다.</div>
+          </div>
+        );
+      })()}
+
       {/* 연도 필터 + 보기 전환 */}
       <div style={{ display: 'flex', gap: S[2], marginBottom: S[4], alignItems: 'center' }}>
         <span style={{ fontSize: 12, color: T.textMute, fontWeight: 600 }}>연도</span>
@@ -13274,8 +13325,18 @@ function NotifyView({ employees, results, currentYear }) {
     ? (subject || '[코이션] 안내').replace(/\{이름\}/g, emp.name)
     : `[코이션] ${currentYear}년 인사평가 결과 통보 - ${emp.name}님`;
 
+  const [copiedId, setCopiedId] = useState(null);
   const sendOne = (emp) => {
     window.location.href = `mailto:${emp.email}?subject=${encodeURIComponent(subjOf(emp))}&body=${encodeURIComponent(generateBody(emp))}`;
+  };
+  // 이카운트 웹메일 등에 붙여넣기용: 받는사람·제목·본문을 클립보드로 복사
+  const copyOne = async (emp) => {
+    const text = `받는사람: ${emp.email}\n제목: ${subjOf(emp)}\n\n${generateBody(emp)}`;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(text);
+      else { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); }
+      setCopiedId(emp.id); setTimeout(() => setCopiedId(null), 1800);
+    } catch (e) { alert('복사에 실패했습니다. 본문을 직접 선택해 복사해주세요.'); }
   };
   // 이카운트/대량 발송용 CSV 내보내기 (이름·이메일·제목·본문)
   const exportCsv = () => {
@@ -13317,6 +13378,11 @@ function NotifyView({ employees, results, currentYear }) {
           <div style={{ display: 'flex', gap: S[2], flexWrap: 'wrap' }}>
             <Button variant="outline" size="sm" onClick={() => setSelected(targets.map(e => e.id))}>전체 선택</Button>
             <Button variant="outline" size="sm" onClick={() => setSelected([])}>선택 해제</Button>
+            <Button variant="outline" size="sm" disabled={selected.length === 0} onClick={async () => {
+              const list = targets.filter(e => selected.includes(e.id));
+              const text = list.map(emp => `받는사람: ${emp.email}\n제목: ${subjOf(emp)}\n\n${generateBody(emp)}`).join('\n\n──────────\n\n');
+              try { if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(text); else { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); } alert(`${list.length}명분을 복사했습니다. 이카운트 메일에 붙여넣으세요.`); } catch (e) { alert('복사 실패'); }
+            }}>📋 선택 복사</Button>
             <Button variant="outline" size="sm" onClick={exportCsv}>📥 CSV 내보내기 (이카운트·대량발송)</Button>
             <Button variant="primary" size="sm" icon={Mail} disabled={selected.length === 0 || (mode === 'all' && !customBody.trim())}
               onClick={() => {
@@ -13331,7 +13397,7 @@ function NotifyView({ employees, results, currentYear }) {
           </div>
         </div>
         <div style={{ fontSize: 11, color: T.textMute, marginTop: 8, lineHeight: 1.6 }}>
-          💡 <strong>메일앱 발송</strong>은 기본 메일 프로그램을 여러 번 엽니다(소수 인원용). <strong>대량 발송</strong>은 [CSV 내보내기]로 파일을 받아 이카운트 단체메일·그룹웨어·메일머지에 올리세요. CSV엔 이름·이메일·제목·본문이 각 행에 완성돼 있습니다.
+          💡 <strong>이카운트 웹메일로 보낼 때</strong>: 각 행의 [📋 복사]를 누르면 받는사람·제목·본문이 복사됩니다 → 이카운트 메일 새 편지에 붙여넣으세요. 여러 명은 [📋 선택 복사]로 한 번에 복사하거나, [📥 CSV 내보내기]로 이카운트 단체메일에 업로드하세요. [메일앱]은 PC 기본 메일 프로그램(Outlook 등)을 여는 것이라 이카운트 웹메일에는 맞지 않습니다.
         </div>
       </div>
       
@@ -13344,7 +13410,7 @@ function NotifyView({ employees, results, currentYear }) {
                   onChange={e => setSelected(e.target.checked ? targets.map(emp => emp.id) : [])} />
               </Th>
               <Th>성명</Th><Th>부서</Th><Th>이메일</Th>
-              <Th align="center">등급</Th><Th align="center">발송</Th>
+              <Th align="center">등급</Th><Th align="center">작업</Th>
             </tr>
           </thead>
           <tbody>
@@ -13361,7 +13427,12 @@ function NotifyView({ employees, results, currentYear }) {
                 <Td>{emp.dept}</Td>
                 <Td><code style={{ fontSize: 11, color: T.textMute }}>{emp.email}</code></Td>
                 <Td align="center">{results[emp.id]?.grade ? <GradeBadge grade={results[emp.id].grade.grade} size="sm" /> : <span style={{ color: T.textLight, fontSize: 11 }}>-</span>}</Td>
-                <Td align="center"><Button variant="secondary" size="sm" icon={Mail} onClick={() => sendOne(emp)}>발송</Button></Td>
+                <Td align="center">
+                  <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                    <Button variant={copiedId === emp.id ? 'primary' : 'outline'} size="sm" onClick={() => copyOne(emp)}>{copiedId === emp.id ? '✓ 복사됨' : '📋 복사'}</Button>
+                    <Button variant="secondary" size="sm" icon={Mail} onClick={() => sendOne(emp)}>메일앱</Button>
+                  </div>
+                </Td>
               </tr>
             ))}
           </tbody>
