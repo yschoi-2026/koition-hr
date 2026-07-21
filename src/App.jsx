@@ -10283,12 +10283,12 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                           <stop offset="100%" stopColor={T.success} stopOpacity={0} />
                         </linearGradient>
                         <linearGradient id="pipeFillHi" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={T.success} stopOpacity={0.34} />
-                          <stop offset="60%" stopColor={T.success} stopOpacity={0.12} />
-                          <stop offset="100%" stopColor={T.success} stopOpacity={0} />
+                          <stop offset="0%" stopColor={'#F97316'} stopOpacity={0.30} />
+                          <stop offset="60%" stopColor={'#F97316'} stopOpacity={0.10} />
+                          <stop offset="100%" stopColor={'#F97316'} stopOpacity={0} />
                         </linearGradient>
                         <filter id="pipeGlow" x="-20%" y="-20%" width="140%" height="140%">
-                          <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor={T.success} floodOpacity="0.4" />
+                          <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor={'#F97316'} floodOpacity="0.4" />
                         </filter>
                         <filter id="lineGlow" x="-20%" y="-20%" width="140%" height="140%">
                           <feDropShadow dx="0" dy="2.5" stdDeviation="3" floodColor={T.brand} floodOpacity="0.35" />
@@ -10305,7 +10305,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                       {safeM > 0 && <ReferenceLine y={safeM} stroke={T.danger} strokeDasharray="5 4" strokeWidth={1.2} label={{ value: `안전선 ${safeM}M`, position: 'insideTopRight', fontSize: 10, fill: T.danger }} />}
                       {cfg.showBand !== false && <Area type="monotone" dataKey="낙관" name="낙관(수주율+20%p)" stroke="#94C79A" strokeWidth={1} strokeDasharray="2 3" fill="none" dot={false} />}
                       {cfg.showBand !== false && <Area type="monotone" dataKey="보수" name="보수(수주율-20%p·경비+10%)" stroke="#E3A6A0" strokeWidth={1} strokeDasharray="2 3" fill="none" dot={false} />}
-                      <Area type="monotone" dataKey="예측(파이프라인)" name="🎯 수주 반영 시나리오" stroke={T.success} strokeWidth={3} fill="url(#pipeFillHi)" dot={{ r: 3, fill: '#fff', stroke: T.success, strokeWidth: 2 }} activeDot={{ r: 6, strokeWidth: 2, stroke: '#fff' }} style={{ filter: 'url(#pipeGlow)' }} />
+                      <Area type="monotone" dataKey="예측(파이프라인)" name="🎯 수주 반영 시나리오" stroke={'#F97316'} strokeWidth={3} fill="url(#pipeFillHi)" dot={{ r: 3, fill: '#fff', stroke: '#F97316', strokeWidth: 2 }} activeDot={{ r: 6, strokeWidth: 2, stroke: '#fff' }} style={{ filter: 'url(#pipeGlow)' }} />
                       <Area type="monotone" dataKey="예측잔고" name="예측 잔고(수주 미반영)" stroke={T.brand} strokeWidth={2.5} strokeDasharray="5 3" fill="url(#balFill)" dot={{ r: 2.5, fill: '#fff', stroke: T.brand, strokeWidth: 1.5 }} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} style={{ filter: 'url(#lineGlow)' }} />
                       {hasActual && <Line type="monotone" dataKey="실제잔고" name="실제 잔고" stroke={T.gold || '#B8892B'} strokeWidth={3} dot={{ r: 4, fill: '#fff', stroke: T.gold || '#B8892B', strokeWidth: 2 }} activeDot={{ r: 6 }} connectNulls style={{ filter: 'url(#actGlow)' }} />}
                       <ReferenceDot x={minPt.name} y={minPt.예측잔고} r={6} fill={belowSafe ? T.danger : T.warning} stroke="#fff" strokeWidth={2} label={{ value: '최저점', position: 'bottom', fontSize: 9.5, fill: belowSafe ? T.danger : T.warning, fontWeight: 700 }} />
@@ -10350,7 +10350,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                         <Bar dataKey="선급·잔금(자동)" stackId="a" fill="url(#incSch)" />
                         <Bar dataKey="수동회차(기성)" stackId="a" fill="url(#incMan)" />
                         <Bar dataKey="기타예정" stackId="a" fill={T.warning} />
-                        <Bar dataKey="수주예정(파이프라인)" stackId="a" fill="#B8C5D6" radius={[3, 3, 0, 0]} />
+                        <Bar dataKey="수주예정(파이프라인)" stackId="a" fill="#FDBA74" radius={[3, 3, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
