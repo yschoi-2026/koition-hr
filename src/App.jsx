@@ -8390,8 +8390,8 @@ function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal, upda
   const [edit, setEdit] = React.useState(null); // 인력 편집
   const [form, setForm] = React.useState(null); // 관심사업 등록/편집
   const [typeFilter, setTypeFilter] = React.useState('전체'); // 사업 유형 토글: 전체/경쟁입찰/수의계약/유지보수
-  const typeOf = (p) => p.bizType || (/유지보수|OPT/i.test(String(p.name)) ? '유지보수' : '경쟁입찰');   // 미지정 시 이름으로 추정
-  const typeColor = { '경쟁입찰': T.brand, '수의계약': T.warning, '유지보수': T.textMute };
+  const typeOf = (p) => p.bizType || (p.consortium ? '컨소시엄' : (/유지보수|OPT/i.test(String(p.name)) ? '유지보수' : '경쟁입찰'));   // 미지정 시 컨소시엄 여부·이름으로 추정
+  const typeColor = { '경쟁입찰': T.brand, '수의계약': T.warning, '유지보수': T.textMute, '컨소시엄': '#7C5CBF' };
   const blank = () => ({ id: 'P:' + Date.now(), name: '', client: '', budget: '', bidDate: '', period: '', docs: '', winRate: 50, pm: '', status: '관심', bizType: '경쟁입찰', memo: '' });
   const openNew = () => setForm(blank());
   const openEdit = (p) => setForm({ ...blank(), ...p, budget: p.budget || '', winRate: p.winRate != null ? p.winRate : 50 });
@@ -8421,7 +8421,7 @@ function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal, upda
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: S[2], marginBottom: S[3] }}>
         <div style={{ display: 'flex', gap: 6 }}>
-          {['전체', '경쟁입찰', '수의계약', '유지보수'].map(t => (
+          {['전체', '경쟁입찰', '수의계약', '유지보수', '컨소시엄'].map(t => (
             <button key={t} onClick={() => setTypeFilter(t)} style={{ padding: '5px 12px', borderRadius: 16, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', border: `1.5px solid ${typeFilter === t ? T.brand : T.border}`, background: typeFilter === t ? T.brand : '#fff', color: typeFilter === t ? '#fff' : T.textMute, fontFamily: FONT }}>
               {t}{t !== '전체' && ` ${(proposals || []).filter(p => typeOf(p) === t).length}`}
             </button>
@@ -8528,13 +8528,19 @@ function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal, upda
                   <input value={form.pm} onChange={e => setForm(f => ({ ...f, pm: e.target.value }))} placeholder="예) 오창민" style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', fontFamily: FONT }} /></div>
                 <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>사업 유형</div>
                   <select value={form.bizType || '경쟁입찰'} onChange={e => setForm(f => ({ ...f, bizType: e.target.value }))} style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', fontFamily: FONT }}>
-                    <option value="경쟁입찰">경쟁입찰</option><option value="수의계약">수의계약</option><option value="유지보수">유지보수</option>
+                    <option value="경쟁입찰">경쟁입찰</option><option value="수의계약">수의계약</option><option value="유지보수">유지보수</option><option value="컨소시엄">컨소시엄</option>
                   </select></div>
                 <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>상태</div>
                   <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', fontFamily: FONT }}>
                     <option value="관심">관심</option><option value="입찰예정">입찰예정</option><option value="제안">제안(제출)</option><option value="수주">수주</option>
                   </select></div>
               </div>
+              {form.bizType === '컨소시엄' && (
+                <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>컨소시엄 구성 (공동수급체·지분)</div>
+                  <input value={form.consortium || ''} onChange={e => setForm(f => ({ ...f, consortium: e.target.value }))} placeholder="예) 코이션 40% + △△소프트 60% (주관: △△)" style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', fontFamily: FONT }} />
+                  <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 2 }}>※ 사업예산에는 <strong>우리 지분 금액</strong>을 입력하세요 (총계약액 아님).</div>
+                </div>
+              )}
               <div><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>메모</div>
                 <input value={form.memo} onChange={e => setForm(f => ({ ...f, memo: e.target.value }))} placeholder="비고" style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', fontFamily: FONT }} /></div>
               <div style={{ display: 'flex', gap: S[2], justifyContent: 'flex-end' }}>
