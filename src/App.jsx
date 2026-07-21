@@ -3453,7 +3453,7 @@ function App() {
             {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} finalizeEval={finalizeEval} projects={projects} proposals={proposals} peerEvals={peerEvals} />}
             {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertProposal={upsertProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} cashCfg={cashCfg} setCashCfg={setCashCfg} />}
             {tab === 'cms' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <AccountingCmsView fin={fin} setFin={setFin} projects={projects} cashCfg={cashCfg} canEdit={user.role === 'admin'} />}
-            {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} receivables={receivables} cashCfg={cashCfg} setCashCfg={setCashCfg} upsertProject={upsertProject} fin={fin} />}
+            {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} receivables={receivables} cashCfg={cashCfg} setCashCfg={setCashCfg} upsertProject={upsertProject} deleteProject={deleteProject} fin={fin} />}
             {tab === 'loans' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <LoansView loans={loans} setLoans={setLoans} employees={employees} />}
             {tab === 'receivables' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ReceivablesView receivables={receivables} setReceivables={setReceivables} projects={projects} />}
             {tab === 'monthclose' && <MonthCloseView projects={projects} employees={employees} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} />}
@@ -9436,7 +9436,7 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
 }
 
 
-function ManagementReportView({ user, projects, proposals, overheads, employees, empLedger, setEmpLedger, currentYear, policy, receivables, cashCfg, setCashCfg, upsertProject, fin }) {
+function ManagementReportView({ user, projects, proposals, overheads, employees, empLedger, setEmpLedger, currentYear, policy, receivables, cashCfg, setCashCfg, upsertProject, deleteProject, fin }) {
   const [monthDetail, setMonthDetail] = React.useState(null);   // 월별 상세 모달 (클릭한 월의 row)
   // 데이터 기준월: CMS 마감월(fin.period '2026-06') → '1~6월 누계' 라벨
   const cutM = (() => { const m = String((fin || {}).period || '').match(/-(\d{2})/); return m ? Number(m[1]) : null; })();
@@ -10094,7 +10094,10 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: S[3], marginTop: S[2], background: T.surfaceAlt, borderRadius: 8, padding: S[3] }}>
                 {(projects || []).filter(p => !isEtcProject(p) && p.status !== 'completed' && Number(p.revenue) > 0).map(p => (
                   <div key={p.id} style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 8, padding: S[3] }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 2, lineHeight: 1.4 }}>{p.name}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6, marginBottom: 2 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, lineHeight: 1.4 }}>{p.name}</div>
+                      {deleteProject && <button onClick={() => { if (window.confirm(`'${p.name}' 사업을 목록에서 삭제할까요?\n(중복·연차 사업 정리용 — 되돌리려면 프로젝트 관리에서 다시 등록)`)) deleteProject(p.id); }} title="이 사업 삭제 (중복·연차 정리)" style={{ flexShrink: 0, border: 'none', background: 'transparent', color: T.textMute, cursor: 'pointer', fontSize: 13, padding: 2 }}>🗑</button>}
+                    </div>
                     <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: S[2] }}>{p.id} · {p.client || '발주처 미상'} · 계약 {fmtMoney(p.revenue)}원</div>
                     <div style={{ display: 'flex', gap: S[2], flexWrap: 'wrap', alignItems: 'flex-end' }}>
                       {upsertProject && <div style={{ flex: 1, minWidth: 140 }}>
@@ -10153,7 +10156,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                               <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
                                 <button onClick={() => upSched([...sched2, { month: '', amount: '', memo: sched2.length === 0 ? '선급' : '기성' }])} style={{ padding: '3px 8px', border: `1px solid #7C5CBF`, background: '#fff', color: '#7C5CBF', borderRadius: 4, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT }}>+ 회차 추가</button>
                                 {sched2.length > 0 && <button onClick={() => upSched([])} style={{ padding: '3px 8px', border: `1px solid ${T.border}`, background: '#fff', color: T.textMute, borderRadius: 4, fontSize: 10.5, cursor: 'pointer', fontFamily: FONT }}>자동 계산으로 되돌리기</button>}
-                                {sched2.length > 0 && Math.abs(sched2.reduce((a, e) => a + (Number(e.amount) || 0), 0) - p.revenue) > 1000 && <span style={{ fontSize: 10, color: T.warning }}>합계 {fmtMoney(sched2.reduce((a, e) => a + (Number(e.amount) || 0), 0))} ≠ 계약 {fmtMoney(p.revenue)}</span>}
+                                {sched2.length > 0 && (() => { const sum = sched2.reduce((a, e) => a + (Number(e.amount) || 0), 0); const tol = Math.max(10000, Math.round(p.revenue * 0.005)); const diff = Math.abs(sum - p.revenue); return diff > tol ? <span style={{ fontSize: 10, color: T.warning }}>합계 {fmtMoney(sum)} ≠ 계약 {fmtMoney(p.revenue)} (차이 {fmtMoney(diff)})</span> : <span style={{ fontSize: 10, color: T.success }}>✓ 합계 일치</span>; })()}
                               </div>
                             </details>
                           )}
