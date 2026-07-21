@@ -11116,7 +11116,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
                     const pr = pp(pj.period); if (!pr) return;
                     const mb = (pj.members || []).find(x => x.empId === empId2);
                     const rt = Number(mb && mb.rate); if (!(rt > 0)) return;
-                    ents.push({ s: pr.s, e: pr.e, rt, nm: shortName(pj.name) });
+                    ents.push({ s: pr.s, e: pr.e, rt, nm: String(pj.name || '').length > 12 ? String(pj.name).slice(0, 11) + '…' : String(pj.name || '') });
                   });
                   if (ents.length < 2) return null;   // 1개 사업뿐이면 검증 불필요
                   let peak = 0, names = [];
