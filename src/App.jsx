@@ -9431,6 +9431,7 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
 
 
 function ManagementReportView({ user, projects, proposals, overheads, employees, empLedger, setEmpLedger, currentYear, policy, receivables, cashCfg, setCashCfg, upsertProject, fin }) {
+  const [monthDetail, setMonthDetail] = React.useState(null);   // 월별 상세 모달 (클릭한 월의 row)
   // 데이터 기준월: CMS 마감월(fin.period '2026-06') → '1~6월 누계' 라벨
   const cutM = (() => { const m = String((fin || {}).period || '').match(/-(\d{2})/); return m ? Number(m[1]) : null; })();
   const basisLabel = cutM ? `${currentYear || new Date().getFullYear()}년 1~${cutM}월 누계 기준` : '연초~최근 마감월 누계 기준';
@@ -9957,7 +9958,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const rows = months.map((mo, i) => {
           bal += inc[i] - exp[i]; balS += incS[i] - exp[i];
           balOpt += incOpt[i] - exp[i]; balCons += incCons[i] - expCons[i];
-          return { ...mo, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), expEtc: extraExpArr[i], activeRatio: activeRatioOf(i), bal, balS, balOpt, balCons, notes: incNote[i].slice(0, 3).join(', ') };
+          return { ...mo, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), expEtc: extraExpArr[i], expFixed: fixedOpexUse, expProj: Math.round(projOpexUse * activeRatioOf(i)), incColl: incColl[i], incSched: incSched[i], incManual: incManual[i], incExtra: incExtra[i], incPipe: incPipe[i], prevBal: bal - (inc[i] - exp[i]), prevBalS: balS - (incS[i] - exp[i]), activeRatio: activeRatioOf(i), bal, balS, balOpt, balCons, allNotes: incNote[i].slice(), notes: incNote[i].slice(0, 3).join(', ') };
         });
         const safety = Number(cfg.safety) || 0;
         const danger = rows.find(r => r.bal < safety);
@@ -10340,8 +10341,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                   </tr></thead>
                   <tbody>
                     {rows.map((r, i) => (
-                      <tr key={i} style={r.bal < safety ? { background: 'rgba(180,35,24,0.05)' } : undefined}>
-                        <Td>{r.y !== y0 || i === 0 ? `${r.y}.${r.label}` : r.label}</Td>
+                      <tr key={i} onClick={() => setMonthDetail(r)} style={{ cursor: 'pointer', ...(r.bal < safety ? { background: 'rgba(180,35,24,0.05)' } : {}) }} title="클릭하면 이 달의 수입·지출·잔고 계산 상세를 봅니다">
+                        <Td style={{ fontWeight: 700, color: T.brand }}>{r.y !== y0 || i === 0 ? `${r.y}.${r.label}` : r.label} <span style={{ fontSize: 9, color: T.textLight }}>▸</span></Td>
                         <Td align="right" mono style={{ color: r.inc > 0 ? T.success : T.textLight }}>{r.inc ? fmtMoney(r.inc) : '-'}</Td>
                         <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(r.expLabor)}</Td>
                         <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(r.expOpex)}</Td>
@@ -10357,6 +10358,74 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 </table>
               </div>
             </details>
+            {monthDetail && (() => {
+              const r = monthDetail;
+              const incItems = [
+                ['수금 관리 등록분', r.incColl, T.success],
+                ['진행 사업 선급·잔금(자동)', r.incSched, T.brand],
+                ['수동 회차(기성 등)', r.incManual, '#7C5CBF'],
+                ['기타 예정 수입', r.incExtra, T.warning],
+              ].filter(x => x[1] > 0);
+              const pipeInc = r.incPipe || 0;
+              const row = (label, val, color, indent) => (
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', paddingLeft: indent ? 14 : 0, fontSize: 12 }}>
+                  <span style={{ color: color || T.ink }}>{label}</span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: indent ? 400 : 600, color: color || T.ink }}>{val < 0 ? '−' : ''}{fmtMoney(Math.abs(val))}</span>
+                </div>
+              );
+              return (
+                <div onClick={() => setMonthDetail(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                  <div onClick={e => e.stopPropagation()} style={{ ...card(), padding: S[5], width: 560, maxWidth: '100%', maxHeight: '90vh', overflow: 'auto' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: S[3] }}>
+                      <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{r.y}년 {r.label} 자금 상세</div>
+                      <button onClick={() => setMonthDetail(null)} style={{ border: 'none', background: 'transparent', fontSize: 20, cursor: 'pointer', color: T.textMute }}>×</button>
+                    </div>
+
+                    {/* 잔고 흐름 요약 */}
+                    <div style={{ background: 'linear-gradient(135deg,#EAF2FC,#F5F9FF)', borderRadius: 10, padding: S[4], marginBottom: S[4] }}>
+                      <div style={{ fontSize: 12, color: T.textMute }}>전월 잔고 {fmtMoney(r.prevBal)}원에서 시작</div>
+                      <div style={{ fontSize: 13, margin: '6px 0', color: T.ink }}>+ 수입 <strong style={{ color: T.success }}>{fmtMoney(r.inc)}</strong> − 지출 <strong style={{ color: T.danger }}>{fmtMoney(r.exp)}</strong></div>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: r.bal < safety ? (r.bal < 0 ? T.danger : T.warning) : T.brand }}>= 예측 잔고 {fmtMoney(r.bal)}원</div>
+                      {r.bal < safety && <div style={{ fontSize: 11.5, color: T.danger, marginTop: 4 }}>⚠ 안전선({fmtMoney(safety)}원) 이하 — 자금 확보 검토 필요</div>}
+                    </div>
+
+                    {/* 수입 구성 */}
+                    <div style={{ marginBottom: S[4] }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.success, marginBottom: 4, borderBottom: `1px solid ${T.divider}`, paddingBottom: 3 }}>💰 수입 {fmtMoney(r.inc)}원</div>
+                      {incItems.length ? incItems.map((x, i) => row(x[0], x[1], x[2], true)) : <div style={{ fontSize: 12, color: T.textMute, paddingLeft: 14 }}>이 달 예정된 확정 수입 없음</div>}
+                      {r.allNotes && r.allNotes.length > 0 && <div style={{ fontSize: 11, color: T.textMute, marginTop: 6, paddingLeft: 14, lineHeight: 1.6 }}>내역: {r.allNotes.join(' · ')}</div>}
+                    </div>
+
+                    {/* 지출 구성 */}
+                    <div style={{ marginBottom: S[4] }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.danger, marginBottom: 4, borderBottom: `1px solid ${T.divider}`, paddingBottom: 3 }}>💸 지출 {fmtMoney(r.exp)}원</div>
+                      {row('인건비 (정규직 + 계약직)', r.expLabor, T.ink, true)}
+                      {row('운영경비 (고정 + 프로젝트성)', r.expOpex, T.ink, true)}
+                      <div style={{ fontSize: 10.5, color: T.textMute, paddingLeft: 26, marginTop: -2, marginBottom: 3 }}>= 고정 {fmtMoney(r.expFixed)} + 프로젝트성 {fmtMoney(r.expProj)} <span>(활성사업 {Math.round(r.activeRatio * 100)}%)</span></div>
+                      {r.expTax > 0 && row('세금 (부가세/법인세)', r.expTax, T.warning, true)}
+                      {r.expEtc > 0 && row('예정 지출 (등록분)', r.expEtc, T.warning, true)}
+                    </div>
+
+                    {/* 수주예정 시나리오 */}
+                    <div style={{ background: T.surfaceAlt, borderRadius: 8, padding: S[3], fontSize: 12, lineHeight: 1.7 }}>
+                      <div style={{ fontWeight: 700, color: T.ink, marginBottom: 3 }}>📈 수주예정(파이프라인) 반영 시</div>
+                      {pipeInc > 0 ? (
+                        <div>이 달 수주예정 사업의 선급·잔금 <strong style={{ color: T.success }}>{fmtMoney(pipeInc)}원</strong>이 추가로 들어오면, 잔고는 <strong>{fmtMoney(r.bal)}</strong> → <strong style={{ color: T.brand }}>{fmtMoney(r.balS)}원</strong>이 됩니다. <span style={{ color: T.textMute }}>(수주율로 가중된 기대금액)</span></div>
+                      ) : (
+                        <div style={{ color: T.textMute }}>이 달은 수주예정 사업의 입금 예정이 없습니다. 파이프라인 잔고: {fmtMoney(r.balS)}원</div>
+                      )}
+                      <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px dashed ${T.border}`, color: T.textMute, fontSize: 11 }}>
+                        낙관 시나리오 잔고 {fmtMoney(r.balOpt)} · 보수 시나리오 {fmtMoney(r.balCons)} <span>(수주율 ±20%p 가정)</span>
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: 10.5, color: T.textMute, marginTop: S[3], lineHeight: 1.6 }}>
+                      ※ 인건비는 CMS 급여 실적 + 계약직 계약기간 자동 증감, 운영경비는 고정비 + 사업 진행률 연동 프로젝트성 경비로 추정됩니다. 실제와 다르면 자금예측 상단 설정에서 조정하세요.
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2], lineHeight: 1.7 }}>
               수입 = ①수금 관리 등록분(가장 우선) + ②진행 사업 선급금(기본 {cfg.advRate}% · 사업별 개별 설정 가능 · 착수월)과 잔금(종료 익월, 종료 지연분은 이번 달 가정). 파이프라인 라인은 미수주 제안이 전부 수주된다는 가정(마감 익월 선급, +6개월 잔금). <strong>신규 수주 확정 시 자동으로 확정 라인에 반영</strong>됩니다. 지출 = 월 인건비+운영경비+분기 부가세+법인세. 인건비·운영경비는 경영회계 CMS의 실제 실적(급여대장·판관비)에서 자동 산출되며, 체크 해제 시 수동 입력으로 전환됩니다. 정확한 수금 일정은 「수금 관리」에 등록할수록 예측이 정밀해집니다. 실제 통장잔고를 경영회계 CMS에 월별 입력하면 위 차트에 금색 실선(실제)이 겹쳐 예측 정확도를 확인할 수 있습니다.
             </div>
