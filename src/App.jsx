@@ -3119,6 +3119,40 @@ function App() {
     return { totalEmp: employees.length, evalTargets: targets.length, completed, gradeCount, total2025, total2026, delta: total2026 - total2025, deltaPct: total2025 > 0 ? ((total2026 - total2025) / total2025 * 100) : 0 };
   }, [employees, results]);
 
+  // 서버 동기화 진단 + 강제 새로고침 (다른 PC 데이터가 안 보일 때)
+  const diagnoseSync = async () => {
+    let msg = '';
+    try {
+      const remote = await serverGet('main', 8000);
+      const localStr = localStorage.getItem('koition_hr_v6');
+      const rObj = remote ? (typeof remote === 'string' ? JSON.parse(remote) : remote) : null;
+      const lObj = localStr ? JSON.parse(localStr) : null;
+      const rT = rObj && rObj.updatedAt ? new Date(rObj.updatedAt).toLocaleString('ko-KR') : '(없음)';
+      const lT = lObj && lObj.updatedAt ? new Date(lObj.updatedAt).toLocaleString('ko-KR') : '(없음)';
+      const rProj = rObj && rObj.projects ? rObj.projects.length : 0;
+      const lProj = lObj && lObj.projects ? lObj.projects.length : 0;
+      msg = `[서버 동기화 진단]\n\n· 서버 저장 시각: ${rT}  (사업 ${rProj}건)\n· 이 PC 저장 시각: ${lT}  (사업 ${lProj}건)\n\n`;
+      if (!remote) {
+        msg += '⚠ 서버에서 데이터를 받지 못했습니다. 서버 연결·사용량 한도를 확인하세요. 이 PC 데이터를 서버로 올리려면 [서버로 올리기]를 누르세요.';
+        if (confirm(msg + '\n\n지금 이 PC 데이터를 서버로 올릴까요?')) { const ok = await serverPut('main', localStr); alert(ok ? '서버 업로드 성공' : '서버 업로드 실패 — 사용량 한도 가능성'); }
+        return;
+      }
+      const rTime = rObj && rObj.updatedAt ? Date.parse(rObj.updatedAt) : 0;
+      const lTime = lObj && lObj.updatedAt ? Date.parse(lObj.updatedAt) : 0;
+      if (rTime > lTime) {
+        if (confirm(msg + '→ 서버가 더 최신입니다. 서버 데이터로 이 화면을 새로고침할까요?')) {
+          localStorage.setItem('koition_hr_v6', typeof remote === 'string' ? remote : JSON.stringify(remote));
+          location.reload();
+        }
+      } else if (lTime > rTime) {
+        if (confirm(msg + '→ 이 PC가 더 최신입니다. 이 데이터를 서버로 올릴까요? (다른 PC에 반영됨)')) {
+          const ok = await serverPut('main', localStr); alert(ok ? '서버 업로드 성공 — 다른 PC에서 새로고침하세요' : '서버 업로드 실패');
+        }
+      } else {
+        alert(msg + '→ 서버와 이 PC 데이터가 동일합니다.');
+      }
+    } catch (e) { alert('진단 중 오류: ' + (e && e.message)); }
+  };
   const handleSave = () => {
     try {
       const payload = JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, fin, history, updatedAt: new Date().toISOString() });
@@ -3548,6 +3582,11 @@ function App() {
             {!serverSyncOk && (
               <div style={{ background: '#FDECEA', border: '1px solid #E8B4AE', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 12.5, color: '#8A2A21', fontWeight: 600 }}>
                 ⚠ 서버 저장 실패 — 변경사항이 지금 이 브라우저에만 저장되고 있습니다. 새로고침해도 이 브라우저에서는 유지되지만, 다른 PC와 공유되지 않습니다. 잠시 후 자동 재시도되며, 계속되면 관리자에게 알려주세요. (서버 사용량 한도 초과 가능성)
+              </div>
+            )}
+            {(user.role === 'admin' || user.role === 'manager') && (
+              <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                <button onClick={diagnoseSync} title="다른 PC와 데이터가 다를 때: 서버·이 PC 저장 시각을 비교하고 최신본으로 맞춥니다" style={{ fontSize: 11.5, padding: '5px 12px', borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.textMute, cursor: 'pointer', fontFamily: FONT, fontWeight: 600 }}>🔄 서버 동기화 진단</button>
               </div>
             )}
             
