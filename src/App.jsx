@@ -3147,12 +3147,37 @@ function App() {
     const needFix = (proposals || []).some(p => String(p.id).startsWith('P:auto:') && MAINT_SUPPORT_IDS.includes(p.wonProjectId) && !p.pm);
     // 계약기간 백필: 수주 제안인데 기간이 비어 있으면 연결된 프로젝트의 기간을 가져옴
     const projById = Object.fromEntries((projects || []).map(p => [p.id, p]));
-    const needPeriod = (proposals || []).some(p => p.wonProjectId && (!p.period || p.period === '') && projById[p.wonProjectId] && projById[p.wonProjectId].period);
+    const ourRevOf = (pj) => (pj.revIsTotal && Number(pj.shareRate) > 0) ? Math.round((Number(pj.revenue) || 0) * Number(pj.shareRate) / 100) : (Number(pj.revenue) || 0);
+    const needPeriod = (proposals || []).some(p => {
+      if (!p.wonProjectId) return false; const pj = projById[p.wonProjectId]; if (!pj) return false;
+      if ((!p.period || p.period === '') && pj.period) return true;
+      // 수주 제안이 연결 사업과 어긋나면 동기화 필요
+      if (p.status === '수주') {
+        const r = ourRevOf(pj);
+        if (pj.period && p.period !== pj.period) return true;
+        if (r > 0 && Number(p.budget) !== r) return true;
+        if (pj.name && p.name !== pj.name) return true;
+      }
+      return false;
+    });
     if (missing.length === 0 && !needFix && !needPeriod) return;
     setProposals(prev => {
       let list = (prev || []).map(p => (String(p.id).startsWith('P:auto:') && MAINT_SUPPORT_IDS.includes(p.wonProjectId) && !p.pm) ? { ...p, pm: MAINT_SUPPORT_PM, participants: ['-'], support: ['-'], note: '유지보수·OPT — 사업지원(신수호·고영훈) 100% 귀속' } : p);
-      // 프로젝트 → 제안 계약기간 동기화 (제안에 기간이 비어 있을 때만)
+      // 프로젝트 → 수주 제안 동기화: 수주 확정된 제안은 연결된 사업의 계약기간·예산(우리몫)·사업명을 항상 따라감 (①안)
       list = list.map(p => {
+        if (p.status === '수주' && p.wonProjectId) {
+          const pj = projById[p.wonProjectId];
+          if (pj) {
+            const ourRev = (pj.revIsTotal && Number(pj.shareRate) > 0) ? Math.round((Number(pj.revenue) || 0) * Number(pj.shareRate) / 100) : (Number(pj.revenue) || 0);
+            const next = { ...p };
+            if (pj.period) next.period = pj.period;              // 계약기간 동기화
+            if (ourRev > 0) next.budget = ourRev;                // 예산 = 사업 매출(컨소시엄이면 우리몫)
+            if (pj.name && pj.name !== p.name) next.name = pj.name; // 사업명 동기화
+            if (pj.client) next.client = pj.client;
+            return next;
+          }
+        }
+        // 미수주 제안: 기간이 비어 있을 때만 승계 (기존 동작 유지)
         if (p.wonProjectId && (!p.period || p.period === '')) {
           const pj = projById[p.wonProjectId];
           if (pj && pj.period) return { ...p, period: pj.period };
@@ -8480,10 +8505,19 @@ function OverheadView({ projects, overheads, currentYear, yearFilter, policy, se
 }
 
 // 수주 파이프라인 (사업제안현황 연동)
-function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal, updateProposal, upsertProposal }) {
+function ProjectPipeline({ proposals, projects, yearFilter, canEdit, deleteProposal, winProposal, updateProposal, upsertProposal }) {
   const [edit, setEdit] = React.useState(null); // 인력 편집
   const [form, setForm] = React.useState(null); // 관심사업 등록/편집
   const [typeFilter, setTypeFilter] = React.useState('전체'); // 사업 유형 토글: 전체/경쟁입찰/수의계약/유지보수
+  // 제안의 귀속연도 추정: ①연결된 프로젝트의 귀속연도 ②계약기간 종료연도 ③입찰연도
+  const projById = React.useMemo(() => Object.fromEntries((projects || []).map(p => [p.id, p])), [projects]);
+  const yearOfProp = (p) => {
+    if (p.wonProjectId && projById[p.wonProjectId] && projById[p.wonProjectId].year) return Number(projById[p.wonProjectId].year);
+    const pe = String(p.period || '').match(/~\s*(\d{4})/); if (pe) return Number(pe[1]);
+    const ps = String(p.period || '').match(/(\d{4})/); if (ps) return Number(ps[1]);
+    const bd = String(p.bidDate || '').match(/(\d{4})/); if (bd) return Number(bd[1]);
+    return null;
+  };
   const typeOf = (p) => p.bizType || (p.consortium ? '컨소시엄' : (/유지보수|OPT/i.test(String(p.name)) ? '유지보수' : '경쟁입찰'));   // 미지정 시 컨소시엄 여부·이름으로 추정
   const typeColor = { '경쟁입찰': T.brand, '수의계약': T.warning, '유지보수': T.textMute, '컨소시엄': '#7C5CBF' };
   const blank = () => ({ id: 'P:' + Date.now(), name: '', client: '', budget: '', bidDate: '', period: '', docs: '', winRate: 50, pm: '', status: '관심', bizType: '경쟁입찰', memo: '' });
@@ -8495,7 +8529,7 @@ function ProjectPipeline({ proposals, canEdit, deleteProposal, winProposal, upda
     setForm(null);
   };
   const hasData = proposals && proposals.length > 0;
-  const filtered = (proposals || []).filter(p => typeFilter === '전체' || typeOf(p) === typeFilter);
+  const filtered = (proposals || []).filter(p => (typeFilter === '전체' || typeOf(p) === typeFilter) && (yearFilter == null || yearFilter === 'all' || yearOfProp(p) === Number(yearFilter) || yearOfProp(p) == null));
   const total = filtered.length;
   const won = filtered.filter(p => p.status === '수주').length;
   const convRate = total > 0 ? Math.round(won / total * 100) : 0;
@@ -11621,7 +11655,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
       </div>
 
       {view === 'pipeline' ? (
-        <ProjectPipeline proposals={proposals || []} canEdit={canEdit} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertProposal={upsertProposal} />
+        <ProjectPipeline proposals={proposals || []} projects={projects || []} yearFilter={yearFilter} canEdit={canEdit} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertProposal={upsertProposal} />
       ) : view === 'overhead' ? (
         <OverheadView projects={shown} overheads={overheads || []} currentYear={currentYear} yearFilter={yearFilter}
           policy={policy} setPolicy={setPolicy} canEdit={canEdit}
