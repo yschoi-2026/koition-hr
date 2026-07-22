@@ -9859,9 +9859,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
       <style>{`
         @media screen and (min-width: 768px) {
           .report-wrap { max-width: 1400px !important; }
-          .report-wrap .fc-full { margin-left: calc(-1 * clamp(0px, (100% - 1080px) / 2, 160px)); margin-right: calc(-1 * clamp(0px, (100% - 1080px) / 2, 160px)); }
         }
-        @media print { .report-wrap { max-width: 1120px !important; } .report-wrap .fc-full { margin: 0 !important; } }
+        @media print { .report-wrap { max-width: 1120px !important; } }
       `}</style>
       <div style={{ ...card(), padding: S[6], marginBottom: S[5], background: `linear-gradient(135deg, ${T.brandDark}, ${T.brand})`, color: '#fff', border: 'none' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: S[3] }}>
