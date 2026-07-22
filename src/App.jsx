@@ -3075,6 +3075,21 @@ function App() {
     if (!user || heavyLoadedRef.current) return;
     if (user.role !== 'admin' && user.role !== 'manager') return;   // 직원·평가자는 중량 데이터 불필요
     (async () => {
+      // ★ 서버에서 최신본을 다시 받아 로컬과 비교 (다른 PC에서 입력한 데이터가 이 PC의 오래된 캐시에 가려지지 않도록)
+      try {
+        const remote = await serverGet('main');
+        if (remote != null) {
+          const remoteStr = typeof remote === 'string' ? remote : JSON.stringify(remote);
+          const localStr = localStorage.getItem('koition_hr_v6');
+          let useRemote = true;
+          try {
+            const rT = Date.parse((JSON.parse(remoteStr) || {}).updatedAt || 0) || 0;
+            const lT = localStr ? (Date.parse((JSON.parse(localStr) || {}).updatedAt || 0) || 0) : -1;
+            useRemote = rT >= lT;   // 서버가 최신(또는 동급)이면 서버 사용
+          } catch (e) {}
+          if (useRemote) localStorage.setItem('koition_hr_v6', remoteStr);
+        }
+      } catch (e) {}
       try {
         const res = localStorage.getItem('koition_hr_v6');
         if (res) applyHeavyData(JSON.parse(res));
