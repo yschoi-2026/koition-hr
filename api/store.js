@@ -92,12 +92,44 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'PUT' || req.method === 'POST') {
-      // 저장은 막지 않음.
+      // 저장. main 키는 권한별 보호: 직원·평가자·미인증의 저장은 재무·급여 원본을 덮어쓰지 못하게
+      //   서버의 기존 main에 '평가 관련 경량 필드'만 병합한다. (관리자 전체 저장만 원본 갱신)
       let body = req.body;
       if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = {}; } }
       const key = String((body && body.key) || 'main');
       const value = body && body.value != null ? body.value : '';
-      const payload = typeof value === 'string' ? value : JSON.stringify(value);
+      let payload = typeof value === 'string' ? value : JSON.stringify(value);
+
+      if (key === 'main') {
+        let role = null;
+        try { role = await resolveRole(req, baseUrl, token); } catch (e) { role = null; }
+        // 페이로드에 재무·평가 원본(fin·scores·cashCfg)이 들어있으면 관리자 앱의 전체 저장으로 간주.
+        //   (직원 앱은 이 필드들을 애초에 안 보냄 → 오탐 없음. 토큰 검증 실패 시에도 admin 저장 보호)
+        let hasHeavy = false;
+        try { const pv = typeof value === 'string' ? JSON.parse(value) : value; hasHeavy = !!(pv && (pv.fin || pv.scores || pv.cashCfg || pv.empLedger)); } catch (e) { hasHeavy = false; }
+        const isAdmin = role === 'admin' || role === 'manager' || hasHeavy;
+        if (!isAdmin) {
+          // 직원·평가자·미인증: 서버 원본을 읽어 평가 필드만 병합 (재무·급여·프로젝트 원본 보존)
+          try {
+            const curRaw = await redisGetRaw(baseUrl, token, 'main');
+            const base = curRaw && curRaw.result != null ? JSON.parse(curRaw.result) : {};
+            let inc = {};
+            try { inc = typeof value === 'string' ? JSON.parse(value) : (value || {}); } catch (e) { inc = {}; }
+            const merged = {
+              ...base,
+              selfScores: inc.selfScores != null ? inc.selfScores : base.selfScores,
+              comments: inc.comments != null ? inc.comments : base.comments,
+              submissions: inc.submissions != null ? inc.submissions : base.submissions,
+              peerEvals: inc.peerEvals != null ? inc.peerEvals : base.peerEvals,
+              updatedAt: inc.updatedAt || new Date().toISOString(),
+            };
+            payload = JSON.stringify(merged);
+          } catch (e) {
+            return res.status(200).json({ ok: true, skipped: true });
+          }
+        }
+      }
+
       const r = await fetch(`${baseUrl}/set/${encodeURIComponent(key)}`, {
         method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: payload,
       });
