@@ -9544,10 +9544,19 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
       <div style={{ ...card(), padding: S[4], marginTop: S[4] }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
           <SectionTitle>월별 실제 통장잔고 (자금흐름 예측 대비용)</SectionTitle>
-          <div style={{ fontSize: 11.5, color: T.textMute }}>현재 통장잔고: <strong style={{ color: T.brand }}>{fmtMoney(f.bankBalance || 0)}원</strong></div>
+          {(() => {
+            const ab = f.actualBalances || {};
+            const keys = Object.keys(ab).filter(k => ab[k] != null && ab[k] !== '').sort();
+            if (keys.length) {
+              const lastK = keys[keys.length - 1];
+              const [, m] = lastK.match(/(\d{4})-(\d{2})/) || [];
+              return <div style={{ fontSize: 11.5, color: T.textMute }}>최근 실제 잔고 <span style={{ color: T.textLight }}>({Number(m)}월 말)</span>: <strong style={{ color: T.brand }}>{fmtMoney(Number(ab[lastK]))}원</strong> <span style={{ color: T.textLight }}>· 예측 시작점으로 자동 사용</span></div>;
+            }
+            return <div style={{ fontSize: 11.5, color: T.warning }}>⚠ 실제 잔고 미입력 — 아래에 월말 잔고를 입력하면 예측 시작점이 됩니다</div>;
+          })()}
         </div>
         <div style={{ fontSize: 11.5, color: T.textMute, margin: `4px 0 ${S[3]}px`, lineHeight: 1.6 }}>
-          매월 말 실제 통장잔고를 입력하면, 경영보고서의 자금흐름 예측 차트에 <strong>실제 잔고 라인</strong>이 겹쳐 표시되어 예측 정확도를 확인할 수 있습니다.
+          매월 말 실제 통장잔고를 입력하면, 경영보고서의 자금흐름 예측이 <strong>가장 최근 실제 잔고에서 출발</strong>하고 차트에 <strong>실제 잔고 라인</strong>이 겹쳐 표시됩니다.
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: S[3] }}>
           {(() => {
@@ -9568,7 +9577,7 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
           })()}
         </div>
         <div style={{ fontSize: 11, color: T.textMute, marginTop: S[3] }}>
-          팁: 현재 통장잔고를 이번 달 칸에 입력하고, 경영보고서 자금흐름 예측의 "법인통장 잔고"에도 같은 값을 넣으면 예측 시작점이 실제와 일치합니다.
+          팁: 매월 말 잔고만 입력하면 자금흐름 예측이 자동으로 가장 최근 잔고에서 시작합니다. 별도로 시작점을 맞출 필요가 없습니다.
         </div>
       </div>
     </div>
