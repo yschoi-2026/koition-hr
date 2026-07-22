@@ -184,6 +184,7 @@ function KWatermark() {
   return (
     <div 
       aria-hidden="true"
+      className="no-print"
       style={{ 
         position: 'absolute',
         right: -100,
@@ -3492,12 +3493,12 @@ function App() {
         )}
         <div style={{ display: 'flex', minHeight: 'calc(100vh - 72px)' }}>
           {(!isMobile || navOpen) && (
-            <div style={isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 1150, boxShadow: '4px 0 20px rgba(0,0,0,0.2)' } : undefined}>
+            <div className="no-print" style={isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 1150, boxShadow: '4px 0 20px rgba(0,0,0,0.2)' } : undefined}>
               <Sidebar visibleMenus={visibleMenus} tab={tab} setTab={setTab} user={user} stats={stats} mobile={isMobile} />
             </div>
           )}
           
-          <main style={{ 
+          <main className="print-main" style={{ 
             flex: 1, padding: isMobile ? `${S[4]}px ${S[3]}px 80px` : `${S[7]}px ${S[8]}px`, overflow: 'auto', 
             maxWidth: isMobile ? '100vw' : `calc(100vw - ${SIDEBAR_W}px)`,
             position: 'relative'
@@ -3628,13 +3629,29 @@ function GlobalStyles() {
       input, select, textarea { font-family: inherit; }
       input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
       @media (max-width: 767px) {
-        table { font-size: 11.5px !important; }
+        table { font-size: 11px !important; }
         h1 { font-size: 20px !important; }
         h2 { font-size: 17px !important; }
         header .hide-mobile, .hide-mobile { display: none !important; }
         main > div { max-width: 100% !important; }
+        /* 넓은 표는 가로 스크롤 (칸 겹침 방지) */
+        .scroll-x, .tbl-scroll { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+        table { min-width: max-content; }
+        /* 다열 그리드는 모바일에서 접기 */
+        .grid-resp { grid-template-columns: 1fr !important; }
+        .grid-resp-2 { grid-template-columns: repeat(2, 1fr) !important; }
+        /* 차트 풀폭 브레이크아웃은 모바일에선 상쇄 */
+        .fc-full { margin-left: 0 !important; margin-right: 0 !important; }
+        /* 모달은 화면 꽉 차게 */
+        .modal-card { width: 100% !important; max-width: 100% !important; border-radius: 12px !important; }
       }
-      @media print { .no-print { display: none !important; } }
+      @media print {
+        .no-print { display: none !important; }
+        header { display: none !important; }
+        .print-main { max-width: 100% !important; width: 100% !important; padding: 0 !important; overflow: visible !important; }
+        body, html { background: #fff !important; }
+        @page { margin: 12mm; }
+      }
       input[type="range"] { accent-color: ${T.brand}; }
       ::-webkit-scrollbar { width: 8px; height: 8px; }
       ::-webkit-scrollbar-track { background: ${T.surfaceAlt}; }
@@ -9838,8 +9855,14 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   );
 
   return (
-    <div style={{ maxWidth: 1120 }}>
-      {/* 표지 */}
+    <div className="report-wrap" style={{ maxWidth: 1120 }}>
+      <style>{`
+        @media screen and (min-width: 768px) {
+          .report-wrap { max-width: 1400px !important; }
+          .report-wrap .fc-full { margin-left: calc(-1 * clamp(0px, (100% - 1080px) / 2, 160px)); margin-right: calc(-1 * clamp(0px, (100% - 1080px) / 2, 160px)); }
+        }
+        @media print { .report-wrap { max-width: 1120px !important; } .report-wrap .fc-full { margin: 0 !important; } }
+      `}</style>
       <div style={{ ...card(), padding: S[6], marginBottom: S[5], background: `linear-gradient(135deg, ${T.brandDark}, ${T.brand})`, color: '#fff', border: 'none' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: S[3] }}>
           <div>
@@ -10356,7 +10379,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               const safeM = Math.round(safety / 1000000);
               const belowSafe = minPt.예측잔고 < safeM;
               return (
-                <div style={{ height: 300, background: 'linear-gradient(180deg,#FBFCFE 0%,#EEF3FA 100%)', borderRadius: 14, padding: `${S[3]}px ${S[2]}px ${S[2]}px`, border: `1px solid ${T.border}`, boxShadow: 'inset 0 1px 0 #fff, 0 4px 16px rgba(21,35,63,0.08)' }}>
+                <div className="fc-full" style={{ height: 360, background: 'linear-gradient(180deg,#FBFCFE 0%,#EEF3FA 100%)', borderRadius: 14, padding: `${S[3]}px ${S[2]}px ${S[2]}px`, border: `1px solid ${T.border}`, boxShadow: 'inset 0 1px 0 #fff, 0 4px 16px rgba(21,35,63,0.08)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: `0 ${S[3]}px`, marginBottom: 2 }}>
                     <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, letterSpacing: '-0.01em' }}>12개월 자금 잔고 추이 <span style={{ fontSize: 10.5, fontWeight: 600, color: T.textMute }}>(단위: 백만원)</span></span>
                     <span style={{ fontSize: 11, fontWeight: 700, color: belowSafe ? T.danger : T.success }}>최저 {minPt.name} {minPt.예측잔고.toLocaleString()}M {belowSafe ? '⚠ 안전선 이하' : '✓ 안전'}</span>
@@ -11184,7 +11207,13 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
   const empName = (id) => employees.find(e => e.id === id)?.name || id;
 
   const years = Array.from(new Set(projects.map(p => Number(p.year)))).sort((a, b) => b - a);
-  const shownAll = projects.filter(p => yearFilter === 'all' || Number(p.year) === Number(yearFilter));
+  // 기본: 현재 연도가 사업 목록에 있으면 그 해부터 보여줌 (없으면 전체)
+  const [yearSort, setYearSort] = useState('desc');   // 'desc'=최신연도 먼저, 'asc'=오래된 순
+  const _cy = Number(currentYear) || new Date().getFullYear();
+  React.useEffect(() => { if (years.includes(_cy)) setYearFilter(_cy); /* eslint-disable-next-line */ }, []);
+  const shownAllRaw = projects.filter(p => yearFilter === 'all' || Number(p.year) === Number(yearFilter));
+  const yrCmp = (a, b) => yearSort === 'desc' ? (Number(b.year) - Number(a.year)) || String(a.id).localeCompare(String(b.id)) : (Number(a.year) - Number(b.year)) || String(a.id).localeCompare(String(b.id));
+  const shownAll = shownAllRaw.slice().sort(yrCmp);
   const etcShown = shownAll.filter(isEtcProject);
   const shown = shownAll.filter(p => !isEtcProject(p));
   const bench = costBenchmark(shown);
@@ -11577,6 +11606,10 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
             color: String(yearFilter) === String(y) ? '#fff' : T.text, fontWeight: 600,
           }}>{y === 'all' ? '전체' : `${y}년`}</button>
         ))}
+        <button onClick={() => setYearSort(s => s === 'desc' ? 'asc' : 'desc')} title="연도 정렬 전환" style={{
+          padding: '5px 10px', borderRadius: 6, fontSize: 12, fontFamily: FONT, cursor: 'pointer',
+          border: `1px solid ${T.border}`, background: T.surface, color: T.textMute, fontWeight: 600,
+        }}>{yearSort === 'desc' ? '↓ 최신연도순' : '↑ 오래된순'}</button>
         <div style={{ flex: 1 }} />
         {[['list', '목록'], ['analysis', '지출 분석'], ['overhead', '공통비 배부'], ['pipeline', '수주 파이프라인']].map(([v, lab]) => (
           <button key={v} onClick={() => setView(v)} style={{
