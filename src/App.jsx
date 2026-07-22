@@ -887,6 +887,18 @@ async function hashPassword(plaintext) {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// 서버 권한 검증용 토큰: sha256(passwordHash + ':' + APP_KEY). 로그인 시 설정되어 serverGet/Put 헤더에 실림.
+let _authHeaders = {};   // { 'x-user', 'x-token' }
+async function computeAuthToken(passwordHash) {
+  const enc = new TextEncoder();
+  const buf = await crypto.subtle.digest('SHA-256', enc.encode(passwordHash + ':' + APP_KEY));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function setAuth(username, passwordHash) {
+  if (!username || !passwordHash) { _authHeaders = {}; return; }
+  try { _authHeaders = { 'x-user': username, 'x-token': await computeAuthToken(passwordHash) }; } catch (e) { _authHeaders = {}; }
+}
+
 // 비밀번호 검증 (입력값과 저장된 해시 비교)
 async function verifyPassword(plaintext, hash) {
   const computed = await hashPassword(plaintext);
@@ -2596,7 +2608,7 @@ async function serverGet(key, timeoutMs = 6000) {
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);   // 서버 지연 시 무한 대기 방지
-    const r = await fetch(`${SERVER_URL}?key=${encodeURIComponent(key)}`, { headers: { 'x-app-key': APP_KEY }, signal: ctrl.signal });
+    const r = await fetch(`${SERVER_URL}?key=${encodeURIComponent(key)}`, { headers: { 'x-app-key': APP_KEY, ..._authHeaders }, signal: ctrl.signal });
     clearTimeout(t);
     if (!r.ok) return null;
     const j = await r.json();
@@ -2605,7 +2617,7 @@ async function serverGet(key, timeoutMs = 6000) {
 }
 function serverPut(key, value) {
   try {
-    return fetch(SERVER_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-app-key': APP_KEY }, body: JSON.stringify({ key, value }) })
+    return fetch(SERVER_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-app-key': APP_KEY, ..._authHeaders }, body: JSON.stringify({ key, value }) })
       .then(r => { if (!r.ok) console.warn('[서버저장 실패]', key, r.status); return r.ok; })
       .catch((e) => { console.warn('[서버저장 실패]', key, e && e.message); return false; });
   } catch (e) { return Promise.resolve(false); }
@@ -3000,6 +3012,7 @@ function App() {
 
   const dataLoadedRef = useRef(false);   // 자동 저장 가드: 초기 로드 완료 전에는 저장 안 함(기존 데이터 보호)
   const heavyLoadedRef = useRef(false);
+  const empRefetchedRef = useRef(false);   // 직원 로그인 후 필터링 데이터 재요청 1회 가드
   // 공통 데이터 파서 (경량/중량 분리)
   const applyLightData = (data) => {
     if (data.employees) setEmployees(data.employees);
@@ -3095,6 +3108,26 @@ function App() {
         if (res) applyHeavyData(JSON.parse(res));
       } catch (e) {}
       heavyLoadedRef.current = true;
+    })();
+  }, [user]);
+
+  // ②-b 로그인 후: 직원·평가자면 로컬 캐시를 비우고 서버에서 '필터링된' 데이터를 다시 받음
+  //     (공용 PC에 남아있을 수 있는 관리자 캐시의 급여·재무 정보 노출 방지)
+  useEffect(() => {
+    if (!user || empRefetchedRef.current) return;
+    if (user.role === 'admin' || user.role === 'manager') return;
+    (async () => {
+      try {
+        // 민감정보가 섞였을 수 있는 로컬 캐시 선제거
+        try { localStorage.removeItem('koition_hr_v6'); } catch (e) {}
+        const remote = await serverGet('main');   // 서버가 역할 확인 후 급여·재무 제거본을 내려줌
+        if (remote != null) {
+          const str = typeof remote === 'string' ? remote : JSON.stringify(remote);
+          try { localStorage.setItem('koition_hr_v6', str); } catch (e) {}
+          applyLightData(JSON.parse(str));
+        }
+      } catch (e) {}
+      empRefetchedRef.current = true;
     })();
   }, [user]);
 
@@ -3553,7 +3586,7 @@ function App() {
     <>
       <GlobalStyles />
       <div style={{ minHeight: '100vh', background: T.bg, fontFamily: FONT, color: T.text }}>
-        <Header user={user} onLogout={() => { setUser(null); setTab('dashboard'); }} 
+        <Header user={user} onLogout={() => { setAuth(null, null); try { localStorage.removeItem('koition_hr_v6'); } catch (e) {} setUser(null); setTab('dashboard'); }} 
           handleSave={handleSave} handleExport={handleExport} handleImport={handleImport}
           onChangePassword={() => setPasswordModalOpen(true)} />
         {isMobile && (
@@ -4960,6 +4993,7 @@ function LoginView({ onLogin, policy, users }) {
         if (!acct) return false;
         const ok = await verifyPassword(password, acct.passwordHash);
         if (!ok) return false;
+        await setAuth(acct.username, acct.passwordHash);   // 서버 권한 검증 토큰 설정 (역할 위조 방지)
         onLogin({ username: acct.username, role: acct.role, name: acct.name, empId: acct.empId, deptScope: acct.deptScope, mustChangePassword: acct.mustChangePassword });
         return true;
       };
