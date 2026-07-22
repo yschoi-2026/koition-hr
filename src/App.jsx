@@ -3013,6 +3013,7 @@ function App() {
   const dataLoadedRef = useRef(false);   // 자동 저장 가드: 초기 로드 완료 전에는 저장 안 함(기존 데이터 보호)
   const heavyLoadedRef = useRef(false);
   const empRefetchedRef = useRef(false);   // 직원 로그인 후 필터링 데이터 재요청 1회 가드
+  const lastSavedRef = useRef(null);        // 직전 서버 저장 페이로드(타임스탬프 제외) — 중복 저장 방지
   // 공통 데이터 파서 (경량/중량 분리)
   const applyLightData = (data) => {
     if (data.employees) setEmployees(data.employees);
@@ -3211,6 +3212,11 @@ function App() {
           payload = JSON.stringify({ ...base, selfScores, comments, submissions, peerEvals, updatedAt: new Date().toISOString() });
         }
         localStorage.setItem('koition_hr_v6', payload);
+        // 직전 저장과 내용이 같으면(타임스탬프 제외) 서버 저장 생략 — 불필요한 요청·폭주 방지
+        const stripTs = (s) => { try { const o = JSON.parse(s); delete o.updatedAt; return JSON.stringify(o); } catch (e) { return s; } };
+        const cur = stripTs(payload);
+        if (cur === lastSavedRef.current) { return; }   // 실질 변화 없음 → 서버 요청 안 함
+        lastSavedRef.current = cur;
         serverPut('main', payload).then(ok => setServerSyncOk(!!ok));   // 서버 저장 (모든 PC 공유) — 실패 시 경고 표시
       } catch (e) { /* 저장 공간 부족 등 — 수동 저장/내보내기 사용 */ }
     }, 1200);
@@ -3252,14 +3258,14 @@ function App() {
           if (pj) {
             const ourRev = (pj.revIsTotal && Number(pj.shareRate) > 0) ? Math.round((Number(pj.revenue) || 0) * Number(pj.shareRate) / 100) : (Number(pj.revenue) || 0);
             const next = { ...p };
-            if (pj.period) next.period = pj.period;              // 계약기간 동기화
-            if (ourRev > 0) next.budget = ourRev;                // 예산 = 사업 매출(컨소시엄이면 우리몫)
-            if (pj.name && pj.name !== p.name) next.name = pj.name; // 사업명 동기화
-            if (pj.client) next.client = pj.client;
-            return next;
+            let changed = false;
+            if (pj.period && next.period !== pj.period) { next.period = pj.period; changed = true; }
+            if (ourRev > 0 && Number(next.budget) !== ourRev) { next.budget = ourRev; changed = true; }
+            if (pj.name && pj.name !== p.name) { next.name = pj.name; changed = true; }
+            if (pj.client && pj.client !== p.client) { next.client = pj.client; changed = true; }
+            return changed ? next : p;   // 실제 변경 있을 때만 새 객체 (불필요한 리렌더·저장 방지)
           }
         }
-        // 미수주 제안: 기간이 비어 있을 때만 승계 (기존 동작 유지)
         if (p.wonProjectId && (!p.period || p.period === '')) {
           const pj = projById[p.wonProjectId];
           if (pj && pj.period) return { ...p, period: pj.period };
@@ -3278,9 +3284,12 @@ function App() {
           note: maint ? '유지보수·OPT — 사업지원(신수호·고영훈) 100% 귀속' : '기존 수주사업 자동 등록 — 제안팀 수주기여 반영 (인력 편집 가능)',
         };
       });
+      // 실제 변화가 없으면 이전 배열을 그대로 반환 → 리렌더·재실행·서버저장 폭주 방지 (무한루프 차단)
+      const changedList = list.some((p, i) => p !== (prev || [])[i]);
+      if (!changedList && add.length === 0) return prev;
       return [...list, ...add];
     });
-  }, [projects, proposals]);
+  }, [projects]);   // ★ proposals 의존 제거 — projects가 바뀔 때만 동기화 (무한루프 원천 차단)
   const markBackup = () => { try { localStorage.setItem('koition_hr_last_backup', String(Date.now())); } catch(e){} };
   const [backupDue, setBackupDue] = useState(false);
   useEffect(() => {
