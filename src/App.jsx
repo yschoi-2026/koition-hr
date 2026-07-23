@@ -10020,7 +10020,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
       </div>
 
       {/* ★ 핵심: 자금흐름 예측 시나리오 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: `0 0 ${S[4]}px` }}><span style={{ padding: '4px 12px', borderRadius: 8, background: T.brand, color: '#fff', fontSize: 13, fontWeight: 800 }}>핵심</span><h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>자금흐름 예측 시나리오 (12개월)</h2></div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: `0 0 ${S[4]}px` }}><span style={{ padding: '4px 12px', borderRadius: 8, background: T.brand, color: '#fff', fontSize: 13, fontWeight: 800 }}>핵심</span><h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>자금흐름 예측 시나리오 (2025.10 ~ 2027.04)</h2></div>
       {(() => {
         const cfg = cashCfg || {};
         const up = (k, v) => setCashCfg && setCashCfg(prev => ({ ...prev, [k]: Number(v) || 0 }));
@@ -10072,8 +10072,11 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const useOpex = useFixedOpexAdj + Math.round(useProjOpex * projOpexScale / 100);
         // 월별 인건비 보정(cfg.laborByMonth['YYYY-MM'] 있으면 그 값, 없으면 useLabor)
         const laborByMonth = cfg.laborByMonth || {};
-        const now = new Date(); const y0 = now.getFullYear(), m0 = now.getMonth(); // 이번 달부터 12개월
-        const months = Array.from({ length: 12 }, (_, i) => { const d = new Date(y0, m0 + i, 1); return { y: d.getFullYear(), m: d.getMonth() + 1, key: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), label: (d.getMonth() + 1) + '월' }; });
+        // 예측 기간: 2025.10 ~ 2027.04 (19개월). 과거 실적(1~6월 등)은 실제잔고/실적으로 반영.
+        const FC_START_Y = (cfg.startY || 2025), FC_START_M = (cfg.startM || 10);   // 시작 연·월 (설정 가능)
+        const FC_MONTHS = cfg.horizonMonths || 19;                                    // 총 개월수
+        const y0 = FC_START_Y, m0 = FC_START_M - 1;   // m0: 0-based 월
+        const months = Array.from({ length: FC_MONTHS }, (_, i) => { const d = new Date(y0, m0 + i, 1); return { y: d.getFullYear(), m: d.getMonth() + 1, key: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), label: (d.getMonth() + 1) + '월' }; });
         const idxOf = (yy, mm) => (yy - y0) * 12 + (mm - 1 - m0);
         const parsePeriod = (p) => { const m = String(p || '').match(/(\d{4})[.\-\/](\d{1,2})\s*~\s*(\d{4})[.\-\/](\d{1,2})/); return m ? { sy: +m[1], sm: +m[2], ey: +m[3], em: +m[4] } : null; };
         // #2 선급률 자동학습: 수금 실적(receivables)에서 사업별 첫 입금/계약금액 비율의 중앙값을 기본 선급률로 추천
@@ -10087,16 +10090,16 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const advRates = cfg.advRates || {};
         const effAdvRate = (cfg.advRate != null && cfg.advRate !== '') ? Number(cfg.advRate) : (learnedAdvRate != null ? learnedAdvRate : 40);
         const advOf = (pid) => ((advRates[pid] != null && advRates[pid] !== '') ? Number(advRates[pid]) : effAdvRate) / 100;
-        const inc = Array(12).fill(0); const incNote = Array.from({ length: 12 }, () => []);
+        const inc = Array(FC_MONTHS).fill(0); const incNote = Array.from({ length: FC_MONTHS }, () => []);
         const covered = new Set();
         // 수입 카테고리별 추적 (월별 구성 시각화용)
-        const incColl = Array(12).fill(0), incSched = Array(12).fill(0), incManual = Array(12).fill(0), incExtra = Array(12).fill(0);
+        const incColl = Array(FC_MONTHS).fill(0), incSched = Array(FC_MONTHS).fill(0), incManual = Array(FC_MONTHS).fill(0), incExtra = Array(FC_MONTHS).fill(0);
         // ① 수금 관리 등록분 (미입금) — 가장 확정적
         (receivables || []).filter(r => !r.paidDate && r.dueDate && Number(r.amount) > 0).forEach(r => {
           const d = new Date(r.dueDate); if (isNaN(d)) return;
           const i = idxOf(d.getFullYear(), d.getMonth() + 1);
           const at = i < 0 ? 0 : i;   // 연체분은 이번 달 수금 가정
-          if (at < 12) { inc[at] += Number(r.amount); incColl[at] += Number(r.amount); incNote[at].push((r.project || '수금') + (i < 0 ? '(연체)' : '')); if (r.project) covered.add(String(r.project).trim()); }
+          if (at < FC_MONTHS) { inc[at] += Number(r.amount); incColl[at] += Number(r.amount); incNote[at].push((r.project || '수금') + (i < 0 ? '(연체)' : '')); if (r.project) covered.add(String(r.project).trim()); }
         });
         // ② 진행 사업: 선급금(착수월) + 잔금(종료 익월) — 수금관리 등록 사업은 제외(중복 방지)
         //    선급은 착수월이 예측창 안일 때만 계상. 착수가 과거면 이미 수령해 통장잔고에 반영된 것으로 보고,
@@ -10111,7 +10114,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             sched.forEach(e => {
               const mm = String(e.month || '').match(/(\d{4})[.\-\/](\d{1,2})/); if (!mm) return;
               const i = idxOf(+mm[1], +mm[2]); const amt = Number(e.amount) || 0;
-              if (i >= 0 && i < 12 && amt > 0) { inc[i] += amt; incManual[i] += amt; incNote[i].push(`${p.id} ${e.memo || '회차'} ${fmtEok(amt)}`); }
+              if (i >= 0 && i < FC_MONTHS && amt > 0) { inc[i] += amt; incManual[i] += amt; incNote[i].push(`${p.id} ${e.memo || '회차'} ${fmtEok(amt)}`); }
             });
             return;
           }
@@ -10119,22 +10122,22 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           const adv = advOf(p.id);
           const rev = effectiveRevenue(p);   // 컨소시엄이면 지분 반영된 우리 몫
           const si = idxOf(pr.sy, pr.sm), eiRaw = idxOf(pr.ey, pr.em) + 1; // 잔금 = 검수 익월
-          if (si >= 0 && si < 12 && adv > 0) { const a = rev * adv; inc[si] += a; incSched[si] += a; incNote[si].push(`${p.id} 선급 ${fmtEok(a)}`); }
+          if (si >= 0 && si < FC_MONTHS && adv > 0) { const a = rev * adv; inc[si] += a; incSched[si] += a; incNote[si].push(`${p.id} 선급 ${fmtEok(a)}`); }
           const ei = eiRaw < 0 ? 0 : eiRaw; // 이미 종료됐는데 미수금 → 이번 달 수금 가정
-          if (ei < 12) { const rem = rev * (1 - adv); inc[ei] += rem; incSched[ei] += rem; incNote[ei].push(`${p.id} 잔금 ${fmtEok(rem)}${eiRaw < 0 ? '(지연)' : ''}`); }
+          if (ei < FC_MONTHS) { const rem = rev * (1 - adv); inc[ei] += rem; incSched[ei] += rem; incNote[ei].push(`${p.id} 잔금 ${fmtEok(rem)}${eiRaw < 0 ? '(지연)' : ''}`); }
         });
         // ②-B 기타 예정 수입 (사용자 직접 등록: 소규모 매출·비매출조직 수익 등) — cfg.extraIncome[]
         (cfg.extraIncome || []).forEach(e => {
           const mm = String(e.month || '').match(/(\d{4})[.\-\/](\d{1,2})/);
           if (!mm) return;
           const i = idxOf(+mm[1], +mm[2]); const amt = Number(e.amount) || 0;
-          if (i >= 0 && i < 12 && amt > 0) { inc[i] += amt; incExtra[i] += amt; incNote[i].push((e.memo || '예정수입') + ' ' + fmtEok(amt)); }
+          if (i >= 0 && i < FC_MONTHS && amt > 0) { inc[i] += amt; incExtra[i] += amt; incNote[i].push((e.memo || '예정수입') + ' ' + fmtEok(amt)); }
         });
         // ③ 파이프라인 시나리오: 미수주 제안을 수주율(%)로 가중해 반영 (계약기간 시작월 선급, +6개월 잔금)
         //    cfg.pipeline[id]={on,month,rate}: 개별 포함여부·예상 계약월·선급률. 기대금액 = 예산 × 수주율.
         const pipeCfg = cfg.pipeline || {};
         const incS = inc.slice();
-        const incPipe = Array(12).fill(0);   // 수주예정(파이프라인) 선급·잔금 추적 — 시각화용
+        const incPipe = Array(FC_MONTHS).fill(0);   // 수주예정(파이프라인) 선급·잔금 추적 — 시각화용
         (proposals || []).filter(p => p.status !== '수주' && Number(p.budget) > 0).forEach(p => {
           const pc = pipeCfg[p.id] || {};
           if (pc.on === false) return;
@@ -10146,8 +10149,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           if (start == null) { const bm = String(p.bidDate || '').match(/(\d{4})[.\-\/](\d{1,2})/); start = bm ? idxOf(+bm[1], +bm[2]) + 1 : 2; }
           if (start < 1) start = 1;
           const advP = ((pc.rate != null && pc.rate !== '') ? Number(pc.rate) : (Number(cfg.advRate) || 0)) / 100;
-          if (start < 12 && advP > 0) { const a = expBudget * advP; incS[start] += a; incPipe[start] += a; incNote[start].push(`${p.name} 수주예정 선급 ${fmtEok(a)}(수주율 ${Math.round(winW*100)}%)`); }
-          const end = start + 6; if (end < 12) { const rem = expBudget * (1 - advP); incS[end] += rem; incPipe[end] += rem; }
+          if (start < FC_MONTHS && advP > 0) { const a = expBudget * advP; incS[start] += a; incPipe[start] += a; incNote[start].push(`${p.name} 수주예정 선급 ${fmtEok(a)}(수주율 ${Math.round(winW*100)}%)`); }
+          const end = start + 6; if (end < FC_MONTHS) { const rem = expBudget * (1 - advP); incS[end] += rem; incPipe[end] += rem; }
         });
         // 지출: 인건비 + 운영경비 + 세금(부가세 1·4·7·10월, 법인세 3월)
         // 계약직 인건비 자동 증감: 각 사업의 작업자인건비(계약직, 월액)를 계약기간 동안만 배분.
@@ -10169,6 +10172,51 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           if (v != null && v !== '') return Number(v);   // 월별 수동 보정 우선
           return regLabor + autoConOf(i);                // 정규직 + 자동 계약직
         };
+        // ── 사업별 투입인력·진척율 기반 월별 인건비 추정 ──
+        //   각 사업의 계약기간에 걸쳐, 참여인력(members)의 기여도(참여율)를 인건비로 환산.
+        //   진척율(cfg.progress[pid][YYYY-MM] 있으면 그 비중, 없으면 기간 균등)을 곱해 월 인건비 배분.
+        const empSalaryMap = {};
+        (employees || []).forEach(e => { empSalaryMap[e.id] = (Number(e.baseSalary) || 0) + (Number(e.allowance) || 0); });
+        const progressCfg = cfg.progress || {};           // 계획 진척율 { pid: { 'YYYY-MM': % } }
+        const progressActCfg = cfg.progressActual || {};   // 실제 진행율 { pid: { 'YYYY-MM': % } }
+        // 계약직 평균 월급 = 최저임금 기준(2025 시급 10,030 × 209h × 4대보험). 설정값 우선.
+        const CON_AVG_WAGE = Number(cfg.conAvgWage) || 2306000;
+        const estConHead = (p, dur) => {
+          const wl = Number(p.workerLabor) || 0; if (wl <= 0 || dur <= 0) return 0;
+          return Math.round((wl / dur) / CON_AVG_WAGE * 10) / 10;   // 월 계약직 인건비 ÷ 평균월급 = 인원(소수1자리)
+        };
+        const laborByProjMonth = Array.from({ length: FC_MONTHS }, () => 0);   // 사업 투입 인건비(추정)
+        const headByMonth = Array.from({ length: FC_MONTHS }, () => 0);        // 투입 인원수(참여율 가중 환산)
+        (projects || []).forEach(p => {
+          const pr = parsePeriod(p.period); if (!pr) return;
+          const st = idxOf(pr.sy, pr.sm), en = idxOf(pr.ey, pr.em);
+          const dur = en - st + 1; if (dur <= 0) return;
+          const mem = p.members || [];
+          // 관리자(정규직): 참여율(contribution) 적용
+          const mgrMonthly = mem.reduce((s, m) => s + (empSalaryMap[m.empId] || 0) * (Number(m.contribution) || 0) / 100, 0);
+          const mgrHead = mem.reduce((s, m) => s + (Number(m.contribution) || 0) / 100, 0);   // 참여율 환산
+          // 계약직: 사업에 100% 전담. 인건비는 workerLabor(기간 총액) → 월 균등. 인원수는 참여율 없이 1인=1명.
+          const conMonthly = (Number(p.workerLabor) || 0) / dur;   // 계약직 월 인건비(기간 균등)
+          const conHead = estConHead(p, dur);                      // 계약직 인원수 추정
+          const monthlyLabor = mgrMonthly + conMonthly;            // 관리자 + 계약직
+          const headCount = mgrHead + conHead;                     // 관리자(환산) + 계약직(실인원)
+          const pgMap = progressCfg[p.id];
+          const hasProgress = pgMap && Object.keys(pgMap).some(k => pgMap[k] != null && pgMap[k] !== '');
+          let progSum = 0;
+          if (hasProgress) { for (let k = st; k <= en; k++) { const mk = months[k] ? months[k].key : null; progSum += (mk && pgMap[mk] != null && pgMap[mk] !== '') ? Number(pgMap[mk]) : 0; } }
+          const totalLabor = monthlyLabor * dur;
+          for (let k = st; k <= en; k++) {
+            if (k < 0 || k >= FC_MONTHS) continue;
+            const mk = months[k] ? months[k].key : null;
+            let w;
+            if (hasProgress && progSum > 0) {
+              const pv = (mk && pgMap[mk] != null && pgMap[mk] !== '') ? Number(pgMap[mk]) : 0;
+              w = pv / progSum;
+            } else { w = 1 / dur; }
+            laborByProjMonth[k] += hasProgress && progSum > 0 ? totalLabor * w : monthlyLabor;
+            headByMonth[k] += hasProgress && progSum > 0 ? headCount * w * dur : headCount;
+          }
+        });
         // #4 프로젝트성 경비 진행률 연동: 매월 '활성 사업 수' 비율로 프로젝트성 경비를 조정
         //    (현재 진행 사업 대비 그 달에 기간이 걸쳐 있는 사업 비율). 기준월(현재)=100%.
         const activeProjs = (projects || []).filter(p => !isEtcProject(p) && Number(p.revenue) > 0 && p.status !== 'completed' && parsePeriod(p.period));
@@ -10185,12 +10233,12 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const taxOn = cfg.taxInclude === true;
         const taxOf = (mo) => taxOn ? (([1, 4, 7, 10].includes(mo.m) ? useVatQ : 0) + (mo.m === 3 ? useCorpTax : 0)) : 0;
         // 예정 지출(직접 등록): 세금 납부 예정액·장비 구입·보증금 등 확정된 미래 지출 — cfg.extraExpense[]
-        const extraExpArr = Array(12).fill(0);
+        const extraExpArr = Array(FC_MONTHS).fill(0);
         (cfg.extraExpense || []).forEach(e => {
           const mm = String(e.month || '').match(/(\d{4})[.\-\/](\d{1,2})/);
           if (!mm) return;
           const i = idxOf(+mm[1], +mm[2]); const amt = Number(e.amount) || 0;
-          if (i >= 0 && i < 12 && amt > 0) extraExpArr[i] += amt;
+          if (i >= 0 && i < FC_MONTHS && amt > 0) extraExpArr[i] += amt;
         });
         const exp = months.map((mo, i) => laborOf(mo, i) + opexOf(i) + taxOf(mo) + extraExpArr[i]);
         // 예측 시작점: 가장 최근 입력된 '월말 실제 통장잔고'를 시작점으로 사용 (없으면 수동 balance → CMS 통장잔고)
@@ -10218,8 +10266,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           if (start < 1) start = 1;
           const advP = ((pc.rate != null && pc.rate !== '') ? Number(pc.rate) : (Number(cfg.advRate) || 0)) / 100;
           const wOpt = Math.min(100, baseW + 20) / 100, wCons = Math.max(0, baseW - 20) / 100;
-          if (start < 12 && advP > 0) { incOpt[start] += p.budget * wOpt * advP; incCons[start] += p.budget * wCons * advP; }
-          const end = start + 6; if (end < 12) { incOpt[end] += p.budget * wOpt * (1 - advP); incCons[end] += p.budget * wCons * (1 - advP); }
+          if (start < FC_MONTHS && advP > 0) { incOpt[start] += p.budget * wOpt * advP; incCons[start] += p.budget * wCons * advP; }
+          const end = start + 6; if (end < FC_MONTHS) { incOpt[end] += p.budget * wOpt * (1 - advP); incCons[end] += p.budget * wCons * (1 - advP); }
         });
         const expCons = months.map((mo, i) => laborOf(mo, i) + fixedOpexUse + Math.round(projOpexUse * activeRatioOf(i) * 1.1) + taxOf(mo) + extraExpArr[i]);   // 보수: 프로젝트성경비 +10%
         const rows = months.map((mo, i) => {
@@ -10248,7 +10296,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         // #1 자동보정: 최근 실적월들의 (실제-예측단순) 평균 편향을 미래에 가산
         const biasSamples = rows.map((r, i) => { const mk = r.y + '-' + String(r.m).padStart(2, '0'); const av = actualBal[mk]; return (av != null && av !== '') ? (Number(av) - r.bal) : null; }).filter(v => v != null);
         const bias = (cfg.autoCorrect !== false && biasSamples.length >= 2) ? Math.round(biasSamples.slice(-3).reduce((a, v) => a + v, 0) / Math.min(3, biasSamples.length)) : 0;
-        const chartData = rows.map(r => {
+        const chartData = rows.map((r, chartData_i) => {
           const mk = r.y + '-' + String(r.m).padStart(2, '0');
           const av = actualBal[mk];
           const d = {
@@ -10259,6 +10307,9 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             보수: Math.round((r.balCons + bias) / 1000000),
             안전선: Math.round(safety / 1000000),
             순증감: Math.round((r.inc - r.exp) / 1000000),   // 그 달 현금 순증감(수입−지출)
+            인건비: Math.round((r.expLabor || 0) / 1000000),           // 실제 반영 인건비
+            '사업투입인건비(추정)': Math.round((laborByProjMonth[chartData_i] || 0) / 1000000),
+            투입인원: Math.round((headByMonth[chartData_i] || 0) * 10) / 10,   // 참여율 환산 인원(소수1자리)
             confirmed: r.confirmed,
           };
           if (av != null && av !== '') d['실제잔고'] = Math.round(Number(av) / 1000000);
@@ -10573,7 +10624,128 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 </div>
               );
             })()}
-            {/* 예측 시작점 안내 */}
+            {/* ★ 두 번째 그래프: 사업별 투입인력·인건비 추이 */}
+            {(() => {
+              const laborData = chartData.map(d => ({ name: d.name, '사업투입인건비(추정)': d['사업투입인건비(추정)'], 인건비: d.인건비, 투입인원: d.투입인원 }));
+              const maxHead = Math.max(1, ...laborData.map(d => d.투입인원 || 0));
+              return (
+                <div style={{ marginTop: S[4] }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 6 }}>👥 사업 투입인력·인건비 추이 <span style={{ fontSize: 10.5, fontWeight: 600, color: T.textMute }}>(인건비 단위: 백만원 / 투입인원: 참여율 환산)</span></div>
+                  <div className="fc-full" style={{ height: 300, background: 'linear-gradient(180deg,#FFFDFB 0%,#FBF6EF 100%)', borderRadius: 14, padding: `${S[3]}px ${S[2]}px ${S[2]}px`, border: `1px solid ${T.border}` }}>
+                    <ResponsiveContainer width="100%" height="90%" minWidth={0}>
+                      <ComposedChart data={laborData} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="2 4" stroke="#EDE6DA" vertical={false} />
+                        <XAxis dataKey="name" tick={{ fontSize: 10.5, fill: T.textMute }} axisLine={{ stroke: '#D6C9B4' }} tickLine={false} />
+                        <YAxis yAxisId="cost" tick={{ fontSize: 10, fill: T.textMute }} axisLine={false} tickLine={false} width={44} />
+                        <YAxis yAxisId="head" orientation="right" tick={{ fontSize: 9.5, fill: '#B8892B' }} axisLine={false} tickLine={false} width={34} domain={[0, Math.ceil(maxHead * 1.2)]} />
+                        <Tooltip formatter={(v, n) => (v == null ? '-' : n === '투입인원' ? v + '명' : v.toLocaleString() + '백만원')} contentStyle={{ fontSize: 12, borderRadius: 10, border: 'none', boxShadow: '0 8px 24px rgba(21,35,63,0.16)' }} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Bar yAxisId="cost" dataKey="사업투입인건비(추정)" name="사업 투입 인건비(추정)" fill="#B8892B" fillOpacity={0.55} barSize={16} radius={[3, 3, 0, 0]} isAnimationActive={false} />
+                        <Line yAxisId="cost" type="monotone" dataKey="인건비" name="실제 반영 인건비" stroke="#15233F" strokeWidth={2.2} dot={{ r: 2.5 }} />
+                        <Line yAxisId="head" type="monotone" dataKey="투입인원" name="투입인원" stroke="#D97706" strokeWidth={2.5} strokeDasharray="4 3" dot={{ r: 3, fill: '#fff', stroke: '#D97706', strokeWidth: 2 }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 4 }}>사업별 계약기간에 걸쳐 참여인력의 참여율×급여로 월 인건비를 추정합니다. 투입인원은 참여율을 합산한 환산 인원(예: 50% 2명 = 1.0명)입니다. 사업 편집에서 참여인력·참여율을 조정하면 이 추이에 반영됩니다.</div>
+                  {/* 사업기간별 진척율 입력 — 계획 vs 실제 */}
+                  <details className="no-print" style={{ marginTop: S[3] }}>
+                    <summary style={{ fontSize: 12.5, fontWeight: 700, color: T.brand, cursor: 'pointer', padding: '6px 0' }}>📅 사업기간별 진척율 (계획 vs 실제 · 인건비 배분)</summary>
+                    <div style={{ fontSize: 11, color: T.textMute, margin: '4px 0 8px', lineHeight: 1.6 }}>
+                      <strong style={{ color: '#B8892B' }}>계획</strong> 진척율은 인건비 배분에 쓰이고, <strong style={{ color: '#D97706' }}>실제</strong> 진행율을 입력하면 아래 그래프에서 계획 대비 실제를 비교해 예측의 실효성을 확인할 수 있습니다. (비워두면 계획은 균등 배분)
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      {(() => {
+                        const mkSetter = (field) => (pid, mk, val) => setCashCfg && setCashCfg(prev => {
+                          const root = { ...(prev[field] || {}) };
+                          root[pid] = { ...(root[pid] || {}) };
+                          if (val === '' || val == null) delete root[pid][mk]; else root[pid][mk] = Number(val) || 0;
+                          return { ...prev, [field]: root };
+                        });
+                        const setPlan = mkSetter('progress');
+                        const setAct = mkSetter('progressActual');
+                        const actProjs = (projects || []).filter(p => { const pr = parsePeriod(p.period); if (!pr) return false; const en = idxOf(pr.ey, pr.em); return en >= 0; });
+                        if (!actProjs.length) return <div style={{ fontSize: 11.5, color: T.textMute }}>계약기간이 입력된 사업이 없습니다.</div>;
+                        const cell = (v, on, inRange, color) => (
+                          <Td align="center" style={{ padding: '2px 2px', background: inRange ? (color === 'plan' ? 'rgba(184,137,43,0.06)' : 'rgba(217,119,6,0.06)') : 'transparent' }}>
+                            {inRange ? <input value={v ?? ''} onChange={on} placeholder="-" inputMode="numeric" style={{ width: 32, padding: '3px 2px', border: `1px solid ${T.border}`, borderRadius: 4, fontSize: 10, textAlign: 'center', fontFamily: FONT, boxSizing: 'border-box' }} /> : <span style={{ color: T.textLight }}>·</span>}
+                          </Td>
+                        );
+                        return (
+                          <table style={{ borderCollapse: 'collapse', fontSize: 10.5, minWidth: 900 }}>
+                            <thead><tr style={{ background: T.surfaceAlt }}>
+                              <Th>사업</Th><Th style={{ fontSize: 9 }}>구분</Th>{months.map(mo => <Th key={mo.key} align="center" style={{ padding: '4px 3px', fontSize: 9 }}>{String(mo.y).slice(2)}.{String(mo.m).padStart(2, '0')}</Th>)}
+                            </tr></thead>
+                            <tbody>
+                              {actProjs.map(p => {
+                                const pr = parsePeriod(p.period); const st = idxOf(pr.sy, pr.sm), en = idxOf(pr.ey, pr.em);
+                                const pg = (cfg.progress && cfg.progress[p.id]) || {};
+                                const pa = (cfg.progressActual && cfg.progressActual[p.id]) || {};
+                                return (
+                                  <React.Fragment key={p.id}>
+                                    <tr style={{ borderTop: `2px solid ${T.border}` }}>
+                                      <Td rowSpan={2} style={{ fontSize: 10, whiteSpace: 'nowrap', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle' }} title={p.name}>{p.id}<br />{p.name.slice(0, 10)}</Td>
+                                      <Td style={{ fontSize: 9, color: '#B8892B', fontWeight: 700 }}>계획</Td>
+                                      {months.map((mo, k) => cell(pg[mo.key], e => setPlan(p.id, mo.key, e.target.value), k >= st && k <= en, 'plan'))}
+                                    </tr>
+                                    <tr style={{ borderBottom: `1px solid ${T.divider}` }}>
+                                      <Td style={{ fontSize: 9, color: '#D97706', fontWeight: 700 }}>실제</Td>
+                                      {months.map((mo, k) => cell(pa[mo.key], e => setAct(p.id, mo.key, e.target.value), k >= st && k <= en, 'act'))}
+                                    </tr>
+                                  </React.Fragment>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        );
+                      })()}
+                    </div>
+                    {/* 계획 vs 실제 누적 진척 비교 그래프 (전체 사업 가중평균) */}
+                    {(() => {
+                      const actProjs = (projects || []).filter(p => { const pr = parsePeriod(p.period); return !!pr; });
+                      // 전체 사업 가중평균 누적 진척(계획/실제) — 사업 규모(매출)로 가중
+                      const cmpData = months.map((mo, k) => {
+                        let planSum = 0, actSum = 0, wSum = 0, hasAct = false;
+                        actProjs.forEach(p => {
+                          const w = (Number(p.revenue) || 1);
+                          const pg = (cfg.progress && cfg.progress[p.id]) || {};
+                          const pa = (cfg.progressActual && cfg.progressActual[p.id]) || {};
+                          const pr = parsePeriod(p.period); const st = idxOf(pr.sy, pr.sm), en = idxOf(pr.ey, pr.em); const dur = en - st + 1;
+                          // 누적 계획/실제 (해당 월까지)
+                          let cumP = 0, cumA = 0, anyA = false;
+                          for (let j = st; j <= Math.min(k, en); j++) { const mk2 = months[j] ? months[j].key : null; cumP += (mk2 && pg[mk2] != null) ? Number(pg[mk2]) : (dur > 0 ? 100 / dur : 0); if (mk2 && pa[mk2] != null && pa[mk2] !== '') { cumA += Number(pa[mk2]); anyA = true; } }
+                          if (k >= st) { planSum += Math.min(100, cumP) * w; actSum += (anyA ? Math.min(100, cumA) : 0) * w; wSum += w; if (anyA) hasAct = true; }
+                        });
+                        const d = { name: mo.label, 계획누적: wSum > 0 ? Math.round(planSum / wSum) : null };
+                        if (hasAct) d.실제누적 = wSum > 0 ? Math.round(actSum / wSum) : null;
+                        return d;
+                      });
+                      const anyActual = cmpData.some(d => d.실제누적 != null);
+                      return (
+                        <div style={{ marginTop: S[3] }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 4 }}>📊 계획 대비 실제 진척 (전체 사업 누적, 매출 가중 %)</div>
+                          <div style={{ height: 220 }}>
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                              <ComposedChart data={cmpData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="2 4" stroke="#EDE6DA" vertical={false} />
+                                <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textMute }} tickLine={false} />
+                                <YAxis tick={{ fontSize: 9.5, fill: T.textMute }} axisLine={false} tickLine={false} width={34} domain={[0, 100]} unit="%" />
+                                <Tooltip formatter={(v) => v == null ? '-' : v + '%'} contentStyle={{ fontSize: 12, borderRadius: 10, border: 'none', boxShadow: '0 8px 24px rgba(21,35,63,0.16)' }} />
+                                <Legend wrapperStyle={{ fontSize: 11 }} />
+                                <Line type="monotone" dataKey="계획누적" name="계획 진척" stroke="#B8892B" strokeWidth={2.4} strokeDasharray="5 3" dot={{ r: 2.5 }} />
+                                {anyActual && <Line type="monotone" dataKey="실제누적" name="실제 진행" stroke="#D97706" strokeWidth={2.8} dot={{ r: 3, fill: '#fff', stroke: '#D97706', strokeWidth: 2 }} connectNulls />}
+                              </ComposedChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 4 }}>
+                            {anyActual ? '실제 진행 곡선이 계획보다 아래면 지연, 위면 조기 진행입니다. 격차가 크면 인건비·자금 예측의 실효성을 재검토하세요.' : '실제 진행율을 입력하면 계획선과 비교되어 표시됩니다.'}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </details>
+                </div>
+              );
+            })()}
             {lastActualKey && (
               <div style={{ background: T.surfaceAlt, borderRadius: 8, padding: '10px 14px', margin: `${S[3]}px 0`, fontSize: 12, lineHeight: 1.7 }}>
                 <strong style={{ color: T.brand }}>📍 예측 기준점</strong> — {lastActualKey.replace('-', '.')} 말 <strong>실제 통장잔고 {fmtMoney(lastActualVal)}원</strong>에서 출발해, 그 다음 달부터 수입·지출을 반영해 미래 잔고를 예측합니다. 실제 잔고를 입력한 달(회색 '실제 잔고' 표시)은 예측이 아니라 확정값이며, 매월 말 실제 잔고를 갱신할수록 예측 시작점이 최신화되어 정확해집니다.
