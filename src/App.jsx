@@ -2793,7 +2793,7 @@ function App() {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);  // 본인 비밀번호 변경
   const [adminResetTarget, setAdminResetTarget] = useState(null);     // admin이 타인 비밀번호 초기화할 대상
   const [manualContent, setManualContent] = useState(MANUAL_CONTENT);  // 매뉴얼 콘텐츠 (admin 편집 가능)
-  const currentYear = 2026;
+  const currentYear = new Date().getFullYear();   // 당해년도 자동 (매해 그 해 사업이 기본 표출)
   
   // 매뉴얼 콘텐츠 localStorage 동기화
   useEffect(() => {
@@ -9045,9 +9045,9 @@ function ProjectAnalytics({ projects, employees, cfg, targets, allProjects }) {
         </div>
       )}
 
-      {planRows.length > 0 && (
+      {planRows.length > 0 ? (
         <div style={{ ...card(), padding: S[6], marginBottom: S[5] }}>
-          <SectionTitle>계획 대비 집행 원가</SectionTitle>
+          <SectionTitle>계획 대비 집행 원가 <span style={{ fontSize: 12, fontWeight: 600, color: T.textMute }}>(당해년도 사업 기준)</span></SectionTitle>
           {overBudget.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: S[3], padding: `${S[2]}px ${S[3]}px`, background: '#FDECEC', borderRadius: 6 }}>
               <AlertCircle size={14} style={{ color: T.danger }} />
@@ -9072,6 +9072,14 @@ function ProjectAnalytics({ projects, employees, cfg, targets, allProjects }) {
           </ResponsiveContainer>
           <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2] }}>
             실적원가가 계획(예산)을 초과하면 붉게 표시됩니다. 계획값은 사업관리 엑셀의 '계획' 열에서 자동 반영됩니다.
+          </div>
+        </div>
+      ) : (
+        <div style={{ ...card(), padding: S[6], marginBottom: S[5] }}>
+          <SectionTitle>계획 대비 집행 원가 <span style={{ fontSize: 12, fontWeight: 600, color: T.textMute }}>(당해년도 사업 기준)</span></SectionTitle>
+          <div style={{ fontSize: 12.5, color: T.textMute, lineHeight: 1.7, padding: `${S[3]}px 0` }}>
+            아직 <strong>계획원가(예산)</strong>가 입력된 사업이 없어 계획 대비 집행을 표시할 수 없습니다.<br />
+            프로젝트 수익성 목록에서 각 사업 편집(✏) → <strong>'계획 원가(예산)'</strong> 칸에 예산을 입력하면 사업별 계획 대비 실제 집행이 비교되어 나타납니다.
           </div>
         </div>
       )}
