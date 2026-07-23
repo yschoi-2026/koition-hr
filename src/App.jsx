@@ -4645,13 +4645,15 @@ function Header({ user, onLogout, handleSave, handleExport, handleImport, onChan
             )}
           </button>
           
-          {user.role === 'admin' && (
-            <span className="hide-mobile" style={{ display: 'flex', gap: 8 }}>
-              <Button variant="outline" size="sm" icon={Save} onClick={handleSave}>저장</Button>
-              <Button variant="primary" size="sm" icon={Download} onClick={handleExport}>내보내기</Button>
-              <ImportButton handleImport={handleImport} />
-            </span>
-          )}
+          <span className="hide-mobile" style={{ display: 'flex', gap: 8 }}>
+            <Button variant="outline" size="sm" icon={Save} onClick={handleSave}>저장</Button>
+            {user.role === 'admin' && (
+              <>
+                <Button variant="primary" size="sm" icon={Download} onClick={handleExport}>내보내기</Button>
+                <ImportButton handleImport={handleImport} />
+              </>
+            )}
+          </span>
           <Button variant="ghost" size="sm" icon={LogOut} onClick={onLogout}>로그아웃</Button>
         </div>
       </div>
