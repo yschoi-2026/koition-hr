@@ -10020,7 +10020,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
       </div>
 
       {/* ★ 핵심: 자금흐름 예측 시나리오 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: `0 0 ${S[4]}px` }}><span style={{ padding: '4px 12px', borderRadius: 8, background: T.brand, color: '#fff', fontSize: 13, fontWeight: 800 }}>핵심</span><h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>자금흐름 예측 시나리오 (2025.10 ~ 2027.04)</h2></div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: `0 0 ${S[4]}px` }}><span style={{ padding: '4px 12px', borderRadius: 8, background: T.brand, color: '#fff', fontSize: 13, fontWeight: 800 }}>핵심</span><h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>자금흐름 예측 시나리오 (2026.01 ~ 2027.04)</h2></div>
       {(() => {
         const cfg = cashCfg || {};
         const up = (k, v) => setCashCfg && setCashCfg(prev => ({ ...prev, [k]: Number(v) || 0 }));
@@ -10073,8 +10073,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         // 월별 인건비 보정(cfg.laborByMonth['YYYY-MM'] 있으면 그 값, 없으면 useLabor)
         const laborByMonth = cfg.laborByMonth || {};
         // 예측 기간: 2025.10 ~ 2027.04 (19개월). 과거 실적(1~6월 등)은 실제잔고/실적으로 반영.
-        const FC_START_Y = (cfg.startY || 2025), FC_START_M = (cfg.startM || 10);   // 시작 연·월 (설정 가능)
-        const FC_MONTHS = cfg.horizonMonths || 19;                                    // 총 개월수
+        const FC_START_Y = (cfg.startY || 2026), FC_START_M = (cfg.startM || 1);   // 시작 연·월 (설정 가능)
+        const FC_MONTHS = cfg.horizonMonths || 16;                                    // 총 개월수 (2026.01~2027.04)
         const y0 = FC_START_Y, m0 = FC_START_M - 1;   // m0: 0-based 월
         const months = Array.from({ length: FC_MONTHS }, (_, i) => { const d = new Date(y0, m0 + i, 1); return { y: d.getFullYear(), m: d.getMonth() + 1, key: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), label: (d.getMonth() + 1) + '월' }; });
         const idxOf = (yy, mm) => (yy - y0) * 12 + (mm - 1 - m0);
@@ -10164,8 +10164,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const conBaseSum = conActiveAt(0) || 1;   // 기준월(현재) 활성 계약직 월액 합
         const autoConOf = (i) => {
           if (cfg.conAuto === false || conProjs.length === 0) return conLaborBase;   // 토글 OFF면 고정
-          const ratio = conActiveAt(i) / conBaseSum;   // 현재 대비 활성 비율
-          return Math.round(conLaborBase * ratio);      // 실제 계약직 총액(급여기준)을 활성 비율로 스케일
+          // 각 월에 실제 진행 중인 사업들의 계약직 월액(누계÷기간)을 직접 합산 → 기준월 왜곡 없음
+          return Math.round(conActiveAt(i));
         };
         const laborOf = (mo, i) => {
           const v = laborByMonth[mo.key];
@@ -10220,11 +10220,16 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         // #4 프로젝트성 경비 진행률 연동: 매월 '활성 사업 수' 비율로 프로젝트성 경비를 조정
         //    (현재 진행 사업 대비 그 달에 기간이 걸쳐 있는 사업 비율). 기준월(현재)=100%.
         const activeProjs = (projects || []).filter(p => !isEtcProject(p) && Number(p.revenue) > 0 && p.status !== 'completed' && parsePeriod(p.period));
-        const baseActive = (() => { let c = 0; activeProjs.forEach(p => { const pr = parsePeriod(p.period); const s = idxOf(pr.sy, pr.sm), e = idxOf(pr.ey, pr.em); if (s <= 0 && e >= 0) c++; }); return c || activeProjs.length || 1; })();
+        // 기준 = 예측 기간 중 '동시 활성 사업 수의 최대값'. 이래야 비율이 0~1로 정규화되어 특정 월 폭증 방지.
+        const baseActive = (() => {
+          let peak = 0;
+          for (let k = 0; k < FC_MONTHS; k++) { let c = 0; activeProjs.forEach(p => { const pr = parsePeriod(p.period); const s = idxOf(pr.sy, pr.sm), e = idxOf(pr.ey, pr.em); if (s <= k && e >= k) c++; }); if (c > peak) peak = c; }
+          return peak || activeProjs.length || 1;
+        })();
         const activeRatioOf = (i) => {
           if (cfg.projOpexProgress === false || activeProjs.length === 0) return 1;   // 토글 OFF면 고정
           let c = 0; activeProjs.forEach(p => { const pr = parsePeriod(p.period); const s = idxOf(pr.sy, pr.sm), e = idxOf(pr.ey, pr.em); if (s <= i && e >= i) c++; });
-          return baseActive > 0 ? c / baseActive : 1;
+          return baseActive > 0 ? c / baseActive : 1;   // 0~1 (최대 동시활성 대비)
         };
         const fixedOpexUse = useFixedOpexAdj;   // 카드 사업변동분 제외된 고정경비
         const projOpexUse = Math.round(useProjOpex * projOpexScale / 100);
