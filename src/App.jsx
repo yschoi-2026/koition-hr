@@ -12257,10 +12257,14 @@ function ProjectEditModal({ project, employees, currentYear, onSave, onClose }) 
             <div><label style={labelStyle}>관리자인건비</label><input style={numStyle} inputMode="numeric" value={fmtInput(form.mgrLabor)} onChange={e => set('mgrLabor', parseInput(e.target.value))} placeholder="0" /></div>
             <div><label style={labelStyle}>제경비</label><input style={numStyle} inputMode="numeric" value={fmtInput(form.overhead)} onChange={e => set('overhead', parseInput(e.target.value))} placeholder="0" /></div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: S[3], marginBottom: S[4] }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: S[3], marginBottom: S[3] }}>
             <div><label style={labelStyle}>기타비 <span style={{ fontSize: 10, color: T.textMute }}>(영업대가 등)</span></label><input style={numStyle} inputMode="numeric" value={fmtInput(form.otherCost)} onChange={e => set('otherCost', parseInput(e.target.value))} placeholder="0" /></div>
             <div style={{ gridColumn: 'span 2' }}><label style={labelStyle}>기타비 메모</label><input style={inputStyle} value={form.otherCostMemo || ''} onChange={e => set('otherCostMemo', e.target.value)} placeholder="예) 영업대가(소개 수수료)" /></div>
-            <div><label style={labelStyle}>계획 원가(예산)</label><input style={numStyle} inputMode="numeric" value={fmtInput(form.planCost)} onChange={e => set('planCost', parseInput(e.target.value))} placeholder="0" /></div>
+          </div>
+          <div style={{ marginBottom: S[3], padding: `${S[3]}px`, background: 'rgba(184,137,43,0.06)', borderRadius: 8, border: `1px solid rgba(184,137,43,0.25)` }}>
+            <label style={{ ...labelStyle, color: '#B8892B', fontWeight: 700 }}>📐 계획 원가(예산) — 계획 대비 집행 분석용</label>
+            <input style={{ ...numStyle, maxWidth: 220 }} inputMode="numeric" value={fmtInput(form.planCost)} onChange={e => set('planCost', parseInput(e.target.value))} placeholder="사업 시작 시 세운 총원가 예산" />
+            <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 4 }}>이 사업의 예상 총원가(인건비+경비 계획)를 입력하면, 프로젝트 수익성 화면의 「계획 대비 집행 원가」에서 실제 집행과 비교됩니다.</div>
           </div>
           <div style={{ fontSize: 10.5, color: T.textMute, marginTop: -8, marginBottom: S[4], lineHeight: 1.5 }}>
             💡 <strong>제경비</strong> = 사업 수행 원가(외주 작업·직접경비 등). <strong>기타비</strong> = 영업대가·소개 수수료처럼 수행과 무관한 지출 — 분리해두면 사업의 순수 수행 수익성과 영업비를 구분해 볼 수 있습니다. 수익률에는 둘 다 반영됩니다.
