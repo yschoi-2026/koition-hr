@@ -10663,10 +10663,10 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                   {/* 사업기간별 진척율 입력 — 계획 vs 실제 */}
                   <details className="no-print" style={{ marginTop: S[3] }}>
                     <summary style={{ fontSize: 12.5, fontWeight: 700, color: T.brand, cursor: 'pointer', padding: '6px 0' }}>📅 사업기간별 진척율 (계획 vs 실제 · 인건비 배분)</summary>
-                    <div style={{ fontSize: 11, color: T.textMute, margin: '4px 0 8px', lineHeight: 1.6 }}>
-                      <strong style={{ color: '#B8892B' }}>계획</strong> 진척율은 인건비 배분에 쓰이고, <strong style={{ color: '#D97706' }}>실제</strong> 진행율을 입력하면 아래 그래프에서 계획 대비 실제를 비교해 예측의 실효성을 확인할 수 있습니다. (비워두면 계획은 균등 배분)
+                    <div style={{ fontSize: 11.5, color: T.textMute, margin: '4px 0 10px', lineHeight: 1.7 }}>
+                      각 사업의 진행 기간(색칠된 칸)에 <strong>월별 진행 비중(%)</strong>을 넣습니다. 한 사업의 <strong style={{ color: '#B8892B' }}>계획</strong> 줄 합계가 100%가 되도록 배분하세요 (예: 6개월이면 <code>15·20·20·20·15·10</code>). 인건비가 그 비중대로 배분됩니다. <strong style={{ color: '#D97706' }}>실제</strong> 줄엔 그달까지 실제 진행된 누적/월 비중을 넣으면 아래 그래프에서 계획과 비교됩니다. 비워두면 균등 배분됩니다.
                     </div>
-                    <div style={{ overflowX: 'auto' }}>
+                    <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 420, border: `1px solid ${T.border}`, borderRadius: 8 }}>
                       {(() => {
                         const mkSetter = (field) => (pid, mk, val) => setCashCfg && setCashCfg(prev => {
                           const root = { ...(prev[field] || {}) };
@@ -10677,31 +10677,49 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                         const setPlan = mkSetter('progress');
                         const setAct = mkSetter('progressActual');
                         const actProjs = (projects || []).filter(p => { const pr = parsePeriod(p.period); if (!pr) return false; const en = idxOf(pr.ey, pr.em); return en >= 0; });
-                        if (!actProjs.length) return <div style={{ fontSize: 11.5, color: T.textMute }}>계약기간이 입력된 사업이 없습니다.</div>;
+                        if (!actProjs.length) return <div style={{ fontSize: 11.5, color: T.textMute, padding: S[3] }}>계약기간이 입력된 사업이 없습니다. 사업 편집에서 계약기간을 먼저 입력하세요.</div>;
                         const cell = (v, on, inRange, color) => (
-                          <Td align="center" style={{ padding: '2px 2px', background: inRange ? (color === 'plan' ? 'rgba(184,137,43,0.06)' : 'rgba(217,119,6,0.06)') : 'transparent' }}>
-                            {inRange ? <input value={v ?? ''} onChange={on} placeholder="-" inputMode="numeric" style={{ width: 32, padding: '3px 2px', border: `1px solid ${T.border}`, borderRadius: 4, fontSize: 10, textAlign: 'center', fontFamily: FONT, boxSizing: 'border-box' }} /> : <span style={{ color: T.textLight }}>·</span>}
+                          <Td align="center" style={{ padding: '2px 3px', background: inRange ? (color === 'plan' ? 'rgba(184,137,43,0.10)' : 'rgba(217,119,6,0.10)') : '#FAFAF8', minWidth: 46 }}>
+                            {inRange ? <input value={v ?? ''} onChange={on} placeholder="%" inputMode="numeric" style={{ width: 40, padding: '5px 3px', border: `1px solid ${color === 'plan' ? 'rgba(184,137,43,0.4)' : 'rgba(217,119,6,0.4)'}`, borderRadius: 5, fontSize: 12, textAlign: 'center', fontFamily: FONT, boxSizing: 'border-box', background: '#fff' }} /> : <span style={{ color: '#DDD', fontSize: 10 }}>·</span>}
                           </Td>
                         );
+                        const stickyLeft = { position: 'sticky', left: 0, zIndex: 2, background: T.surface, boxShadow: '2px 0 4px rgba(0,0,0,0.04)' };
+                        const stickyTop = { position: 'sticky', top: 0, zIndex: 3, background: T.brand, color: '#fff' };
+                        const stickyCorner = { position: 'sticky', left: 0, top: 0, zIndex: 4, background: T.brand, color: '#fff', boxShadow: '2px 0 4px rgba(0,0,0,0.08)' };
+                        // 계획 합계 계산 헬퍼
+                        const sumOf = (obj, st, en) => { let s = 0; for (let k = st; k <= en; k++) { const mk = months[k] ? months[k].key : null; if (mk && obj[mk] != null && obj[mk] !== '') s += Number(obj[mk]); } return s; };
                         return (
-                          <table style={{ borderCollapse: 'collapse', fontSize: 10.5, minWidth: 900 }}>
-                            <thead><tr style={{ background: T.surfaceAlt }}>
-                              <Th>사업</Th><Th style={{ fontSize: 9 }}>구분</Th>{months.map(mo => <Th key={mo.key} align="center" style={{ padding: '4px 3px', fontSize: 9 }}>{String(mo.y).slice(2)}.{String(mo.m).padStart(2, '0')}</Th>)}
-                            </tr></thead>
+                          <table style={{ borderCollapse: 'collapse', fontSize: 11, minWidth: 900 }}>
+                            <thead>
+                              <tr>
+                                <Th style={{ ...stickyCorner, minWidth: 190, textAlign: 'left', padding: '8px 10px' }}>사업</Th>
+                                <Th style={{ ...stickyTop, fontSize: 10, minWidth: 42 }}>구분</Th>
+                                <Th style={{ ...stickyTop, fontSize: 10, minWidth: 44 }}>합계</Th>
+                                {months.map(mo => <Th key={mo.key} align="center" style={{ ...stickyTop, padding: '6px 3px', fontSize: 10, minWidth: 46 }}>{String(mo.y).slice(2)}.{String(mo.m).padStart(2, '0')}</Th>)}
+                              </tr>
+                            </thead>
                             <tbody>
-                              {actProjs.map(p => {
+                              {actProjs.map((p, ri) => {
                                 const pr = parsePeriod(p.period); const st = idxOf(pr.sy, pr.sm), en = idxOf(pr.ey, pr.em);
                                 const pg = (cfg.progress && cfg.progress[p.id]) || {};
                                 const pa = (cfg.progressActual && cfg.progressActual[p.id]) || {};
+                                const planSum = sumOf(pg, st, en), actSum = sumOf(pa, st, en);
+                                const rowBg = ri % 2 ? '#fff' : '#FBFAF7';
                                 return (
                                   <React.Fragment key={p.id}>
                                     <tr style={{ borderTop: `2px solid ${T.border}` }}>
-                                      <Td rowSpan={2} style={{ fontSize: 10, whiteSpace: 'nowrap', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle' }} title={p.name}>{p.id}<br />{p.name.slice(0, 10)}</Td>
-                                      <Td style={{ fontSize: 9, color: '#B8892B', fontWeight: 700 }}>계획</Td>
+                                      <Td rowSpan={2} style={{ ...stickyLeft, fontSize: 11, verticalAlign: 'middle', padding: '6px 10px', background: rowBg, maxWidth: 190, lineHeight: 1.4 }}>
+                                        <div style={{ fontWeight: 700, color: T.brand, fontSize: 10.5 }}>{p.id}</div>
+                                        <div style={{ color: T.ink, whiteSpace: 'normal', wordBreak: 'keep-all' }}>{p.name}</div>
+                                        <div style={{ fontSize: 9.5, color: T.textMute, marginTop: 2 }}>{p.period}</div>
+                                      </Td>
+                                      <Td style={{ fontSize: 10, color: '#B8892B', fontWeight: 800, background: rowBg }}>계획</Td>
+                                      <Td align="center" style={{ fontSize: 10.5, fontWeight: 700, color: planSum === 100 ? T.success : planSum > 0 ? T.warning : T.textLight, background: rowBg }}>{planSum > 0 ? planSum + '%' : '-'}</Td>
                                       {months.map((mo, k) => cell(pg[mo.key], e => setPlan(p.id, mo.key, e.target.value), k >= st && k <= en, 'plan'))}
                                     </tr>
                                     <tr style={{ borderBottom: `1px solid ${T.divider}` }}>
-                                      <Td style={{ fontSize: 9, color: '#D97706', fontWeight: 700 }}>실제</Td>
+                                      <Td style={{ fontSize: 10, color: '#D97706', fontWeight: 800, background: rowBg }}>실제</Td>
+                                      <Td align="center" style={{ fontSize: 10.5, fontWeight: 700, color: actSum > 0 ? '#D97706' : T.textLight, background: rowBg }}>{actSum > 0 ? actSum + '%' : '-'}</Td>
                                       {months.map((mo, k) => cell(pa[mo.key], e => setAct(p.id, mo.key, e.target.value), k >= st && k <= en, 'act'))}
                                     </tr>
                                   </React.Fragment>
@@ -10712,6 +10730,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                         );
                       })()}
                     </div>
+                    <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6 }}>💡 계획 합계가 <strong style={{ color: T.success }}>100%</strong>가 되면 초록색으로 표시됩니다. 표를 좌우로 스크롤해도 사업명과 월 헤더는 고정됩니다.</div>
                     {/* 계획 vs 실제 누적 진척 비교 그래프 (전체 사업 가중평균) */}
                     {(() => {
                       const actProjs = (projects || []).filter(p => { const pr = parsePeriod(p.period); return !!pr; });
