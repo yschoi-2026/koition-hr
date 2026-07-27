@@ -128,11 +128,22 @@ export default async function handler(req, res) {
       if (key === 'main') {
         let role = null;
         try { role = await resolveRole(req, baseUrl, token); } catch (e) { role = null; }
-        // 페이로드에 재무·평가 원본(fin·scores·cashCfg)이 들어있으면 관리자 앱의 전체 저장으로 간주.
-        //   (직원 앱은 이 필드들을 애초에 안 보냄 → 오탐 없음. 토큰 검증 실패 시에도 admin 저장 보호)
-        let hasHeavy = false;
-        try { const pv = typeof value === 'string' ? JSON.parse(value) : value; hasHeavy = !!(pv && (pv.fin || pv.scores || pv.cashCfg || pv.empLedger)); } catch (e) { hasHeavy = false; }
-        const isAdmin = role === 'admin' || role === 'manager' || hasHeavy;
+        // 관리자 앱의 '전체 저장'인지 판별. 토큰 검증(role)이 우선이나, 비밀번호 변경 직후 등
+        //   토큰이 일시적으로 어긋나도 admin 데이터가 유실되지 않도록 페이로드 구조로도 판별한다.
+        //   - 직원 앱은 재무·평가원본(fin/scores/cashCfg/empLedger)을 절대 안 보냄
+        //   - 직원 앱은 projects에 revenue 등 재무필드가 없음(서버가 필터링해서 내려줬으므로)
+        let hasHeavy = false, looksFull = false;
+        try {
+          const pv = typeof value === 'string' ? JSON.parse(value) : value;
+          if (pv && typeof pv === 'object') {
+            hasHeavy = !!(pv.fin || pv.scores || pv.cashCfg || pv.empLedger || pv.loans || pv.receivables);
+            // '전체 구조' 감지: projects에 revenue(재무필드)가 살아있으면 관리자 데이터 (직원본엔 제거돼 있음)
+            const projHasFin = Array.isArray(pv.projects) && pv.projects.some(p => p && (p.revenue != null || p.workerLabor != null || p.mgrLabor != null));
+            const empHasSalary = Array.isArray(pv.employees) && pv.employees.some(e => e && (e.baseSalary != null || e.allowance != null));
+            looksFull = projHasFin || empHasSalary;
+          }
+        } catch (e) { hasHeavy = false; }
+        const isAdmin = role === 'admin' || role === 'manager' || hasHeavy || looksFull;
         if (!isAdmin) {
           // 직원·평가자·미인증: 서버 원본을 읽어 평가 필드만 병합 (재무·급여·프로젝트 원본 보존)
           try {
