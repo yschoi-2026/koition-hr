@@ -2947,11 +2947,14 @@ function App() {
     if (!validation.valid) return { success: false, error: validation.errors.join(' / ') };
     
     const newHash = await hashPassword(newPassword);
-    setUsers(prev => prev.map(u => 
-      u.username === user.username 
+    const updated = users.map(u =>
+      u.username === user.username
         ? { ...u, passwordHash: newHash, mustChangePassword: false, lastPasswordChange: new Date().toISOString() }
         : u
-    ));
+    );
+    setUsers(updated);
+    persistUsers(updated);                        // ★ 서버 users에 새 해시 저장 (토큰 검증 일치)
+    await setAuth(user.username, newHash);         // ★ 앱 토큰도 새 해시로 갱신 (저장 권한 유지)
     setUser(prev => ({ ...prev, mustChangePassword: false }));
     return { success: true };
   };
@@ -2967,11 +2970,13 @@ function App() {
     if (!validation.valid) return { success: false, error: validation.errors.join(' / ') };
     
     const newHash = await hashPassword(newPassword);
-    setUsers(prev => prev.map(u => 
-      u.username === targetUsername 
+    const updated = users.map(u =>
+      u.username === targetUsername
         ? { ...u, passwordHash: newHash, mustChangePassword: true, lastPasswordChange: new Date().toISOString() }
         : u
-    ));
+    );
+    setUsers(updated);
+    persistUsers(updated);   // ★ 서버 users에도 반영 (초기화한 비번으로 로그인·토큰 검증 가능)
     return { success: true };
   };
   
