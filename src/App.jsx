@@ -3084,10 +3084,10 @@ function App() {
       dataLoadedRef.current = true;
     })();
   }, []);
-  // ② 로그인 후: admin/manager면 중량 데이터 로드 (직원은 로드 안 함 → 빠름·안전)
+  // ② 로그인 후: admin/manager/evaluator면 중량(평가) 데이터 로드 (일반 직원은 로드 안 함 → 빠름·안전)
   useEffect(() => {
     if (!user || heavyLoadedRef.current) return;
-    if (user.role !== 'admin' && user.role !== 'manager') return;   // 직원·평가자는 중량 데이터 불필요
+    if (user.role !== 'admin' && user.role !== 'manager' && user.role !== 'evaluator') return;   // 일반 직원은 불필요
     (async () => {
       // ★ 서버에서 최신본을 다시 받아 로컬과 비교 (다른 PC에서 입력한 데이터가 이 PC의 오래된 캐시에 가려지지 않도록)
       try {
@@ -3125,7 +3125,8 @@ function App() {
         if (remote != null) {
           const str = typeof remote === 'string' ? remote : JSON.stringify(remote);
           try { localStorage.setItem('koition_hr_v6', str); } catch (e) {}
-          applyLightData(JSON.parse(str));
+          if (user.role === 'evaluator') { applyLightData(JSON.parse(str)); applyHeavyData(JSON.parse(str)); }   // 평가자: 평가 데이터도 반영
+          else applyLightData(JSON.parse(str));
         }
       } catch (e) {}
       empRefetchedRef.current = true;
@@ -3573,7 +3574,7 @@ function App() {
     { id: 'cms', label: '경영회계 CMS', icon: Layers, roles: ['admin'] },
     { id: 'loans', label: '대여금 관리', icon: Wallet, roles: ['admin'] },
     { id: 'receivables', label: '수금 관리', icon: Calendar, roles: ['admin'] },
-    { id: 'results', label: '평가 결과', icon: Award, roles: ['admin', 'manager'] },
+    { id: 'results', label: '평가 결과', icon: Award, roles: ['admin', 'manager', 'evaluator'] },
     { id: 'salary', label: '급여 산정', icon: Wallet, roles: ['admin'] },
     { id: 'analytics', label: '통계 분석', icon: PieIcon, roles: ['admin', 'manager'] },
     { id: 'history', label: '다년도 이력', icon: History, roles: ['admin'] },
