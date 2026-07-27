@@ -8408,12 +8408,12 @@ function ModalSelect({ value, onChange, options }) {
   );
 }
 
-function Th({ children, align = 'left' }) {
-  return <th style={{ padding: `${S[3]}px ${S[3]}px`, textAlign: align, fontSize: 11, fontWeight: 600, color: T.textMute, letterSpacing: '0.05em', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' }}>{children}</th>;
+function Th({ children, align = 'left', style = {} }) {
+  return <th style={{ padding: `${S[3]}px ${S[3]}px`, textAlign: align, fontSize: 11, fontWeight: 600, color: T.textMute, letterSpacing: '0.05em', textTransform: 'uppercase', borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap', ...style }}>{children}</th>;
 }
 
-function Td({ children, align = 'left', mono = false }) {
-  return <td style={{ padding: `${S[3]}px ${S[3]}px`, textAlign: align, fontFamily: FONT, fontVariantNumeric: mono ? 'tabular-nums' : 'normal', whiteSpace: 'nowrap' }}>{children}</td>;
+function Td({ children, align = 'left', mono = false, style = {}, ...rest }) {
+  return <td {...rest} style={{ padding: `${S[3]}px ${S[3]}px`, textAlign: align, fontFamily: FONT, fontVariantNumeric: mono ? 'tabular-nums' : 'normal', whiteSpace: 'nowrap', ...style }}>{children}</td>;
 }
 
 // ============================================================
@@ -12895,7 +12895,7 @@ function EvaluationView({ user, employees, scores, updateScore, selfScores, comm
   const [kpiCalcOpen, setKpiCalcOpen] = useState(false);
   const [contribCalcOpen, setContribCalcOpen] = useState(false);
   const targets = employees.filter(e => e.evalTarget);
-  const current = selectedEmp ? employees.find(e => e.id === selectedEmp) : targets[0];
+  const current = (selectedEmp && targets.find(e => e.id === selectedEmp)) ? employees.find(e => e.id === selectedEmp) : targets[0];
   if (!current) return <EmptyState icon={Users} title="평가 대상이 없습니다" desc="권한 범위 내 평가 대상자가 없습니다" />;
   const empScores = scores[current.id] || {};
   const empSelf = selfScores[current.id] || {};
