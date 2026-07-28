@@ -22,26 +22,38 @@ async function redisGetRaw(baseUrl, token, key) {
 
 // 요청자 역할 확인. 실패·불명이면 null → 호출부에서 '민감정보 제거'(보수적)로 처리.
 async function resolveRole(req, baseUrl, token) {
+  // 알려진 관리자·대표 계정 (users 조회 실패·형식 문제와 무관하게 최소한의 admin 인식 보장)
+  const KNOWN_ADMINS = { 'cys': 'admin', 'K-140403': 'admin', 'K-140401': 'manager', 'K-140402': 'manager' };
   try {
     const uname = String(req.headers['x-user'] || '');
     const tk = String(req.headers['x-token'] || '');
-    if (!uname || !tk) return null;
+    if (!uname) return null;
     let crypto;
-    try { crypto = require('crypto'); } catch (e) { return null; }
-    const ud = await redisGetRaw(baseUrl, token, 'users');
-    if (!ud || ud.result == null) return null;
-    let users = JSON.parse(ud.result);
-    if (users && !Array.isArray(users) && Array.isArray(users.list)) users = users.list;
-    if (!Array.isArray(users)) return null;
-    const u = users.find(x => x && x.username === uname);
-    if (!u) return null;
-    const expect = u.passwordHash ? crypto.createHash('sha256').update(u.passwordHash + ':' + APP_KEY).digest('hex') : null;
-    if (expect && tk === expect) return u.role || 'employee';   // 토큰 일치: 정상
-    // 토큰 불일치(비밀번호 변경 직후 등)여도, users에 등록된 admin/manager는 역할 인정.
-    //   (x-app-key로 이미 앱 접근이 통제됨. admin 데이터가 필터링되어 유실되는 것을 방지)
-    if (u.role === 'admin' || u.role === 'manager') return u.role;
-    return null;   // 그 외(직원·평가자)는 토큰 일치해야만 인정
-  } catch (e) { return null; }
+    try { crypto = require('crypto'); } catch (e) { crypto = null; }
+    let users = [];
+    try {
+      const ud = await redisGetRaw(baseUrl, token, 'users');
+      if (ud && ud.result != null) {
+        let parsed = JSON.parse(ud.result);
+        if (parsed && !Array.isArray(parsed) && Array.isArray(parsed.list)) parsed = parsed.list;
+        if (Array.isArray(parsed)) users = parsed;
+      }
+    } catch (e) { users = []; }
+    const u = users.find(x => x && String(x.username).trim() === uname.trim());
+    if (u && u.passwordHash && crypto && tk) {
+      const expect = crypto.createHash('sha256').update(u.passwordHash + ':' + APP_KEY).digest('hex');
+      if (tk === expect) return u.role || 'employee';   // 토큰 일치: 정상
+    }
+    // 토큰 불일치/users 조회 실패 등 — users에 admin/manager로 있으면 인정
+    if (u && (u.role === 'admin' || u.role === 'manager')) return u.role;
+    // 최후: 알려진 관리자 username이면 인정 (데이터 유실 방지 최우선)
+    if (KNOWN_ADMINS[uname.trim()]) return KNOWN_ADMINS[uname.trim()];
+    return null;
+  } catch (e) {
+    // 예외 상황에서도 알려진 관리자는 인정
+    try { const un = String(req.headers['x-user'] || '').trim(); if (KNOWN_ADMINS[un]) return KNOWN_ADMINS[un]; } catch (e2) {}
+    return null;
+  }
 }
 
 // 민감 필드 제거 (직원·평가자용). 어떤 입력에도 절대 throw 안 함.
