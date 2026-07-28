@@ -889,14 +889,24 @@ async function hashPassword(plaintext) {
 
 // 서버 권한 검증용 토큰: sha256(passwordHash + ':' + APP_KEY). 로그인 시 설정되어 serverGet/Put 헤더에 실림.
 let _authHeaders = {};   // { 'x-user', 'x-token' }
+// 새로고침/재마운트 후에도 토큰이 유지되도록 localStorage에 보관하고 시작 시 복원
+try { const saved = localStorage.getItem('koition_auth'); if (saved) _authHeaders = JSON.parse(saved) || {}; } catch (e) {}
+function _getAuthHeaders() {
+  if (_authHeaders && _authHeaders['x-token']) return _authHeaders;
+  try { const saved = localStorage.getItem('koition_auth'); if (saved) { const o = JSON.parse(saved); if (o && o['x-token']) { _authHeaders = o; return o; } } } catch (e) {}
+  return _authHeaders || {};
+}
 async function computeAuthToken(passwordHash) {
   const enc = new TextEncoder();
   const buf = await crypto.subtle.digest('SHA-256', enc.encode(passwordHash + ':' + APP_KEY));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 async function setAuth(username, passwordHash) {
-  if (!username || !passwordHash) { _authHeaders = {}; return; }
-  try { _authHeaders = { 'x-user': username, 'x-token': await computeAuthToken(passwordHash) }; } catch (e) { _authHeaders = {}; }
+  if (!username || !passwordHash) { _authHeaders = {}; try { localStorage.removeItem('koition_auth'); } catch (e) {} return; }
+  try {
+    _authHeaders = { 'x-user': username, 'x-token': await computeAuthToken(passwordHash) };
+    try { localStorage.setItem('koition_auth', JSON.stringify(_authHeaders)); } catch (e) {}
+  } catch (e) { _authHeaders = {}; }
 }
 
 // 비밀번호 검증 (입력값과 저장된 해시 비교)
@@ -2608,7 +2618,7 @@ async function serverGet(key, timeoutMs = 6000) {
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);   // 서버 지연 시 무한 대기 방지
-    const r = await fetch(`${SERVER_URL}?key=${encodeURIComponent(key)}`, { headers: { 'x-app-key': APP_KEY, ..._authHeaders }, signal: ctrl.signal });
+    const r = await fetch(`${SERVER_URL}?key=${encodeURIComponent(key)}`, { headers: { 'x-app-key': APP_KEY, ..._getAuthHeaders() }, signal: ctrl.signal });
     clearTimeout(t);
     if (!r.ok) return null;
     const j = await r.json();
@@ -2617,7 +2627,10 @@ async function serverGet(key, timeoutMs = 6000) {
 }
 function serverPut(key, value) {
   try {
-    return fetch(SERVER_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-app-key': APP_KEY, ..._authHeaders }, body: JSON.stringify({ key, value }) })
+    const ah = _getAuthHeaders();
+    // main 저장은 인증 토큰이 있어야만 전송 (로그인 전/토큰 없는 상태의 저장이 서버 원본을 훼손하는 것 방지)
+    if (key === 'main' && !ah['x-token']) { console.warn('[서버저장 보류] 인증 토큰 없음 — 로그인 후 저장됩니다'); return Promise.resolve(false); }
+    return fetch(SERVER_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-app-key': APP_KEY, ...ah }, body: JSON.stringify({ key, value }) })
       .then(r => { if (!r.ok) console.warn('[서버저장 실패]', key, r.status); return r.ok; })
       .catch((e) => { console.warn('[서버저장 실패]', key, e && e.message); return false; });
   } catch (e) { return Promise.resolve(false); }
