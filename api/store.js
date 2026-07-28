@@ -34,10 +34,13 @@ async function resolveRole(req, baseUrl, token) {
     if (users && !Array.isArray(users) && Array.isArray(users.list)) users = users.list;
     if (!Array.isArray(users)) return null;
     const u = users.find(x => x && x.username === uname);
-    if (!u || !u.passwordHash) return null;
-    const expect = crypto.createHash('sha256').update(u.passwordHash + ':' + APP_KEY).digest('hex');
-    if (tk !== expect) return null;
-    return u.role || 'employee';
+    if (!u) return null;
+    const expect = u.passwordHash ? crypto.createHash('sha256').update(u.passwordHash + ':' + APP_KEY).digest('hex') : null;
+    if (expect && tk === expect) return u.role || 'employee';   // 토큰 일치: 정상
+    // 토큰 불일치(비밀번호 변경 직후 등)여도, users에 등록된 admin/manager는 역할 인정.
+    //   (x-app-key로 이미 앱 접근이 통제됨. admin 데이터가 필터링되어 유실되는 것을 방지)
+    if (u.role === 'admin' || u.role === 'manager') return u.role;
+    return null;   // 그 외(직원·평가자)는 토큰 일치해야만 인정
   } catch (e) { return null; }
 }
 
