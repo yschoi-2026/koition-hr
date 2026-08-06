@@ -889,6 +889,7 @@ async function hashPassword(plaintext) {
 
 // 서버 권한 검증용 토큰: sha256(passwordHash + ':' + APP_KEY). 로그인 시 설정되어 serverGet/Put 헤더에 실림.
 let _authHeaders = {};   // { 'x-user', 'x-token' }
+let _authRole = null;    // 현재 로그인 역할 (필터본 저장 차단 판단용)
 // 새로고침/재마운트 후에도 토큰이 유지되도록 localStorage에 보관하고 시작 시 복원
 try { const saved = localStorage.getItem('koition_auth'); if (saved) _authHeaders = JSON.parse(saved) || {}; } catch (e) {}
 function _getAuthHeaders() {
@@ -901,8 +902,9 @@ async function computeAuthToken(passwordHash) {
   const buf = await crypto.subtle.digest('SHA-256', enc.encode(passwordHash + ':' + APP_KEY));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
-async function setAuth(username, passwordHash) {
-  if (!username || !passwordHash) { _authHeaders = {}; try { localStorage.removeItem('koition_auth'); } catch (e) {} return; }
+async function setAuth(username, passwordHash, role) {
+  if (!username || !passwordHash) { _authHeaders = {}; _authRole = null; try { localStorage.removeItem('koition_auth'); } catch (e) {} return; }
+  _authRole = role || _authRole;
   try {
     _authHeaders = { 'x-user': username, 'x-token': await computeAuthToken(passwordHash) };
     try { localStorage.setItem('koition_auth', JSON.stringify(_authHeaders)); } catch (e) {}
@@ -2627,11 +2629,30 @@ async function serverGet(key, timeoutMs = 6000) {
     return null;
   } catch (e) { return null; }
 }
+// 필터본(급여·재무가 제거된 데이터)인지 판별 — 이런 데이터가 서버 원본을 덮어쓰는 것을 막는다.
+//   admin/manager 세션에서 revenue·fin이 통째로 비어있으면 필터본으로 간주(원본 훼손 위험).
+function _looksLikeFilteredWipe(valStr) {
+  try {
+    const d = typeof valStr === 'string' ? JSON.parse(valStr) : valStr;
+    if (!d || typeof d !== 'object') return false;
+    const hasProjects = Array.isArray(d.projects) && d.projects.length > 0;
+    if (!hasProjects) return false;
+    const anyRevenue = d.projects.some(p => p && Number(p.revenue) > 0);
+    const anyFin = d.fin && typeof d.fin === 'object' && Object.keys(d.fin).length > 0;
+    const anySalary = Array.isArray(d.employees) && d.employees.some(e => e && Number(e.baseSalary) > 0);
+    // 사업은 있는데 매출·재무·급여가 전부 비었다 = 필터본이 원본을 덮으려는 상황
+    return !anyRevenue && !anyFin && !anySalary;
+  } catch (e) { return false; }
+}
 function serverPut(key, value) {
   try {
     const ah = _getAuthHeaders();
-    // main 저장은 인증 토큰이 있어야만 전송 (로그인 전/토큰 없는 상태의 저장이 서버 원본을 훼손하는 것 방지)
     if (key === 'main' && !ah['x-token']) { console.warn('[서버저장 보류] 인증 토큰 없음 — 로그인 후 저장됩니다'); return Promise.resolve(false); }
+    // ★ 관리자 세션에서 필터본(매출·재무 없는)이 서버 원본을 덮는 것을 원천 차단
+    if (key === 'main' && _authRole && (_authRole === 'admin' || _authRole === 'manager') && _looksLikeFilteredWipe(value)) {
+      console.warn('[서버저장 차단] 매출·재무가 비어있는 데이터 — 원본 보호를 위해 서버 저장을 막았습니다. 백업 불러오기로 온전한 데이터를 복원하세요.');
+      return Promise.resolve(false);
+    }
     return fetch(SERVER_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-app-key': APP_KEY, ...ah }, body: JSON.stringify({ key, value }) })
       .then(r => { if (!r.ok) console.warn('[서버저장 실패]', key, r.status); return r.ok; })
       .catch((e) => { console.warn('[서버저장 실패]', key, e && e.message); return false; });
@@ -2969,7 +2990,7 @@ function App() {
     );
     setUsers(updated);
     persistUsers(updated);                        // ★ 서버 users에 새 해시 저장 (토큰 검증 일치)
-    await setAuth(user.username, newHash);         // ★ 앱 토큰도 새 해시로 갱신 (저장 권한 유지)
+    await setAuth(user.username, newHash, user.role);         // ★ 앱 토큰도 새 해시로 갱신 (저장 권한 유지)
     setUser(prev => ({ ...prev, mustChangePassword: false }));
     return { success: true };
   };
@@ -5030,7 +5051,7 @@ function LoginView({ onLogin, policy, users }) {
         if (!acct) return false;
         const ok = await verifyPassword(password, acct.passwordHash);
         if (!ok) return false;
-        await setAuth(acct.username, acct.passwordHash);   // 서버 권한 검증 토큰 설정 (역할 위조 방지)
+        await setAuth(acct.username, acct.passwordHash, acct.role);   // 서버 권한 검증 토큰 설정 (역할 위조 방지)
         onLogin({ username: acct.username, role: acct.role, name: acct.name, empId: acct.empId, deptScope: acct.deptScope, mustChangePassword: acct.mustChangePassword });
         return true;
       };
