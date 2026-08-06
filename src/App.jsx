@@ -2622,7 +2622,9 @@ async function serverGet(key, timeoutMs = 6000) {
     clearTimeout(t);
     if (!r.ok) return null;
     const j = await r.json();
-    return j && j.value != null ? j.value : null;
+    // filtered 플래그를 함께 노출 (admin이 필터본을 받으면 로컬 전체를 덮지 않도록)
+    if (j && j.value != null) { try { serverGet._lastFiltered = !!j.filtered; } catch (e) {} return j.value; }
+    return null;
   } catch (e) { return null; }
 }
 function serverPut(key, value) {
@@ -3110,7 +3112,9 @@ function App() {
       // ★ 서버에서 최신본을 다시 받아 로컬과 비교 (다른 PC에서 입력한 데이터가 이 PC의 오래된 캐시에 가려지지 않도록)
       try {
         const remote = await serverGet('main');
-        if (remote != null) {
+        const wasFiltered = !!serverGet._lastFiltered;
+        if (remote != null && !wasFiltered) {
+          // 정상(전체) 데이터만 로컬 비교·반영. 필터본이면 무시하고 로컬 전체 유지.
           const remoteStr = typeof remote === 'string' ? remote : JSON.stringify(remote);
           const localStr = localStorage.getItem('koition_hr_v6');
           let useRemote = true;
@@ -3120,6 +3124,11 @@ function App() {
             useRemote = rT >= lT;   // 서버가 최신(또는 동급)이면 서버 사용
           } catch (e) {}
           if (useRemote) localStorage.setItem('koition_hr_v6', remoteStr);
+        } else if (wasFiltered) {
+          // ★ admin/manager인데 서버가 필터본(급여·재무 제거)을 보냄 = 서버가 이 계정을 admin으로 인식 못 함.
+          //   로컬의 전체 데이터를 유지하고, 그대로 서버에 재전송(전체구조 → 서버가 looksFull로 전체저장).
+          console.warn('[동기화] 서버가 필터본을 반환 — 로컬 전체 데이터 유지 및 재전송');
+          try { const localStr = localStorage.getItem('koition_hr_v6'); if (localStr) serverPut('main', localStr); } catch (e) {}
         }
       } catch (e) {}
       try {
