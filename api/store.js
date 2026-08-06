@@ -6,6 +6,8 @@
 //     - crypto 실패 시엔 "필터링만 적용 못함"이 아니라 "안전하게 전체 차단"(보수적)
 //   Upstash REST 환경변수: KV_REST_API_URL/TOKEN 또는 UPSTASH_REDIS_REST_URL/TOKEN 자동 인식.
 
+import crypto from 'crypto';   // ★ ESM에서 require('crypto')는 실패한다 — 실패 시 토큰 검증이 통째로 꺼졌었음
+
 const APP_KEY = process.env.APP_KEY || 'koition-hr-2026-key';
 
 function getRedisEnv() {
@@ -21,15 +23,15 @@ async function redisGetRaw(baseUrl, token, key) {
 }
 
 // 요청자 역할 확인. 실패·불명이면 null → 호출부에서 '민감정보 제거'(보수적)로 처리.
+// 반환: { role, verified, user }  — verified=true 는 토큰이 실제로 일치했다는 뜻.
+//   읽기(GET)는 verified 를 요구하고, 쓰기(PUT)는 기존처럼 관대하게 둔다(관리자 저장 실패 = 데이터 유실).
 async function resolveRole(req, baseUrl, token) {
   // 알려진 관리자·대표 계정 (users 조회 실패·형식 문제와 무관하게 최소한의 admin 인식 보장)
   const KNOWN_ADMINS = { 'cys': 'admin', 'K-140403': 'admin', 'K-140401': 'manager', 'K-140402': 'manager' };
   try {
     const uname = String(req.headers['x-user'] || '');
     const tk = String(req.headers['x-token'] || '');
-    if (!uname) return null;
-    let crypto;
-    try { crypto = require('crypto'); } catch (e) { crypto = null; }
+    if (!uname) return { role: null, verified: false, user: null };
     let users = [];
     try {
       const ud = await redisGetRaw(baseUrl, token, 'users');
@@ -42,17 +44,17 @@ async function resolveRole(req, baseUrl, token) {
     const u = users.find(x => x && String(x.username).trim() === uname.trim());
     if (u && u.passwordHash && crypto && tk) {
       const expect = crypto.createHash('sha256').update(u.passwordHash + ':' + APP_KEY).digest('hex');
-      if (tk === expect) return u.role || 'employee';   // 토큰 일치: 정상
+      if (tk === expect) return { role: u.role || 'employee', verified: true, user: u };
     }
     // 토큰 불일치/users 조회 실패 등 — users에 admin/manager로 있으면 인정
-    if (u && (u.role === 'admin' || u.role === 'manager')) return u.role;
+    if (u && (u.role === 'admin' || u.role === 'manager')) return { role: u.role, verified: false, user: u };
     // 최후: 알려진 관리자 username이면 인정 (데이터 유실 방지 최우선)
-    if (KNOWN_ADMINS[uname.trim()]) return KNOWN_ADMINS[uname.trim()];
-    return null;
+    if (KNOWN_ADMINS[uname.trim()]) return { role: KNOWN_ADMINS[uname.trim()], verified: false, user: u || null };
+    return { role: u ? (u.role || 'employee') : null, verified: false, user: u || null };
   } catch (e) {
     // 예외 상황에서도 알려진 관리자는 인정
-    try { const un = String(req.headers['x-user'] || '').trim(); if (KNOWN_ADMINS[un]) return KNOWN_ADMINS[un]; } catch (e2) {}
-    return null;
+    try { const un = String(req.headers['x-user'] || '').trim(); if (KNOWN_ADMINS[un]) return { role: KNOWN_ADMINS[un], verified: false, user: null }; } catch (e2) {}
+    return { role: null, verified: false, user: null };
   }
 }
 
@@ -97,6 +99,19 @@ function stripForEvaluator(valStr) {
   } catch (e) { return null; }
 }
 
+// 자기평가류를 '항목별'로 병합한다. 통째로 교체하면 다른 직원이 먼저 저장한 입력이 사라진다.
+//   employee/evaluator 는 자기 항목만 쓸 수 있게 제한해 남의 점수를 덮어쓰지 못하게 한다.
+function mergeByKey(baseObj, incObj, onlyKey) {
+  const base = baseObj && typeof baseObj === 'object' ? baseObj : {};
+  if (!incObj || typeof incObj !== 'object') return base;
+  const out = { ...base };
+  Object.keys(incObj).forEach(k => {
+    if (onlyKey && k !== onlyKey) return;   // 남의 항목은 무시
+    out[k] = incObj[k];
+  });
+  return out;
+}
+
 export default async function handler(req, res) {
   const { baseUrl, token } = getRedisEnv();
   if (!baseUrl || !token) return res.status(500).json({ error: 'Missing Redis environment variables' });
@@ -110,12 +125,14 @@ export default async function handler(req, res) {
 
       if (key === 'main' && val != null) {
         // 역할 확인 (실패해도 throw 안 됨)
-        let role = null;
-        try { role = await resolveRole(req, baseUrl, token); } catch (e) { role = null; }
-        if (role === 'admin' || role === 'manager') {
+        let rr = { role: null, verified: false };
+        try { rr = await resolveRole(req, baseUrl, token); } catch (e) { rr = { role: null, verified: false }; }
+        const role = rr && rr.role;
+        // ★ 읽기 권한은 토큰이 실제로 일치할 때만 준다. 헤더에 x-user 만 넣어도 전체 재무가 내려가던 문제 차단.
+        if ((role === 'admin' || role === 'manager') && rr.verified) {
           return res.status(200).json({ value: val });   // 관리자·대표: 전체
         }
-        if (role === 'evaluator') {
+        if (role === 'evaluator' && rr.verified) {
           // 평가자(부서장): 평가 데이터(scores·selfScores·comments·등급기준)는 유지, 급여·재무만 제거
           let ev = null;
           try { ev = stripForEvaluator(val); } catch (e) { ev = null; }
@@ -141,8 +158,10 @@ export default async function handler(req, res) {
       let payload = typeof value === 'string' ? value : JSON.stringify(value);
 
       if (key === 'main') {
-        let role = null;
-        try { role = await resolveRole(req, baseUrl, token); } catch (e) { role = null; }
+        let rr = { role: null, verified: false, user: null };
+        try { rr = await resolveRole(req, baseUrl, token); } catch (e) { rr = { role: null, verified: false, user: null }; }
+        const role = rr && rr.role;
+        const meKey = rr && rr.user ? String(rr.user.empId || rr.user.username || '').trim() : '';
         // 관리자 앱의 '전체 저장'인지 판별. 토큰 검증(role)이 우선이나, 비밀번호 변경 직후 등
         //   토큰이 일시적으로 어긋나도 admin 데이터가 유실되지 않도록 페이로드 구조로도 판별한다.
         //   - 직원 앱은 재무·평가원본(fin/scores/cashCfg/empLedger)을 절대 안 보냄
@@ -178,11 +197,11 @@ export default async function handler(req, res) {
               if (base && (baseRevenue || baseFin)) {
                 const merged = {
                   ...base,
-                  selfScores: incoming.selfScores != null ? incoming.selfScores : base.selfScores,
-                  comments: incoming.comments != null ? incoming.comments : base.comments,
-                  submissions: incoming.submissions != null ? incoming.submissions : base.submissions,
-                  peerEvals: incoming.peerEvals != null ? incoming.peerEvals : base.peerEvals,
-                  updatedAt: incoming.updatedAt || new Date().toISOString(),
+                  selfScores: mergeByKey(base.selfScores, incoming.selfScores, null),
+                  comments: mergeByKey(base.comments, incoming.comments, null),
+                  submissions: mergeByKey(base.submissions, incoming.submissions, null),
+                  peerEvals: mergeByKey(base.peerEvals, incoming.peerEvals, null),
+                  updatedAt: new Date().toISOString(),
                 };
                 payload = JSON.stringify(merged);
                 const r0 = await fetch(`${baseUrl}/set/${encodeURIComponent(key)}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: payload });
@@ -199,13 +218,14 @@ export default async function handler(req, res) {
             const base = curRaw && curRaw.result != null ? JSON.parse(curRaw.result) : {};
             let inc = {};
             try { inc = typeof value === 'string' ? JSON.parse(value) : (value || {}); } catch (e) { inc = {}; }
+            const only = (role === 'admin' || role === 'manager') ? null : (meKey || null);
             const merged = {
               ...base,
-              selfScores: inc.selfScores != null ? inc.selfScores : base.selfScores,
-              comments: inc.comments != null ? inc.comments : base.comments,
-              submissions: inc.submissions != null ? inc.submissions : base.submissions,
-              peerEvals: inc.peerEvals != null ? inc.peerEvals : base.peerEvals,
-              updatedAt: inc.updatedAt || new Date().toISOString(),
+              selfScores: mergeByKey(base.selfScores, inc.selfScores, only),
+              comments: mergeByKey(base.comments, inc.comments, only),
+              submissions: mergeByKey(base.submissions, inc.submissions, only),
+              peerEvals: mergeByKey(base.peerEvals, inc.peerEvals, null),
+              updatedAt: new Date().toISOString(),
             };
             payload = JSON.stringify(merged);
           } catch (e) {
