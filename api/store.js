@@ -159,6 +159,39 @@ export default async function handler(req, res) {
           }
         } catch (e) { hasHeavy = false; }
         const isAdmin = role === 'admin' || role === 'manager' || hasHeavy || looksFull;
+        // ★ 관리자 저장이라도, 매출·재무·급여가 통째로 빈 '필터본'이면 서버 원본을 덮지 않는다.
+        //   (필터본을 받은 관리자 세션의 자동저장이 원본을 훼손하는 것을 서버에서도 차단 — 이중 방어)
+        if (isAdmin) {
+          let incoming = {};
+          try { incoming = typeof value === 'string' ? JSON.parse(value) : (value || {}); } catch (e) { incoming = {}; }
+          const inHasProjects = Array.isArray(incoming.projects) && incoming.projects.length > 0;
+          const inRevenue = inHasProjects && incoming.projects.some(p => p && Number(p.revenue) > 0);
+          const inFin = incoming.fin && typeof incoming.fin === 'object' && Object.keys(incoming.fin).length > 0;
+          const inSalary = Array.isArray(incoming.employees) && incoming.employees.some(e => e && Number(e.baseSalary) > 0);
+          if (inHasProjects && !inRevenue && !inFin && !inSalary) {
+            // 들어온 게 필터본. 서버 원본이 더 온전하면(매출·재무 보유) 평가 필드만 병합.
+            try {
+              const curRaw = await redisGetRaw(baseUrl, token, 'main');
+              const base = curRaw && curRaw.result != null ? JSON.parse(curRaw.result) : null;
+              const baseRevenue = base && Array.isArray(base.projects) && base.projects.some(p => p && Number(p.revenue) > 0);
+              const baseFin = base && base.fin && Object.keys(base.fin).length > 0;
+              if (base && (baseRevenue || baseFin)) {
+                const merged = {
+                  ...base,
+                  selfScores: incoming.selfScores != null ? incoming.selfScores : base.selfScores,
+                  comments: incoming.comments != null ? incoming.comments : base.comments,
+                  submissions: incoming.submissions != null ? incoming.submissions : base.submissions,
+                  peerEvals: incoming.peerEvals != null ? incoming.peerEvals : base.peerEvals,
+                  updatedAt: incoming.updatedAt || new Date().toISOString(),
+                };
+                payload = JSON.stringify(merged);
+                const r0 = await fetch(`${baseUrl}/set/${encodeURIComponent(key)}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: payload });
+                const d0 = await r0.json().catch(() => ({}));
+                return res.status(200).json({ ok: true, guarded: true, result: d0 && d0.result });
+              }
+            } catch (e) { /* 원본 읽기 실패 시 아래 기본 저장으로 진행 */ }
+          }
+        }
         if (!isAdmin) {
           // 직원·평가자·미인증: 서버 원본을 읽어 평가 필드만 병합 (재무·급여·프로젝트 원본 보존)
           try {
