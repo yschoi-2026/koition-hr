@@ -2,6 +2,46 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Users, Settings, FileText, BarChart3, Save, Download, Upload, Search, AlertCircle, Award, Wallet, Trash2, Printer, History, PieChart as PieIcon, LogIn, LogOut, Sparkles, Mail, UserCheck, CheckCircle2, ChevronRight, TrendingUp, Building2, Plus, Pencil, X, StickyNote, ChevronDown, Calendar, Briefcase, MessageSquare, Clock, Tag, Calculator, FileSpreadsheet, TrendingDown, Target, Activity, AlertTriangle, ShieldAlert, Layers, Percent, ArrowUpRight, ArrowDownRight, FileBarChart } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ComposedChart, Area, LabelList, ReferenceLine, ReferenceDot } from 'recharts';
 
+// ════════════════════════════════════════════════════════════
+// koition-hr  v178
+//
+// [v177 → v178] 경영회계 업로드 사고 방지
+// 12) 월계표 등 ERP 파일의 첫 셀 기간 헤더(예: 2026/01/01 ~ 2026/06/30)를 읽어 patch._span 으로 전달.
+//     예전엔 기간을 무시하고 누적 필드에 그대로 덮어써서, 8월 6일치 월계표가 1~6월 누적을 지웠음
+//     (용역매출 1,376,809,157 → 12,100,000 / 당기순이익 310,169,299 → 0).
+// 13) fin.period 를 '오늘 날짜'가 아니라 '파일의 기간 종료월'에서 가져오도록 수정. fin.finSpan 에 원본 기간 기록.
+// 14) 경영회계 업로드를 즉시 반영 → 미리보기 승인 방식으로 변경. 항목별 현재값·반영후·증감을 보여주고,
+//     ① 누적 파일인데 연초부터가 아님 ② 주요 누적값 20% 이상 감소 ③ 월별매출 합계와 어긋남
+//     중 하나라도 걸리면 빨간 경고와 함께 확인 버튼을 눌러야만 반영됨.
+//
+// [v176 → v177] 공통비 반영 경로 이관
+// 10) 지출정리 파일의 「본사운영/공통경비」를 「월 실적 반영」에서도 간접비 풀로 집계.
+//     폐지된 「월마감」 탭에만 있던 처리라 지금은 지출정리를 올려도 공통비가 반영되지 않았음.
+//     산식은 월마감과 동일(매입(외주)·지출결의서·부동산·카드사용만, 매출 행 제외) — 실측 90,558,752원 일치.
+// 11) 이중계상 방지: 같은 해 기존 공통비와 월이 겹치면 미리보기에서 경고하고
+//     「기존 항목 대체 / 새 항목 추가 / 반영 안 함」을 고르게 함. 겹치면 기본값은 '대체'.
+//
+// [v175 → v176] 원본 엑셀 매칭 정확도
+//  6) 프로젝트ID 우선 매칭 — 통합본·통합거래원장·프로젝트별 집계에 「프로젝트ID」 열이 있으면
+//     사업명 추측을 건너뛰고 그 ID를 그대로 씁니다. 열이 없으면 기존 방식 그대로 동작.
+//  7) [버그] policy.projMap이 사업목록에 없는 ID를 가리킬 때 금액이 조용히 사라지던 문제.
+//     실측: 2026-018(나주학생독립운동기념관) 규칙으로 9,290,420원이 유실되고 있었음.
+//     → 존재하지 않는 ID는 거부하고 '미매칭'으로 노출.
+//  8) 「월마감」 탭도 policy.projMap을 사용 (기존에는 「월 실적 반영」 탭만 사용해서
+//     같은 파일을 올려도 탭마다 다른 사업에 반영됐음).
+//  9) 정합성 점검 패널 추가 — 인건비 소계 불일치·공통비 중복·사업명 중복을 화면에서 상시 확인.
+//
+// [v174 → v175] 표준 사업관리 워크북 지원
+//  1) 시트 「사업목록」이 있으면 parseStandardWorkbook으로 분기. 열 이름으로 위치를 찾으므로
+//     열 순서 변경·열 추가에 영향받지 않음. 기존 회사 원본 워크북 경로는 그대로 유지.
+//  2) [버그] 업로드 반영 시 기타비(otherCost)를 0으로 덮어쓰던 문제 수정.
+//  3) [버그] bulkUpsertProjects가 프로젝트를 통째 교체해 지분율·공동수급·진행률·매출총액여부가
+//     매 업로드마다 사라지던 문제 → 병합 저장으로 변경.
+//  4) [버그] 참여인력의 참여율·투입개월이 업로드 반영 시 버려지던 문제 수정.
+//  5) 월별집행 이월(전기) 열 = monthly[0] 반영. 인력운영현황은 프로젝트ID 우선 매칭
+//     (사업명이 동일한 사업이 실제로 6건 존재 — 사업명만으로는 오집계됨).
+// ════════════════════════════════════════════════════════════
+
 // ============================================================
 // 디자인 토큰 시스템
 // ============================================================
@@ -2403,7 +2443,7 @@ async function parseMonthlyActuals(buf, fname, mapFn) {
   const wb = XLSX.read(buf, { type: 'array' });
   const num = (x) => { const n = Number(String(x == null ? '' : x).replace(/[^\d.-]/g, '')); return isNaN(n) ? 0 : n; };
   const grid = (n) => XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: null });
-  const out = { worker: {}, mgr: {}, oh: {}, revenue: {}, conTotal: 0 }; const un = new Set(); let kind = null;
+  const out = { worker: {}, mgr: {}, oh: {}, revenue: {}, conTotal: 0, company: null }; const un = new Set(); let kind = null;
   const monthSheets = wb.SheetNames.filter(n => /^\d{1,2}월$/.test(n));
   if (wb.SheetNames.includes('프로젝트별 집계')) {   // (우선) 지출정리 → 사업별 매출 + 제경비 (실제 파일 구조)
     kind = '사업별 매출·경비(프로젝트별 집계)';
@@ -2415,6 +2455,7 @@ async function parseMonthlyActuals(buf, fname, mapFn) {
     if (hr < 0) hr = 2;
     const hdr = g[hr] || [];
     const cName = 0;
+    const cPid = hdr.findIndex(c => String(c || '').replace(/\s/g, '') === '프로젝트ID');   // ★ 있으면 우선
     const cRev = hdr.findIndex(c => String(c || '').replace(/\s/g, '') === '매출');
     const cOut = hdr.findIndex(c => String(c || '').includes('외주') || String(c || '').includes('매입'));
     const cDir = hdr.findIndex(c => String(c || '').includes('지출결의') || String(c || '').includes('직접경비'));
@@ -2425,9 +2466,10 @@ async function parseMonthlyActuals(buf, fname, mapFn) {
       const rev = cRev >= 0 ? num(r[cRev]) : 0;
       const ohv = (cOut >= 0 ? num(r[cOut]) : 0) + (cDir >= 0 ? num(r[cDir]) : 0) + (cEst >= 0 ? num(r[cEst]) : 0);
       if (rev <= 0 && ohv <= 0) return;
-      const pid = mapFn(nm);
+      const idCell = cPid >= 0 ? String(r[cPid] == null ? '' : r[cPid]).trim() : '';
+      const pid = (idCell && mapFn(idCell)) || mapFn(nm);
       if (pid) { if (rev > 0) out.revenue[pid] = (out.revenue[pid] || 0) + rev; if (ohv > 0) out.oh[pid] = (out.oh[pid] || 0) + ohv; }
-      else un.add(nm);
+      else un.add(idCell ? idCell + ' / ' + nm : nm);
     });
     // ── 자산성 지출 자동 제외: 통합거래원장에서 '보증금·예치금·증거금·임차보증' 등 지출 건을 찾아 해당 사업 제경비에서 차감 ──
     //    (보증금은 반환받는 자산이지 사업 원가가 아님)
@@ -2440,8 +2482,33 @@ async function parseMonthlyActuals(buf, fname, mapFn) {
       const cItem = lh.findIndex(c => String(c || '').includes('거래처') || String(c || '').includes('항목'));
       const cAmt = lh.findIndex(c => String(c || '').replace(/\s/g, '') === '금액');
       const cTitle = lh.findIndex(c => String(c || '').includes('품목') || String(c || '').includes('제목'));
-      const cProj = lh.findIndex(c => String(c || '').includes('프로젝트'));
+      const cProj = lh.findIndex(c => String(c || '').replace(/\s/g, '') === '프로젝트' || String(c || '').replace(/\s/g, '') === '프로젝트명');
+      const cLgPid = lh.findIndex(c => String(c || '').replace(/\s/g, '') === '프로젝트ID');   // ★ 있으면 우선
+      const cMon = lh.findIndex(c => String(c || '').replace(/\s/g, '') === '월');
       const assetKw = /보증금|예치금|증거금|임차보증/;
+
+      // ── 본사운영·공통경비 → 회사 공통비(간접비 풀) 월별 집계 ──
+      //    폐지된 「월마감」 탭에만 있던 처리를 여기로 옮김. 산식은 동일하게 유지한다:
+      //    구분이 매입(외주)·지출결의서·부동산·카드사용인 지출만 집계 (매출 행은 제외).
+      if (cAmt >= 0 && cProj >= 0) {
+        const OH_SEC = ['매입(외주)', '지출결의서', '부동산', '카드사용'];
+        const cmMon = new Array(13).fill(0); let cmTot = 0, cmRows = 0, cmRev = 0;
+        const monOf = (v) => { const m = /(\d{1,2})\s*월/.exec(String(v || '')); if (m) { const n = +m[1]; if (n >= 1 && n <= 12) return n; } return 0; };
+        lg.slice(lhr + 1).forEach(r => {
+          if (!r) return;
+          const pnm = String(r[cProj] || '');
+          const lgId = cLgPid >= 0 ? String(r[cLgPid] || '').trim() : '';
+          if (!/본사운영|공통경비/.test(pnm) && lgId !== '공통비') return;
+          const amt = num(r[cAmt]); if (amt <= 0) return;
+          const sec = cGubun >= 0 ? String(r[cGubun] || '').trim() : '';
+          if (!OH_SEC.includes(sec)) { if (/매출|수입/.test(sec)) cmRev += amt; return; }
+          const mo = cMon >= 0 ? monOf(r[cMon]) : 0;
+          cmTot += amt; cmRows++; if (mo) cmMon[mo] += amt;
+        });
+        if (cmTot > 0) {
+          out.company = { total: Math.round(cmTot), monthly: cmMon.map(v => Math.round(v)), rows: cmRows, excludedRevenue: Math.round(cmRev) };
+        }
+      }
       if (cAmt >= 0 && cProj >= 0) {
         const deduct = {};
         lg.slice(lhr + 1).forEach(r => {
@@ -2452,7 +2519,8 @@ async function parseMonthlyActuals(buf, fname, mapFn) {
           if (!assetKw.test(txt)) return;
           const amt = num(r[cAmt]); if (amt <= 0) return;
           const pnm = String(r[cProj] || '').replace(/^\[[^\]]*\]\s*/, '').trim();
-          const pid = mapFn(pnm); if (!pid) return;
+          const lgId = cLgPid >= 0 ? String(r[cLgPid] || '').trim() : '';
+          const pid = (lgId && mapFn(lgId)) || mapFn(pnm); if (!pid) return;
           deduct[pid] = (deduct[pid] || 0) + amt;
           out.assetExcluded = (out.assetExcluded || []); out.assetExcluded.push(`${pnm.slice(0, 20)}: ${txt.trim().slice(0, 24)} ${amt.toLocaleString()}원`);
         });
@@ -2467,13 +2535,15 @@ async function parseMonthlyActuals(buf, fname, mapFn) {
       const cG = col('지급총액'), cN = col('국민연금'), cH = col('건강보험'), cE = col('고용보험');
       let cP = hdr.findIndex(c => String(c || '').replace(/\s/g, '') === '프로젝트');   // R열 프로젝트명
       if (cP < 0) cP = 17;   // R열 기본 위치
+      const cPi = hdr.findIndex(c => String(c || '').replace(/\s/g, '') === '프로젝트ID');   // ★ 있으면 우선
       rows.slice(2).forEach(r => {
         if (!r) return; const g0 = cG >= 0 ? num(r[cG]) : 0; if (g0 <= 0) return;
         const v = g0 + (cN >= 0 ? num(r[cN]) : 0) + (cH >= 0 ? num(r[cH]) : 0) + (cE >= 0 ? num(r[cE]) : 0);
         // R열 형태: "[발주처]사업명" → 대괄호 접두 제거 후 매칭
         const raw = String((r[cP] != null ? r[cP] : '')).trim();
         const nm = raw.replace(/^\[[^\]]*\]\s*/, '').trim();
-        if (nm && !nm.includes('#')) { const pid = mapFn(nm); if (pid) { out.worker[pid] = (out.worker[pid] || 0) + v; return; } if (raw) un.add(nm.slice(0, 30)); }
+        const idc = cPi >= 0 ? String((r[cPi] != null ? r[cPi] : '')).trim() : '';
+        if (idc || (nm && !nm.includes('#'))) { const pid = (idc && mapFn(idc)) || (nm && !nm.includes('#') ? mapFn(nm) : null); if (pid) { out.worker[pid] = (out.worker[pid] || 0) + v; return; } if (raw || idc) un.add((idc ? idc + ' / ' : '') + nm.slice(0, 30)); }
         out.conTotal += v;   // 미기재·미매칭이면 총액에 누적
       });
     });
@@ -2514,6 +2584,31 @@ async function parseFinanceExcel(arrayBuffer, fileName) {
   const fn = String(fileName || '');
   const patch = {}; const notes = [];
 
+  // ── 기간 헤더 추출 ──
+  //   ERP 내보내기는 첫 셀에 "회사명 : ... / 2026/01/01 ~ 2026/06/30" 형태로 대상 기간을 담고 있다.
+  //   이걸 읽지 않고 값을 누적 필드에 덮어써서, 8월 6일치 월계표가 1~6월 누적을 지운 사고가 있었다.
+  (() => {
+    try {
+      for (const sn of wb.SheetNames) {
+        const ws = wb.Sheets[sn]; if (!ws) continue;
+        for (let r = 0; r < 3; r++) {
+          for (let c = 0; c < 3; c++) {
+            const cell = ws[XLSX.utils.encode_cell({ r, c })];
+            const t = cell ? String(cell.w != null ? cell.w : cell.v) : '';
+            const m = t.match(/(20\d{2})[./-](\d{1,2})[./-](\d{1,2})\s*~\s*(20\d{2})[./-](\d{1,2})[./-](\d{1,2})/);
+            if (m) {
+              const pad = (x) => String(x).padStart(2, '0');
+              const from = `${m[1]}-${pad(m[2])}-${pad(m[3])}`, to = `${m[4]}-${pad(m[5])}-${pad(m[6])}`;
+              const months = (Number(m[4]) - Number(m[1])) * 12 + (Number(m[5]) - Number(m[2])) + 1;
+              patch._span = { from, to, months, startsYear: Number(m[2]) === 1 && Number(m[3]) <= 2, label: from.replace(/-/g, '.') + ' ~ ' + to.replace(/-/g, '.') };
+              return;
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  })();
+
   // (A) 월계표/일계표 → 손익·판관비·세무
   if (/월계표|일계표|일월계표/.test(fn) || wb.SheetNames.some(n => /월계표|일계표/.test(n))) {
     const sheet = wb.SheetNames.find(n => /월계표|일계표/.test(n)) || wb.SheetNames[0];
@@ -2541,7 +2636,8 @@ async function parseFinanceExcel(arrayBuffer, fileName) {
     if (Object.keys(sga).length) patch.sga = sga;
     patch.etc = { 이자비용: interest, 국고보조금: subsidy };
     patch.tax = { vatOutCum: vatOut, vatInCum: vatIn, netIncomeCum: net };
-    notes.push('월계표: 매출·판관비·세무 반영');
+    notes.push('월계표(' + (patch._span ? patch._span.label : '기간 불명') + '): 매출·판관비·세무 반영');
+    patch._cumulative = true;   // 이 파일의 값은 '기간 누적' 성격 → 짧은 기간 파일이 긴 기간을 덮으면 사고
   }
 
   // (B) 월별매출집계표 → 월별 매출 + 거래처
@@ -3497,7 +3593,19 @@ function App() {
   const bulkUpsertProjects = (rows) => {
     setProjects(prev => {
       const map = new Map(prev.map(p => [p.id, p]));
-      rows.forEach(r => map.set(r.id, r));
+      rows.forEach(r => {
+        const old = map.get(r.id);
+        if (!old) { map.set(r.id, r); return; }
+        // ★ 병합 저장: 업로드본에 없는(비어 있는) 수기 입력 필드는 기존 값 보존.
+        //   예전에는 map.set(r.id, r)로 통째 교체해서 지분율·공동수급·진행률·매출총액여부가 매 업로드마다 사라졌다.
+        const merged = { ...old, ...r };
+        ['shareRate', 'consortium', 'revIsTotal', 'progress', 'note', 'client', 'period'].forEach(k => {
+          if (r[k] == null || r[k] === '') merged[k] = old[k];
+        });
+        if (!Array.isArray(r.monthly) || !r.monthly.some(v => Number(v) > 0)) merged.monthly = old.monthly;
+        if (!Array.isArray(r.members) || r.members.length === 0) merged.members = old.members;
+        map.set(r.id, merged);
+      });
       return Array.from(map.values());
     });
     showToast(`${rows.length}개 프로젝트를 반영했습니다`);
@@ -3701,7 +3809,7 @@ function App() {
             {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} receivables={receivables} cashCfg={cashCfg} setCashCfg={setCashCfg} upsertProject={upsertProject} deleteProject={deleteProject} fin={fin} />}
             {tab === 'loans' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <LoansView loans={loans} setLoans={setLoans} employees={employees} />}
             {tab === 'receivables' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ReceivablesView receivables={receivables} setReceivables={setReceivables} projects={projects} />}
-            {tab === 'monthclose' && <MonthCloseView projects={projects} employees={employees} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} />}
+            {tab === 'monthclose' && <MonthCloseView projects={projects} employees={employees} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} />}
             {tab === 'results' && <ResultsView user={user} employees={visibleEmployees} results={results} comments={comments} scores={scores} selfScores={selfScores} policy={policy} currentYear={currentYear} history={history} navigateToHistory={navigateToHistory} closeYearSnapshot={closeYearSnapshot} />}
             {tab === 'salary' && <SalaryView employees={employees} results={results} stats={stats} />}
             {tab === 'analytics' && <AnalyticsView employees={visibleEmployees} results={results} policy={policy} stats={stats} />}
@@ -9246,7 +9354,7 @@ function ProjectAnalytics({ projects, employees, cfg, targets, allProjects }) {
 // ============================================================
 // 월마감 변환 — 계약직/정규직급여/지출 3파일 업로드 → 프로젝트 수익성 자동 반영
 // ============================================================
-function MonthCloseView({ projects, employees, bulkUpsertProjects, bulkUpsertOverheads, bulkSetEmpLedger, currentYear }) {
+function MonthCloseView({ projects, employees, bulkUpsertProjects, bulkUpsertOverheads, bulkSetEmpLedger, currentYear, policy }) {
   const [files, setFiles] = React.useState({ cw: null, exp: null, sal: [], alloc: null });
   const [preview, setPreview] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
@@ -9255,7 +9363,24 @@ function MonthCloseView({ projects, employees, bulkUpsertProjects, bulkUpsertOve
   const STOP = ['용역', '사업', '구축', '개발', '유지관리', '유지보수', '및', '운영', '전수조사', '보존처리', '연구', '관련'];
   const nrm = (s) => { s = String(s || '').replace(/\[[^\]]*\]/g, '').replace(/\([^)]*\)/g, '').replace(/20\d\d년?도?/g, ''); STOP.forEach(w => s = s.split(w).join('')); return s.replace(/[^0-9A-Za-z가-힣]/g, ''); };
   const projList = (projects || []).map(p => ({ id: p.id, name: p.name, pn: nrm(p.name) }));
-  const match = (name) => { const n = nrm(name); if (!n) return null; for (const p of projList) { if (p.pn && (p.pn.includes(n) || n.includes(p.pn))) return p.id; } return null; };
+  // ★ 매칭 우선순위: ① 프로젝트ID 직접 지정 ② policy.projMap 키워드 ③ 이름 유사도(기존)
+  //    ①②가 없으면 이름 추측으로 내려가는데, 추측은 놓치거나 엉뚱한 사업에 붙을 수 있다.
+  const idSet = React.useMemo(() => new Set((projects || []).map(p => p.id)), [projects]);
+  const pmRules = (policy && policy.projMap) || [];
+  const asProjectId = (v) => {
+    const raw = String(v || '').trim(); if (!raw) return null;
+    if (idSet.has(raw)) return raw;
+    const m = raw.match(/^((?:[A-Z]+-)?\d{4}-\d+)/);      // "2026-007 사업명", "PRJ-2026-1925" 형태 허용
+    return m && idSet.has(m[1]) ? m[1] : null;
+  };
+  const match = (name) => {
+    const direct = asProjectId(name); if (direct) return direct;
+    const rule = pmRules.find(m => m && m.kw && String(name || '').includes(m.kw));
+    if (rule && idSet.has(rule.id)) return rule.id;
+    const n = nrm(name); if (!n) return null;
+    for (const p of projList) { if (p.pn && (p.pn.includes(n) || n.includes(p.pn))) return p.id; }
+    return null;
+  };
   const mnum = (v) => { v = String(v || ''); let m = /\/(\d{1,2})/.exec(v); if (m) return +m[1]; m = /(\d{1,2})\s*월/.exec(v); if (m) return +m[1]; m = /(\d{1,2})/.exec(v); if (m) { const n = +m[1]; if (n >= 1 && n <= 12) return n; } return null; };
   const readBuf = (file) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsArrayBuffer(file); });
 
@@ -9279,7 +9404,15 @@ function MonthCloseView({ projects, employees, bulkUpsertProjects, bulkUpsertOve
         const t = wb.Sheets['통합본'];
         if (t) {
           const rng = XLSX.utils.decode_range(t['!ref']);
-          for (let r = 2; r <= rng.e.r; r++) { const code = S(t, r, 1); if (!code) continue; const mo = mnum(S(t, r, 0)); const g = Nc(t, r, 3); const nm = S(t, r, 2); const pr = S(t, r, 17); const id = match(pr); if (id && mo) { if (empNames.has(nm)) { add(M, id, mo, g); hasM = true; } else { add(W, id, mo, g); hasW = true; } } else if (pr && !id) unmatched[pr] = (unmatched[pr] || 0) + g; }
+          // ★ 프로젝트ID 열이 있으면 그 열을, 없으면 기존 R열(17)의 사업명을 쓴다.
+          let cPid = -1, cPnm = -1;
+          for (let c = 0; c <= rng.e.c; c++) {
+            const h = S(t, 1, c).replace(/\s/g, '');
+            if (h === '프로젝트ID') cPid = c;
+            else if (h === '프로젝트' || h === '프로젝트명') cPnm = c;
+          }
+          if (cPnm < 0) cPnm = 17;
+          for (let r = 2; r <= rng.e.r; r++) { const code = S(t, r, 1); if (!code) continue; const mo = mnum(S(t, r, 0)); const g = Nc(t, r, 3); const nm = S(t, r, 2); const pid = cPid >= 0 ? S(t, r, cPid) : ''; const pr = S(t, r, cPnm); const id = (pid && match(pid)) || match(pr); if (id && mo) { if (empNames.has(nm)) { add(M, id, mo, g); hasM = true; } else { add(W, id, mo, g); hasW = true; } } else if ((pr || pid) && !id) { const key = pid || pr; unmatched[key] = (unmatched[key] || 0) + g; } }
         } else {
           const w = wb.Sheets['급여현황'] || wb.Sheets[wb.SheetNames[0]];
           const rng = XLSX.utils.decode_range(w['!ref']);
@@ -9293,11 +9426,19 @@ function MonthCloseView({ projects, employees, bulkUpsertProjects, bulkUpsertOve
       if (files.exp) {
         hasE = true; const wb = await openWb(files.exp); const ej = wb.Sheets['통합거래원장'] || wb.Sheets[wb.SheetNames[0]];
         const rng = XLSX.utils.decode_range(ej['!ref']); let hr = 0; for (let r = 0; r < 6; r++) if (S(ej, r, 0) === '월') { hr = r; break; }
+        // ★ 프로젝트ID 열 자동 탐지 (없으면 기존 9번째 열의 사업명만 사용)
+        let cPid = -1, cPnm = -1;
+        for (let c = 0; c <= rng.e.c; c++) {
+          const h = S(ej, hr, c).replace(/\s/g, '');
+          if (h === '프로젝트ID') cPid = c;
+          else if (h === '프로젝트' || h === '프로젝트명') cPnm = c;
+        }
+        if (cPnm < 0) cPnm = 8;
         for (let r = hr + 1; r <= rng.e.r; r++) {
-          const sec = S(ej, r, 1), amt = Nc(ej, r, 6), proj = S(ej, r, 8), dam = S(ej, r, 9), mo = mnum(S(ej, r, 0));
-          if (['매입(외주)', '지출결의서', '부동산', '카드사용'].includes(sec) && proj && mo) {
-            if (/본사운영|공통경비/.test(proj)) OH[mo] += amt;
-            else { const id = match(proj); if (id) add(E, id, mo, amt); else unmatched[proj] = (unmatched[proj] || 0) + amt; }
+          const sec = S(ej, r, 1), amt = Nc(ej, r, 6), proj = S(ej, r, cPnm), pid = cPid >= 0 ? S(ej, r, cPid) : '', dam = S(ej, r, 9), mo = mnum(S(ej, r, 0));
+          if (['매입(외주)', '지출결의서', '부동산', '카드사용'].includes(sec) && (proj || pid) && mo) {
+            if (/본사운영|공통경비/.test(proj) || /^공통비$/.test(pid)) OH[mo] += amt;
+            else { const id = (pid && match(pid)) || match(proj); if (id) add(E, id, mo, amt); else { const key = pid || proj; unmatched[key] = (unmatched[key] || 0) + amt; } }
           }
           if (sec === '카드사용' && amt) { const m2 = /\(([^)]+)\)/.exec(dam); let who = (m2 ? m2[1] : dam).replace(/^(무기명|기명)\s*/, '').trim(); if (who) CARD[who] = (CARD[who] || 0) + amt; }
         }
@@ -9420,7 +9561,25 @@ function MonthCloseView({ projects, employees, bulkUpsertProjects, bulkUpsertOve
 function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
   const [edit, setEdit] = React.useState(false);
   const [uploadMsg, setUploadMsg] = React.useState('');
+  const [finPreview, setFinPreview] = React.useState(null);   // 재무 업로드 미리보기 (승인 전)
   const upRef = React.useRef(null);
+  // 실제 반영 (미리보기 승인 후에만 호출)
+  const commitFin = (merged, allNotes, span) => {
+    setFin(prev => {
+      const n = { ...prev };
+      Object.keys(merged).forEach(k => {
+        if (k === '_span' || k === '_cumulative') return;
+        if (k === 'sga' || k === 'sales' || k === 'etc' || k === 'tax') n[k] = { ...(prev[k] || {}), ...merged[k] };
+        else n[k] = merged[k];
+      });
+      // ★ period는 '오늘 날짜'가 아니라 '파일의 기간'에서 가져온다. (오늘 기준이라 8월 파일이 2026-08로 찍혔음)
+      if (span && span.to) { n.period = span.to.slice(0, 7); n.finSpan = span.label; }
+      return n;
+    });
+    setUploadMsg('반영 완료: ' + (allNotes.join(' · ') || '인식된 데이터 없음'));
+    setTimeout(() => setUploadMsg(''), 8000);
+  };
+
   const handleFinUpload = async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -9441,18 +9600,46 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
         merged = { ...merged, ...patch, sga: { ...(merged.sga || {}), ...(patch.sga || {}) }, sales: { ...(merged.sales || {}), ...(patch.sales || {}) }, etc: { ...(merged.etc || {}), ...(patch.etc || {}) }, tax: { ...(merged.tax || {}), ...(patch.tax || {}) } };
       } catch (err) { allNotes.push(file.name + ': 인식 실패'); }
     }
-    setFin(prev => {
-      const n = { ...prev };
-      Object.keys(merged).forEach(k => {
-        if (k === 'sga' || k === 'sales' || k === 'etc' || k === 'tax') n[k] = { ...(prev[k] || {}), ...merged[k] };
-        else n[k] = merged[k];
-      });
-      n.period = '2026-' + String(new Date().getMonth() + 1).padStart(2, '0');
-      return n;
-    });
-    setUploadMsg('반영 완료: ' + (allNotes.join(' · ') || '인식된 데이터 없음'));
     if (upRef.current) upRef.current.value = '';
-    setTimeout(() => setUploadMsg(''), 8000);
+    if (!Object.keys(merged).length) { setUploadMsg('인식된 데이터가 없습니다'); setTimeout(() => setUploadMsg(''), 6000); return; }
+
+    // ── 미리보기: 무엇이 어떻게 바뀌는지 보여주고 승인받는다 ──
+    const prev = fin || {};
+    const span = merged._span || null;
+    const cum = !!merged._cumulative;
+    const cur = (path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), prev);
+    const nxt = (path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), merged);
+    const KEYS = [
+      ['용역매출', 'sales.용역'], ['상품매출', 'sales.상품'],
+      ['부가세예수금(누적)', 'tax.vatOutCum'], ['부가세대급금(누적)', 'tax.vatInCum'],
+      ['당기순이익(누적)', 'tax.netIncomeCum'],
+      ['정규직 급여', 'salaryReg'], ['계약직 급여', 'salaryCon'],
+      ['통장 잔고', 'bankBalance'], ['매출채권', 'receivable'], ['매입채무', 'payable'],
+    ];
+    const rows = KEYS.map(([label, path]) => {
+      const b = Number(cur(path)) || 0, a = nxt(path);
+      if (a === undefined) return null;
+      return { label, before: b, after: Number(a) || 0 };
+    }).filter(Boolean);
+    if (merged.sga) {
+      const b = Object.values(prev.sga || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+      const a = Object.values({ ...(prev.sga || {}), ...merged.sga }).reduce((s, v) => s + (Number(v) || 0), 0);
+      rows.push({ label: '판관비 합계', before: b, after: a });
+    }
+    // 위험 판정: 누적 성격 파일인데 기간이 연초부터가 아니거나, 주요 누적값이 크게 줄어드는 경우
+    const drops = rows.filter(r => r.before > 0 && r.after < r.before * 0.8);
+    const partial = cum && span && !span.startsYear;
+    const warns = [];
+    if (partial) warns.push(`이 파일의 기간은 ${span.label} 입니다 — 연초부터가 아닙니다. 누적값을 이 기간치로 덮어쓰게 됩니다.`);
+    if (cum && !span) warns.push('파일에서 기간을 읽지 못했습니다. 누적 기간이 맞는지 직접 확인하세요.');
+    if (drops.length) warns.push(`${drops.map(d => d.label).join(' · ')} 이(가) 크게 줄어듭니다.`);
+    const monthlySum = Array.isArray(prev.salesMonthly) ? prev.salesMonthly.reduce((s, v) => s + (Number(v) || 0), 0) : 0;
+    const newSales = (Number(nxt('sales.용역')) || 0) + (Number(nxt('sales.상품')) || 0);
+    if (merged.sales && monthlySum > 0 && newSales > 0 && newSales < monthlySum * 0.8) {
+      warns.push(`월별매출 합계 ${fmtMoney(monthlySum)}원과 어긋납니다 (반영 후 매출 합계 ${fmtMoney(newSales)}원).`);
+    }
+    setUploadMsg('');
+    setFinPreview({ merged, allNotes, span, rows, warns, files: files.map(f => f.name) });
   };
   const f = fin || {};
   const salesTotal = (f.sales?.용역 || 0) + (f.sales?.상품 || 0);
@@ -9504,6 +9691,60 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
           </details>
         ) : null} />
       {uploadMsg && <div style={{ background: uploadMsg.startsWith('반영') ? 'rgba(27,122,67,0.08)' : T.surfaceAlt, border: `1px solid ${uploadMsg.startsWith('반영') ? T.success : T.border}`, borderRadius: 8, padding: '9px 13px', marginBottom: S[3], fontSize: 12 }}>{uploadMsg}</div>}
+
+      {finPreview && (() => {
+        const pv = finPreview;
+        const danger = pv.warns.length > 0;
+        const arrow = (r) => {
+          const d = r.after - r.before;
+          if (!r.before && !r.after) return null;
+          const pct = r.before > 0 ? (d / r.before * 100) : null;
+          const col = d < 0 ? T.danger : (d > 0 ? T.success : T.textMute);
+          return <span style={{ color: col, fontWeight: 700 }}>{d > 0 ? '+' : ''}{fmtMoney(d)}{pct != null ? ` (${pct > 0 ? '+' : ''}${pct.toFixed(0)}%)` : ''}</span>;
+        };
+        return (
+          <div onClick={() => setFinPreview(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div onClick={e => e.stopPropagation()} style={{ ...card(), padding: S[5], width: 680, maxWidth: '100%', maxHeight: '88vh', overflow: 'auto' }}>
+              <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 4 }}>경영회계 반영 — 미리보기 확인</div>
+              <div style={{ fontSize: 12, color: T.textMute, marginBottom: S[3] }}>
+                {pv.files.join(' · ')}{pv.span ? <> · 파일 기간 <strong style={{ color: T.ink }}>{pv.span.label}</strong></> : ' · 기간 정보 없음'}
+              </div>
+              {danger && (
+                <div style={{ background: '#FDECEC', border: `1px solid ${T.danger}`, borderRadius: 8, padding: S[3], marginBottom: S[3] }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: T.danger, marginBottom: 4 }}>⚠ 반영하면 누적 수치가 손상될 수 있습니다</div>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11.5, color: T.text, lineHeight: 1.8 }}>
+                    {pv.warns.map((w, i) => <li key={i}>{w}</li>)}
+                  </ul>
+                  <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2] }}>
+                    월계표는 조회 기간만큼의 누계입니다. 1~8월 누적을 보려면 ERP에서 기간을 <strong>2026/01/01 ~ 오늘</strong>로 잡아 다시 내려받으세요.
+                  </div>
+                </div>
+              )}
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, marginBottom: S[4] }}>
+                <thead><tr style={{ background: T.surfaceAlt }}>
+                  <Th>항목</Th><Th align="right">현재</Th><Th align="right">반영 후</Th><Th align="right">변화</Th>
+                </tr></thead>
+                <tbody>
+                  {pv.rows.map(r => (
+                    <tr key={r.label} style={{ borderTop: `1px solid ${T.border}` }}>
+                      <Td>{r.label}</Td>
+                      <Td align="right">{fmtMoney(r.before)}</Td>
+                      <Td align="right"><strong>{fmtMoney(r.after)}</strong></Td>
+                      <Td align="right">{arrow(r)}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ display: 'flex', gap: S[2], justifyContent: 'flex-end' }}>
+                <Button variant="ghost" size="sm" onClick={() => { setFinPreview(null); setUploadMsg('반영하지 않았습니다'); setTimeout(() => setUploadMsg(''), 4000); }}>취소</Button>
+                <Button variant={danger ? 'danger' : 'primary'} size="sm" onClick={() => { commitFin(pv.merged, pv.allNotes, pv.span); setFinPreview(null); }}>
+                  {danger ? '경고를 확인했고 반영합니다' : '반영'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 핵심 KPI */}
       <div style={{ display: 'flex', gap: S[3], flexWrap: 'wrap', marginBottom: S[4] }}>
@@ -11515,6 +11756,96 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   );
 }
 
+// ── 데이터 정합성 점검: 손익을 왜곡하는 입력 오류를 화면에서 바로 노출 ──
+//    (엑셀 검증열·업로드 미리보기에서만 보이던 문제를 앱에서도 상시 확인)
+function DataIntegrityPanel({ projects, overheads, currentYear }) {
+  // Note·shortName은 다른 뷰의 지역 정의라 여기서 쓸 수 없어 자체 정의한다.
+  const shortName = (n) => { n = String(n || '').replace(/^\(예시\)\s*/, ''); return n.length > 44 ? n.slice(0, 43) + '…' : n; };
+  const issues = useMemo(() => {
+    const out = [];
+    const ps = (projects || []).filter(p => p && !isEtcProject(p));
+
+    // ① 인건비(계) ≠ 작업자+관리자 — 손익은 인건비(계), 지출구조 차트는 작업자+관리자를 쓰므로 둘이 어긋난다
+    const lab = ps.map(p => {
+      const l = Number(p.laborCost) || 0, w = Number(p.workerLabor) || 0, m = Number(p.mgrLabor) || 0;
+      return { p, diff: l - (w + m), l, split: w + m };
+    }).filter(x => Math.abs(x.diff) > 1 && (x.l > 0 || x.split > 0));
+    if (lab.length) {
+      out.push({
+        key: 'labor', level: 'warn',
+        title: `인건비 소계 불일치 ${lab.length}건`,
+        sum: lab.reduce((s, x) => s + x.diff, 0),
+        desc: '「인건비(계)」와 「작업자+관리자 인건비」가 다릅니다. 총원가·수익률은 인건비(계)를, 지출구조 차트는 작업자+관리자를 쓰므로 두 화면의 숫자가 어긋납니다.',
+        rows: lab.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
+          .map(x => `${x.p.id} ${shortName(x.p.name)} — 인건비(계) ${fmtMoney(x.l)} / 작업자+관리자 ${fmtMoney(x.split)} (차이 ${fmtMoney(x.diff)})`),
+      });
+    }
+
+    // ② 같은 연도 공통비 항목이 같은 달에 겹침 — 이중계상이면 전 사업 완전영업이익이 왜곡된다
+    const oh = (overheads || []).filter(o => Number(o.year) === Number(currentYear));
+    if (oh.length > 1) {
+      const dup = [];
+      for (let m = 0; m <= 12; m++) {
+        const hit = oh.filter(o => Array.isArray(o.monthly) && (Number(o.monthly[m]) || 0) > 0);
+        if (hit.length > 1) dup.push({ m, amt: hit.reduce((s, o) => s + (Number(o.monthly[m]) || 0), 0), n: hit.length });
+      }
+      if (dup.length) {
+        out.push({
+          key: 'oh', level: 'danger',
+          title: `공통비 중복 의심 — ${dup.length}개월`,
+          sum: dup.reduce((s, x) => s + x.amt, 0),
+          desc: `${currentYear}년 공통비 항목 ${oh.length}개가 같은 달에 동시에 계상돼 있습니다. 출처가 겹치면 이중계상이며, 공통비는 전 사업에 배부되므로 모든 사업의 완전영업이익이 부풀거나 줄어듭니다.`,
+          rows: [`항목: ${oh.map(o => `${o.category} ${fmtMoney(Number(o.amount) || 0)}`).join(' · ')}`]
+            .concat(dup.map(x => `${x.m === 0 ? '이월' : x.m + '월'} — ${x.n}개 항목 합계 ${fmtMoney(x.amt)}`)),
+        });
+      }
+    }
+
+    // ③ 사업명이 같은 사업 — 엑셀에서 사업명으로 매칭하면 서로 뒤엉킨다 (프로젝트ID 필수)
+    //    엑셀 파서는 기타(ETC) 사업도 매칭 대상이므로 여기서는 전체 사업을 본다.
+    const byName = {};
+    (projects || []).forEach(p => { if (!p) return; const k = _sgKey(p.name); if (!k) return; (byName[k] = byName[k] || []).push(p); });
+    const dupN = Object.values(byName).filter(a => a.length > 1);
+    if (dupN.length) {
+      out.push({
+        key: 'name', level: 'info',
+        title: `사업명 중복 ${dupN.length}건 (${dupN.reduce((s, a) => s + a.length, 0)}개 사업)`,
+        sum: null,
+        desc: '사업관리 엑셀의 월별집행·인력운영현황에 반드시 「프로젝트ID」를 채워 주세요. 사업명만으로는 아래 사업들이 구분되지 않아 원가·기여도가 한 사업으로 몰립니다.',
+        rows: dupN.map(a => `${a.map(p => p.id).join(' / ')} — ${shortName(a[0].name)}`),
+      });
+    }
+    return out;
+  }, [projects, overheads, currentYear]);
+
+  if (issues.length === 0) return null;
+  const COLOR = { danger: T.danger, warn: T.warning, info: T.brand };
+
+  return (
+    <div style={{ ...card({ borderLeft: `4px solid ${T.warning}` }), padding: S[4], marginBottom: S[4] }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: S[2], marginBottom: S[3] }}>
+        <AlertTriangle size={15} style={{ color: T.warning, flexShrink: 0 }} />
+        <SectionTitle>데이터 정합성 점검</SectionTitle>
+        <Badge color={T.warning} variant="outline" size="sm">{issues.length}건</Badge>
+      </div>
+      {issues.map(it => (
+        <details key={it.key} style={{ marginBottom: S[2], background: T.surfaceAlt, borderRadius: 8, padding: `${S[2]}px ${S[3]}px` }}>
+          <summary style={{ cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: COLOR[it.level] }}>
+            {it.title}{it.sum != null ? ` · ${fmtMoney(it.sum)}원` : ''}
+          </summary>
+          <div style={{ fontSize: 11.5, color: T.text, lineHeight: 1.75, marginTop: S[2] }}>{it.desc}</div>
+          <ul style={{ margin: `${S[2]}px 0 0`, paddingLeft: 18, fontSize: 11, color: T.textMute, lineHeight: 1.8 }}>
+            {it.rows.map((s, i) => <li key={i}>{s}</li>)}
+          </ul>
+        </details>
+      ))}
+      <div style={{ fontSize: 11, color: T.textMute, lineHeight: 1.7, marginTop: S[2] }}>
+        이 패널은 계산을 바꾸지 않고 확인만 합니다. 원본 엑셀을 고쳐 다시 업로드하거나, 각 사업의 [수정]에서 직접 맞춰 주세요.
+      </div>
+    </div>
+  );
+}
+
 function ProjectProfitView({ user, employees, projects, proposals, overheads, upsertProject, deleteProject, bulkUpsertProjects, bulkUpsertProposals, deleteProposal, winProposal, updateProposal, upsertProposal, upsertOverhead, deleteOverhead, bulkUpsertOverheads, bulkSetEmpLedger, currentYear, policy, setPolicy, cashCfg, setCashCfg }) {
   const [analId, setAnalId] = React.useState('');
   const [analEdit, setAnalEdit] = React.useState(false);
@@ -11527,8 +11858,16 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
     // 토큰화: 괄호 내용·연도·조사 제거 후 의미 단어 추출
     const tokenize = (x) => String(x || '').replace(/\([^)]*\)|\[[^\]]*\]/g, ' ').replace(/\d{4}년?|용역|사업|구축|개발|및|관련|전수조사|유지관리|유지보수/g, ' ').split(/[\s·,]+/).map(t => t.trim()).filter(t => t.length >= 2);
     // 매칭: ①projMap 키워드 ②정규화 부분일치 ③토큰 교집합(핵심 단어 2개+ 또는 50%+ 겹침)
+    const idSet = new Set((projects || []).map(p => p.id));
     const mapFn = (nm) => {
-      const hit = pm.find(m => m.kw && String(nm).includes(m.kw)); if (hit) return hit.id;
+      // ★ ① 프로젝트ID 직접 지정이 최우선 (추측 불필요)
+      const raw = String(nm || '').trim();
+      if (idSet.has(raw)) return raw;
+      const dm = raw.match(/^((?:[A-Z]+-)?\d{4}-\d+)/);
+      if (dm && idSet.has(dm[1])) return dm[1];
+      // ② projMap 키워드 — 단, 사업목록에 없는 ID를 가리키는 규칙은 무시(금액 소실 방지)
+      const hit = pm.find(m => m.kw && String(nm).includes(m.kw));
+      if (hit && idSet.has(hit.id)) return hit.id;
       const n = norm(nm); if (n.length < 3) return null;
       let p = (projects || []).find(p => { const pn = norm(p.name); return pn && (pn.includes(n) || n.includes(pn)); });
       if (p) return p.id;
@@ -11544,6 +11883,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
       return bestScore >= 0.4 ? best : null;
     };
     const acc = { worker: {}, mgr: {}, oh: {}, revenue: {} }; const kinds = []; let unAll = []; let conTotal = 0; let assetExcluded = [];
+    let company = null;   // 본사운영·공통경비 (간접비 풀)
     for (const f of files) {
       try {
         const { kind, out, unmatched } = await parseMonthlyActuals(await f.arrayBuffer(), f.name, mapFn);
@@ -11552,10 +11892,36 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
         ['worker', 'mgr', 'oh', 'revenue'].forEach(k => Object.entries(out[k] || {}).forEach(([pid, v]) => { acc[k][pid] = (acc[k][pid] || 0) + v; }));
         conTotal += out.conTotal || 0;
         if (out.assetExcluded) assetExcluded = assetExcluded.concat(out.assetExcluded);
+        if (out.company && out.company.total > 0) {
+          if (!company) company = { total: 0, monthly: new Array(13).fill(0), rows: 0, excludedRevenue: 0 };
+          company.total += out.company.total; company.rows += out.company.rows;
+          company.excludedRevenue += out.company.excludedRevenue || 0;
+          out.company.monthly.forEach((v, i) => { company.monthly[i] += v; });
+        }
       } catch (err) { unAll.push(f.name + ': 오류'); }
     }
     const touched = new Set([...Object.keys(acc.worker), ...Object.keys(acc.mgr), ...Object.keys(acc.oh), ...Object.keys(acc.revenue)]);
-    if (!touched.size && !conTotal) { alert('반영할 데이터를 찾지 못했습니다.\n' + unAll.join('\n')); if (actRef.current) actRef.current.value = ''; return; }
+    if (!touched.size && !conTotal && !company) { alert('반영할 데이터를 찾지 못했습니다.\n' + unAll.join('\n')); if (actRef.current) actRef.current.value = ''; return; }
+    // ── 공통비: 같은 해 기존 항목과 월이 겹치면 이중계상이 되므로 기본을 '대체'로 둔다 ──
+    let ohPlan = null;
+    if (company && company.total > 0) {
+      const same = (overheads || []).filter(o => Number(o.year) === Number(currentYear));
+      const overlap = same.filter(o => {
+        const m = Array.isArray(o.monthly) ? o.monthly : [];
+        for (let i = 0; i <= 12; i++) if ((Number(m[i]) || 0) > 0 && company.monthly[i] > 0) return true;
+        return false;
+      });
+      ohPlan = {
+        total: company.total, monthly: company.monthly, rows: company.rows,
+        excludedRevenue: company.excludedRevenue,
+        existing: same.map(o => ({ id: o.id, category: o.category, amount: Number(o.amount) || 0, overlap: overlap.some(x => x.id === o.id) })),
+        overlap: overlap.length,
+        // 겹치는 항목이 하나라도 있으면 기본값은 '반영 안 함' — 어떤 숫자를 정본으로 삼을지는
+        // 사람이 정해야 한다. 대체 라디오는 미리 후보를 지정해 두어 한 번 클릭으로 고를 수 있게 한다.
+        mode: overlap.length > 0 ? 'skip' : 'add',
+        targetId: overlap.length === 1 ? overlap[0].id : '',
+      };
+    }
     // 미리보기 항목 구성: 각 사업의 현재값 vs 파일값 비교 (덮어쓰기 전 확인)
     const changes = [...touched].map(pid => {
       const p = (projects || []).find(x => x.id === pid); if (!p) return null;
@@ -11566,7 +11932,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
       if (acc.oh[pid] != null) { c.oh = { cur: Number(p.overhead) || 0, next: Math.round(acc.oh[pid]) }; }
       return c;
     }).filter(Boolean);
-    setActPreview({ changes, kinds, unAll, conTotal, acc, assetExcluded,
+    setActPreview({ changes, kinds, unAll, conTotal, acc, assetExcluded, ohPlan,
       // 기본 선택: 매출은 덮어쓰기 위험이 커서 기본 해제, 나머지는 기본 선택
       apply: { revenue: false, worker: true, mgr: true, oh: true },
       skip: {} });   // 사업별 제외 (skip[pid]=true면 그 사업 반영 안 함)
@@ -11574,7 +11940,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
   };
   // 미리보기 승인 → 실제 반영
   const applyActuals = (preview) => {
-    const { changes, conTotal, apply, skip } = preview;
+    const { changes, conTotal, apply, skip, ohPlan } = preview;
     const updated = changes.filter(c => !skip[c.id]).map(c => {
       const p = (projects || []).find(x => x.id === c.id); if (!p) return null;
       return {
@@ -11587,8 +11953,21 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
     }).filter(Boolean);
     if (updated.length) bulkUpsertProjects(updated);
     if (conTotal > 0 && setCashCfg) setCashCfg(prev => ({ ...prev, conTotalActual: Math.round(conTotal) }));
+    // 공통비(간접비 풀) 반영 — 대체면 기존 id를 그대로 써서 덮어쓰고, 추가면 새 id를 만든다.
+    let ohMsg = '';
+    if (ohPlan && ohPlan.mode !== 'skip' && bulkUpsertOverheads) {
+      const id = ohPlan.mode === 'replace' && ohPlan.targetId ? ohPlan.targetId : ('OH:' + currentYear + ':expense');
+      const prevRow = (overheads || []).find(o => o.id === id);
+      bulkUpsertOverheads([{
+        id, year: Number(currentYear),
+        category: (prevRow && prevRow.category) || '본사운영·공통경비(지출정리)',
+        amount: Math.round(ohPlan.total), monthly: ohPlan.monthly.map(v => Math.round(v)),
+        note: '지출정리 통합거래원장 · 월 실적 반영',
+      }]);
+      ohMsg = '\n· 공통비 ' + fmtMoney(Math.round(ohPlan.total)) + '원 ' + (ohPlan.mode === 'replace' ? '(기존 항목 대체)' : '(새 항목 추가)');
+    }
     setActPreview(null);
-    alert('월 실적 반영 완료\n· 사업 ' + updated.length + '건 갱신' + (conTotal > 0 ? '\n· 계약직 미배정 총액 ' + fmtMoney(Math.round(conTotal)) + '원' : ''));
+    alert('월 실적 반영 완료\n· 사업 ' + updated.length + '건 갱신' + (conTotal > 0 ? '\n· 계약직 미배정 총액 ' + fmtMoney(Math.round(conTotal)) + '원' : '') + ohMsg);
   };
   const canEdit = user.role === 'admin' || user.deptScope === '경영지원부';
   const cfg = (policy && policy.diag) || {};
@@ -11685,17 +12064,20 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
           <details style={{ marginTop: 4 }}>
             <summary style={{ fontSize: 11.5, color: T.brand, cursor: 'pointer', fontWeight: 600 }}>📋 업로드 파일 양식 안내 (월 실적 반영 · 사업관리 엑셀)</summary>
             <div style={{ fontSize: 11, color: T.ink, lineHeight: 1.8, marginTop: 6, background: T.surfaceAlt, borderRadius: 8, padding: '10px 14px' }}>
-              <strong style={{ color: T.brand }}>▶ 월 실적 반영</strong> — 매달 사업별 인건비·경비를 갱신 (여러 파일 동시 선택 가능):<br />
+              <strong style={{ color: T.brand }}>▶ 월 실적 반영</strong> — 매달 사업별 인건비·경비 + 본사 공통비를 갱신 (여러 파일 동시 선택 가능):<br />
               &nbsp;&nbsp;· <strong>계약직 인건비</strong>: 시트명을 <code>7월</code>처럼 'N월'로. 열 = 성명·사업명·직무·당월인건비<br />
               &nbsp;&nbsp;· <strong>사업경비</strong>: 시트명 <code>프로젝트별 집계</code>. 열 = 관련사업명·비목·내용·금액<br />
               &nbsp;&nbsp;· <strong>관리자 인건비</strong>: 시트명 <code>인력운영현황</code>. 열 = 사번·성명·소속·사업명·투입기간·참여율·수행별인건비<br />
-              <strong style={{ color: T.brand }}>▶ 사업관리 엑셀</strong> — 사업 목록 자체를 등록/갱신 (통합 워크북):<br />
-              &nbsp;&nbsp;· 시트 <code>사업목록</code>(프로젝트ID·사업명·발주처·귀속연도·계약기간·상태·매출·인건비…) + <code>사업제안현황</code> + <code>인력운영현황</code><br />
-              <span style={{ color: T.textMute }}>※ 사업명은 모든 파일에서 <strong>사업목록과 동일하게</strong> 적어야 자동 매칭됩니다. 양식 파일은 경영지원부에 요청하세요.</span>
+              <strong style={{ color: T.brand }}>▶ 사업관리 엑셀</strong> — 사업 목록 자체를 등록/갱신 (통합 워크북, 두 양식 모두 인식):<br />
+              &nbsp;&nbsp;· <strong>표준 양식</strong>: <code>사업목록</code>(필수) + <code>월별집행</code> + <code>인력운영현황</code> + <code>사업제안현황</code> + <code>공통비</code> + <code>직원별경비수주</code><br />
+              &nbsp;&nbsp;&nbsp;&nbsp;열 이름으로 위치를 찾습니다 — 열 순서 변경·열 추가는 자유, <strong>열 이름과 시트명만 유지</strong>하세요.<br />
+              &nbsp;&nbsp;· <strong>회사 원본 워크북</strong>: <code>사업진행현황</code> + <code>사업별집행내역</code> (기존 방식 그대로 계속 사용 가능)<br />
+              <span style={{ color: T.textMute }}>※ 사업명은 모든 시트·파일에서 <strong>사업목록과 동일하게</strong> 적어야 자동 매칭됩니다. 표준 양식 파일은 경영지원부에 요청하세요.</span>
             </div>
           </details>
         ) : null}
       />
+      {canEdit && <DataIntegrityPanel projects={projects} overheads={overheads} currentYear={currentYear} />}
       {/* ── 사업별 손익 분석 패널 ── */}
       <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[4], marginBottom: S[4] }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: S[3], flexWrap: 'wrap' }}>
@@ -12187,6 +12569,50 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
                   </label>
                 ))}
               </div>
+              {pv.ohPlan && (() => {
+                const op = pv.ohPlan;
+                const setMode = (m) => setActPreview(p => ({ ...p, ohPlan: { ...p.ohPlan, mode: m } }));
+                const setTarget = (id) => setActPreview(p => ({ ...p, ohPlan: { ...p.ohPlan, targetId: id, mode: 'replace' } }));
+                const warn = op.overlap > 0;
+                return (
+                  <div style={{ marginBottom: S[3], padding: S[3], borderRadius: 8, background: warn ? '#FDECEC' : T.surfaceAlt, border: `1px solid ${warn ? T.danger : T.border}` }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>
+                      본사운영·공통경비 {fmtMoney(Math.round(op.total))}원 <span style={{ fontWeight: 500, color: T.textMute, fontSize: 11.5 }}>· 지출결의서·매입(외주)·부동산·카드사용 {op.rows}건</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: T.textMute, marginBottom: S[2] }}>
+                      월별 {op.monthly.slice(1, 13).map((v, i) => v > 0 ? `${i + 1}월 ${fmtMoney(v)}` : null).filter(Boolean).join(' · ') || '-'}
+                      {op.excludedRevenue > 0 && <> · <span style={{ color: T.warning }}>매출 {fmtMoney(op.excludedRevenue)}원은 지출이 아니라 제외</span></>}
+                    </div>
+                    {warn && (
+                      <div style={{ fontSize: 11.5, color: T.danger, fontWeight: 600, marginBottom: S[2], lineHeight: 1.7 }}>
+                        ⚠ {currentYear}년 공통비 항목 {op.overlap}건과 같은 달이 겹칩니다. 그대로 추가하면 이중계상됩니다.<br />
+                        <span style={{ fontWeight: 500 }}>어느 숫자를 정본으로 삼을지 직접 고르세요. 고르지 않으면 공통비는 그대로 둡니다.</span>
+                      </div>
+                    )}
+                    {op.existing.length > 0 && (
+                      <div style={{ fontSize: 11, color: T.textMute, marginBottom: S[2], lineHeight: 1.7 }}>
+                        기존 항목: {op.existing.map(e => `${e.category} ${fmtMoney(e.amount)}원${e.overlap ? ' (겹침)' : ''}`).join(' / ')}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: S[3], flexWrap: 'wrap', fontSize: 12.5 }}>
+                      {op.existing.filter(e => e.overlap).map(e => (
+                        <label key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontWeight: 600, color: op.mode === 'replace' && op.targetId === e.id ? T.brand : T.textMute }}>
+                          <input type="radio" name="ohmode" checked={op.mode === 'replace' && op.targetId === e.id} onChange={() => setTarget(e.id)} />
+                          「{e.category}」 대체
+                        </label>
+                      ))}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontWeight: 600, color: op.mode === 'add' ? (warn ? T.danger : T.brand) : T.textMute }}>
+                        <input type="radio" name="ohmode" checked={op.mode === 'add'} onChange={() => setMode('add')} />
+                        새 항목으로 추가{warn ? ' (이중계상 주의)' : ''}
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontWeight: 600, color: op.mode === 'skip' ? T.ink : T.textMute }}>
+                        <input type="radio" name="ohmode" checked={op.mode === 'skip'} onChange={() => setMode('skip')} />
+                        공통비는 반영 안 함
+                      </label>
+                    </div>
+                  </div>
+                );
+              })()}
               <div style={{ overflow: 'auto', maxHeight: '48vh' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead><tr style={{ background: T.surfaceAlt }}>
@@ -12498,11 +12924,301 @@ function _sgYM(cell) {
   }
   return '';
 }
+// ══════════════════════════════════════════════════════════════════════
+//  표준 사업관리 워크북 파서 (시트 「사업목록」 기반 · 열 이름으로 위치 자동 탐지)
+//    · 열 순서를 바꿔도, 열을 추가해도 동작합니다. 열 '이름'만 유지하면 됩니다.
+//    · 시트 구성: 사업목록(필수) / 월별집행 / 인력운영현황 / 사업제안현황 / 공통비 / 직원별경비수주
+//    · 회사 원본 워크북(사업진행현황·사업별집행내역)은 아래 parseSagwanWorkbook 경로로 그대로 처리됩니다.
+// ══════════════════════════════════════════════════════════════════════
+const _stdHK = (v) => _sgNorm(v).replace(/\s+/g, '');
+const STD_H = {
+  id: ['프로젝트ID', '프로젝트번호', '사업번호', '사업ID'],
+  name: ['사업명', '프로젝트명'],
+  client: ['발주처', '발주기관', '거래처', '고객'],
+  year: ['귀속연도', '귀속년도', '연도', '년도'],
+  period: ['계약기간', '사업기간', '수행기간'],
+  status: ['상태', '진행상태'],
+  revenue: ['매출', '매출액', '계약금액'],
+  labor: ['인건비(계)', '인건비계', '인건비합계', '총인건비'],
+  worker: ['작업자인건비', '작업인건비'],
+  mgr: ['관리자인건비', '관리인건비'],
+  overhead: ['제경비', '사업경비'],
+  other: ['기타비', '기타직접비'],
+  plan: ['계획원가', '원가계획', '예산원가'],
+  share: ['지분율(%)', '지분율'],
+  consortium: ['공동수급', '컨소시엄'],
+  note: ['비고', '특이사항'],
+  ohId: ['공통비ID'],
+  ohCat: ['구분', '비목', '항목'],
+  empId: ['사번', '사원코드', '사원번호'],
+  empName: ['성명', '이름'],
+  dept: ['소속', '소속부서', '부서'],
+  role: ['역할', '참여구분'],
+  rate: ['참여율(%)', '참여율'],
+  months: ['투입개월', '투입월수', '참여개월'],
+  contrib: ['기여도(%)', '기여도'],
+  mLabor: ['수행별인건비', '투입인건비'],
+  category: ['사업구분', '분류', '유형'],
+  budget: ['사업예산', '예산', '사업비'],
+  bidDate: ['제안일', '입찰일', '제출일'],
+  winRate: ['수주율(%)', '수주율', '수주확률'],
+  pm: ['PM', '사업책임자', '책임자'],
+  participants: ['참여인력', '참여자'],
+  card: ['법인카드', '카드지출'],
+  newOrder: ['신규수주', '수주액'],
+};
+// 제목행 자동 탐색 (앞 6행 안에서 이름이 3개 이상 잡히는 행)
+function _stdHdr(ws, XLSX) {
+  if (!ws || !ws['!ref']) return null;
+  const rng = XLSX.utils.decode_range(ws['!ref']);
+  const scanTo = Math.min(5, rng.e.r);
+  for (let r = 0; r <= scanTo; r++) {
+    const map = {}; let n = 0;
+    for (let c = 0; c <= rng.e.c; c++) {
+      const h = _stdHK(_sgStr(ws, XLSX, r, c));
+      if (h && map[h] == null) { map[h] = c; n++; }
+    }
+    if (n >= 3) return { row: r, map, rng };
+  }
+  return null;
+}
+function _stdCol(hdr, aliases) {
+  for (const a of aliases) { const c = hdr.map[_stdHK(a)]; if (c != null) return c; }
+  for (const a of aliases) {                       // 접두 일치 보조 (‘매출액(원)’ 같은 변형 흡수)
+    const k = _stdHK(a); if (k.length < 3) continue;
+    for (const h of Object.keys(hdr.map)) if (h.indexOf(k) === 0) return hdr.map[h];
+  }
+  return -1;
+}
+const _stdSkip = (v) => /^(합계|소계|총계|계)$/.test(_stdHK(v)) || /^(합계|소계|총계)/.test(_stdHK(v));
+
+function parseStandardWorkbook(XLSX, wb, yearDefault, pmFloor) {
+  const floor = pmFloor != null ? pmFloor : PM_MIN_CONTRIBUTION;
+  const YEAR = yearDefault || new Date().getFullYear();
+
+  // ── 1) 사업목록 → 프로젝트 마스터 ──────────────────────────────
+  const ws1 = wb.Sheets['사업목록'];
+  const h1 = _stdHdr(ws1, XLSX);
+  if (!h1) throw new Error('「사업목록」 시트에서 제목행을 찾지 못했습니다. 첫 행에 열 이름(프로젝트ID·사업명·매출 …)이 있는지 확인하세요.');
+  const C = {};
+  ['id', 'name', 'client', 'year', 'period', 'status', 'revenue', 'labor', 'worker', 'mgr',
+    'overhead', 'other', 'plan', 'share', 'consortium', 'note'].forEach(k => { C[k] = _stdCol(h1, STD_H[k]); });
+  if (C.id < 0 || C.name < 0) throw new Error('「사업목록」에 ‘프로젝트ID’ 또는 ‘사업명’ 열이 없습니다. 열 이름을 확인하세요.');
+
+  const n1 = (r, c) => (c < 0 ? null : _sgNum(_sgCell(ws1, XLSX, r, c)));
+  const s1 = (r, c) => (c < 0 ? '' : _sgStr(ws1, XLSX, r, c));
+  const projects = {}; const name2no = {};
+
+  for (let r = h1.row + 1; r <= h1.rng.e.r; r++) {
+    const id = s1(r, C.id), name = s1(r, C.name);
+    if (!id || !name || _stdSkip(id) || _stdSkip(name)) continue;
+    const _fl = [];
+    const per = s1(r, C.period);
+    let yr = n1(r, C.year);
+    if (!yr) { const m = per.match(/(20\d{2})/); yr = m ? Number(m[1]) : YEAR; }
+    const worker = n1(r, C.worker), mgr = n1(r, C.mgr);
+    let labor = n1(r, C.labor);
+    if (labor == null) {
+      labor = (worker || 0) + (mgr || 0);
+      if (worker == null && mgr == null) _fl.push('원가 미집계');
+    } else if (worker != null && mgr != null && Math.abs(labor - (worker + mgr)) > 1) {
+      _fl.push('인건비 소계 불일치');   // 인건비(계)와 작업자+관리자가 다름 → 원본 확인 필요
+    }
+    const overhead = n1(r, C.overhead) || 0, other = n1(r, C.other) || 0;
+    const rev = n1(r, C.revenue) || 0, cost = labor + overhead + other;
+    if (rev > 0 && cost > rev * 1.5) _fl.push('원가>매출');
+    if (rev > 0 && cost === 0) _fl.push('원가 0');
+    const st = s1(r, C.status);
+    const p = {
+      id, name, client: s1(r, C.client), year: Number(yr) || YEAR, period: per,
+      status: /완료|종료/.test(st) ? 'completed' : (/준비|예정/.test(st) ? 'preparing' : 'ongoing'),
+      revenue: Math.round(rev),
+      laborCost: Math.round(labor),
+      workerLabor: Math.round(worker != null ? worker : Math.max(0, labor - (mgr || 0))),
+      mgrLabor: Math.round(mgr != null ? mgr : 0),
+      overhead: Math.round(overhead), otherCost: Math.round(other),
+      planCost: Math.round(n1(r, C.plan) || 0),
+      monthly: new Array(13).fill(0), members: [], note: s1(r, C.note), _fl,
+    };
+    const share = n1(r, C.share);
+    if (share != null && share > 0) p.shareRate = share;
+    const cons = s1(r, C.consortium); if (cons) p.consortium = cons;
+    projects[id] = p; name2no[_sgKey(name)] = id;
+  }
+  if (Object.keys(projects).length === 0) {
+    throw new Error('「사업목록」에서 사업 행을 읽지 못했습니다. 프로젝트ID·사업명이 채워져 있는지 확인하세요.');
+  }
+  const unmatched = new Set();
+  const resolveId = (ws, XLSX, r, cId, cNm) => {
+    const idRaw = cId >= 0 ? _sgStr(ws, XLSX, r, cId) : '';
+    if (idRaw && projects[idRaw]) return idRaw;
+    const nm = cNm >= 0 ? _sgStr(ws, XLSX, r, cNm) : '';
+    if (nm && name2no[_sgKey(nm)]) return name2no[_sgKey(nm)];
+    if (nm && !_stdSkip(nm)) unmatched.add(nm.slice(0, 40));
+    return null;
+  };
+  // monthly[0]=이월(전기), monthly[1..12]=1~12월. 앱 내부 배열 규약과 동일하게 맞춘다.
+  const monthCols = (hdr) => {
+    const a = [];
+    a[0] = hdr.map[_stdHK('이월')] != null ? hdr.map[_stdHK('이월')] : hdr.map[_stdHK('이월(전기)')];
+    for (let m = 1; m <= 12; m++) a[m] = hdr.map[_stdHK(m + '월')];
+    return a;
+  };
+
+  // ── 2) 월별집행 → 사업별 월 원가 (monthly[1..12]) ──────────────
+  const wsM = wb.Sheets['월별집행'] || wb.Sheets['월별집행현황'] || wb.Sheets['월별원가'];
+  if (wsM) {
+    const hM = _stdHdr(wsM, XLSX);
+    if (hM) {
+      const cId = _stdCol(hM, STD_H.id), cNm = _stdCol(hM, STD_H.name), mc = monthCols(hM);
+      for (let r = hM.row + 1; r <= hM.rng.e.r; r++) {
+        const id = resolveId(wsM, XLSX, r, cId, cNm); if (!id) continue;
+        for (let m = 0; m <= 12; m++) {
+          if (mc[m] == null) continue;
+          const v = _sgNum(_sgCell(wsM, XLSX, r, mc[m])); if (v) projects[id].monthly[m] += v;
+        }
+      }
+      Object.values(projects).forEach(p => { p.monthly = p.monthly.map(v => Math.round(v)); });
+    }
+  }
+
+  // ── 3) 인력운영현황 → 참여인력·기여도 ─────────────────────────
+  const wsE = wb.Sheets['인력운영현황'] || wb.Sheets['인력운영'];
+  if (wsE) {
+    const hE = _stdHdr(wsE, XLSX);
+    if (hE) {
+      const cPid = _stdCol(hE, STD_H.id);   // ★ 프로젝트ID 우선 — 사업명이 같은 사업이 실제로 여러 건 있음
+      const cEid = _stdCol(hE, STD_H.empId), cNm = _stdCol(hE, STD_H.name);
+      const cRole = _stdCol(hE, STD_H.role), cRate = _stdCol(hE, STD_H.rate);
+      const cMon = _stdCol(hE, STD_H.months), cCon = _stdCol(hE, STD_H.contrib), cLab = _stdCol(hE, STD_H.mLabor);
+      const team = {};   // { projectId: { empId: {...} } }
+      for (let r = hE.row + 1; r <= hE.rng.e.r; r++) {
+        const eid = cEid >= 0 ? _sgStr(wsE, XLSX, r, cEid) : '';
+        if (!eid || _stdSkip(eid)) continue;
+        const id = resolveId(wsE, XLSX, r, cPid, cNm); if (!id) continue;
+        if (!team[id]) team[id] = {};
+        const cur = team[id][eid] || { empId: eid, labor: 0, contribution: null, role: null, rate: null, months: null };
+        const lv = cLab >= 0 ? _sgNum(_sgCell(wsE, XLSX, r, cLab)) : null;
+        if (lv) cur.labor += lv;
+        const cv = cCon >= 0 ? _sgNum(_sgCell(wsE, XLSX, r, cCon)) : null;
+        if (cv != null) cur.contribution = (cur.contribution || 0) + cv;
+        const rv = cRole >= 0 ? _sgStr(wsE, XLSX, r, cRole) : '';
+        if (rv && PROJECT_ROLES.indexOf(rv) >= 0) cur.role = rv;
+        const rt = cRate >= 0 ? _sgNum(_sgCell(wsE, XLSX, r, cRate)) : null;
+        if (rt != null) cur.rate = rt;
+        const mo = cMon >= 0 ? _sgNum(_sgCell(wsE, XLSX, r, cMon)) : null;
+        if (mo != null) cur.months = mo;
+        team[id][eid] = cur;
+      }
+      Object.keys(team).forEach(id => {
+        const list = Object.values(team[id]);
+        const laborTot = list.reduce((s, m) => s + (m.labor || 0), 0);
+        // 기여도 산정 우선순위: ① 수행별인건비 비중 ② 시트의 기여도 ③ 참여율×투입개월 ④ 균등
+        const wsum = list.reduce((s, m) => s + ((m.rate || 100) * (m.months || 1)), 0);
+        projects[id].members = list
+          .map(m => {
+            let contribution;
+            if (laborTot > 0) contribution = Math.round(m.labor / laborTot * 100);
+            else if (m.contribution != null) contribution = Math.round(m.contribution);
+            else if (wsum > 0) contribution = Math.round((m.rate || 100) * (m.months || 1) / wsum * 100);
+            else contribution = Math.round(100 / list.length);
+            const out = { empId: m.empId, role: m.role || '참여', contribution };
+            if (m.rate != null) out.rate = m.rate;
+            if (m.months != null) out.months = m.months;
+            return out;
+          })
+          .sort((a, b) => b.contribution - a.contribution);
+        applyPmFloor(projects[id].members, floor);
+      });
+    }
+  }
+
+  // ── 4) 사업제안현황 → 수주 파이프라인 ─────────────────────────
+  const proposals = [];
+  const wsP = wb.Sheets['사업제안현황'];
+  if (wsP) {
+    const hP = _stdHdr(wsP, XLSX);
+    if (hP) {
+      const g = (k) => _stdCol(hP, STD_H[k]);
+      const cNm = g('name'), cCl = g('client'), cCat = g('category'), cBg = g('budget'), cBd = g('bidDate');
+      const cPer = g('period'), cSt = g('status'), cWr = g('winRate'), cPm = g('pm'), cPa = g('participants');
+      const cCo = g('consortium'), cNo = g('note');
+      const sp = (r, c) => (c < 0 ? '' : _sgStr(wsP, XLSX, r, c));
+      for (let r = hP.row + 1; r <= hP.rng.e.r; r++) {
+        const name = sp(r, cNm);
+        if (!name || _stdSkip(name)) continue;
+        const won = name2no[_sgKey(name)] != null;
+        const st = sp(r, cSt);
+        const wr = cWr >= 0 ? _sgNum(_sgCell(wsP, XLSX, r, cWr)) : null;
+        proposals.push({
+          id: 'P:' + _sgKey(name), name, client: sp(r, cCl), category: sp(r, cCat),
+          budget: Math.round((cBg >= 0 ? _sgNum(_sgCell(wsP, XLSX, r, cBg)) : 0) || 0),
+          bidDate: sp(r, cBd) || _sgYM(_sgCell(wsP, XLSX, r, cBd)),
+          period: sp(r, cPer), pm: _sgTitle(sp(r, cPm)),
+          participants: sp(r, cPa).split(/[,\s/·]+/).map(s => _sgTitle(s.trim())).filter(Boolean),
+          consortium: sp(r, cCo), note: sp(r, cNo),
+          winRate: wr != null ? wr : null,
+          status: won ? '수주' : (st || '제안'),
+          wonProjectId: won ? name2no[_sgKey(name)] : null,
+        });
+      }
+    }
+  }
+
+  // ── 5) 공통비 → 간접비 풀 (공통비ID로 기존 항목 덮어쓰기) ──────
+  const overheads = [];
+  const wsO = wb.Sheets['공통비'] || wb.Sheets['본사운영비'];
+  if (wsO) {
+    const hO = _stdHdr(wsO, XLSX);
+    if (hO) {
+      const cId = _stdCol(hO, STD_H.ohId), cY = _stdCol(hO, STD_H.year), cC = _stdCol(hO, STD_H.ohCat);
+      const mc = monthCols(hO);
+      for (let r = hO.row + 1; r <= hO.rng.e.r; r++) {
+        const cat = cC >= 0 ? _sgStr(wsO, XLSX, r, cC) : '';
+        if (!cat || _stdSkip(cat)) continue;
+        const yr = Number((cY >= 0 ? _sgNum(_sgCell(wsO, XLSX, r, cY)) : null) || YEAR);
+        const mon = new Array(13).fill(0); let sum = 0;
+        for (let m = 1; m <= 12; m++) {
+          if (mc[m] == null) continue;
+          const v = _sgNum(_sgCell(wsO, XLSX, r, mc[m])) || 0; mon[m] = Math.round(v); sum += v;
+        }
+        if (sum <= 0) continue;
+        const oid = (cId >= 0 ? _sgStr(wsO, XLSX, r, cId) : '') || ('OH:' + yr + ':' + _sgKey(cat));
+        overheads.push({ id: oid, year: yr, category: cat, amount: Math.round(sum), monthly: mon, note: '사업관리 엑셀(공통비)' });
+      }
+    }
+  }
+
+  // ── 6) 직원별경비수주 → 개인별 카드지출·신규수주 ──────────────
+  const empLedger = [];
+  const wsL = wb.Sheets['직원별경비수주'] || wb.Sheets['직원별 경비수주'];
+  if (wsL) {
+    const hL = _stdHdr(wsL, XLSX);
+    if (hL) {
+      const cCd = _stdCol(hL, STD_H.empId), cNm = _stdCol(hL, STD_H.empName);
+      const cCard = _stdCol(hL, STD_H.card), cNo = _stdCol(hL, STD_H.newOrder);
+      for (let r = hL.row + 1; r <= hL.rng.e.r; r++) {
+        const code = cCd >= 0 ? _sgStr(wsL, XLSX, r, cCd) : '';
+        const nm = cNm >= 0 ? _sgStr(wsL, XLSX, r, cNm) : '';
+        if ((!code && !nm) || _stdSkip(code) || _stdSkip(nm)) continue;
+        const card = (cCard >= 0 ? _sgNum(_sgCell(wsL, XLSX, r, cCard)) : 0) || 0;
+        const nord = (cNo >= 0 ? _sgNum(_sgCell(wsL, XLSX, r, cNo)) : 0) || 0;
+        if (!card && !nord) continue;
+        empLedger.push({ empId: code || null, name: nm, card: Math.round(card), newOrder: Math.round(nord), year: YEAR });
+      }
+    }
+  }
+
+  return { projects: Object.values(projects), unmatched: Array.from(unmatched), proposals, overheads, empLedger, _std: true };
+}
+
 function parseSagwanWorkbook(XLSX, arrayBuffer, yearDefault, pmFloor) {
   const floor = pmFloor != null ? pmFloor : PM_MIN_CONTRIBUTION;
   const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+  // ★ 표준 워크북(「사업목록」 시트 보유)이면 새 파서로 분기. 없으면 기존 회사 원본 워크북 경로.
+  if (wb.Sheets['사업목록']) return parseStandardWorkbook(XLSX, wb, yearDefault, floor);
   for (const n of ['사업진행현황', '사업별집행내역']) {
-    if (!wb.Sheets[n]) throw new Error(`필수 시트가 없습니다: "${n}". 표준 사업관리 워크북인지 확인하세요.`);
+    if (!wb.Sheets[n]) throw new Error(`필수 시트가 없습니다: "${n}". 사업관리 워크북(사업진행현황·사업별집행내역) 또는 표준 양식(사업목록)인지 확인하세요.`);
   }
   // 1) 프로젝트 마스터
   const ws1 = wb.Sheets['사업진행현황']; const rng1 = XLSX.utils.decode_range(ws1['!ref']);
@@ -12681,13 +13397,26 @@ function SagwanUploadModal({ employees, currentYear, onApply, onApplyProposals, 
   };
 
   const apply = () => {
-    const rows = preview.projects.map(p => ({
-      id: p.id, name: p.name, client: p.client, year: Number(p.year) || currentYear,
-      period: p.period, status: p.status,
-      revenue: Math.round(p.revenue), laborCost: p.laborCost, workerLabor: p.workerLabor, mgrLabor: p.mgrLabor, overhead: p.overhead, otherCost: 0, planCost: p.planCost, monthly: p.monthly,
-      members: p.members.map(m => ({ empId: m.empId, role: m.role, contribution: m.contribution })),
-      note: (p.note + (p._fl.length ? ' · ' + p._fl.join(' / ') : '')).replace(/^ · /, '').trim(),
-    }));
+    const rows = preview.projects.map(p => {
+      const row = {
+        id: p.id, name: p.name, client: p.client, year: Number(p.year) || currentYear,
+        period: p.period, status: p.status,
+        revenue: Math.round(p.revenue), laborCost: p.laborCost, workerLabor: p.workerLabor, mgrLabor: p.mgrLabor,
+        overhead: p.overhead,
+        otherCost: Math.round(Number(p.otherCost) || 0),   // ★ 기타비를 0으로 덮어쓰던 버그 수정
+        planCost: p.planCost, monthly: p.monthly,
+        members: (p.members || []).map(m => {
+          const mm = { empId: m.empId, role: m.role, contribution: m.contribution };
+          if (m.rate != null) mm.rate = m.rate;        // ★ 참여율·투입개월 보존
+          if (m.months != null) mm.months = m.months;
+          return mm;
+        }),
+        note: (String(p.note || '') + (p._fl.length ? ' · ' + p._fl.join(' / ') : '')).replace(/^ · /, '').trim(),
+      };
+      if (p.shareRate != null) row.shareRate = p.shareRate;      // ★ 지분율·공동수급 보존
+      if (p.consortium) row.consortium = p.consortium;
+      return row;
+    });
     onApply(rows);
     if (onApplyProposals && preview.proposals && preview.proposals.length) onApplyProposals(preview.proposals);
     if (onApplyOverheads && preview.overheads && preview.overheads.length) onApplyOverheads(preview.overheads);
@@ -12706,7 +13435,7 @@ function SagwanUploadModal({ employees, currentYear, onApply, onApplyProposals, 
               <div style={{ fontSize: 11, fontWeight: 600, color: T.brand, letterSpacing: '0.15em', textTransform: 'uppercase' }}>사업관리 워크북 자동 변환</div>
             </div>
             <h2 style={{ margin: `${S[1]}px 0 0`, fontSize: 20, fontWeight: 700, color: T.ink }}>사업관리 엑셀 업로드</h2>
-            <div style={{ fontSize: 12, color: T.textMute, marginTop: 4 }}>사업진행현황·사업별집행내역을 읽어 프로젝트·매출·경비를 반영합니다. <strong>인력운영현황 시트는 선택</strong> — 화면에서 참여인력을 배분 중이면 넣지 않아도 되며, 넣더라도 화면 입력이 우선 보존됩니다.</div>
+            <div style={{ fontSize: 12, color: T.textMute, marginTop: 4 }}>두 가지 양식을 자동 인식합니다 — <strong>표준 양식</strong>(사업목록·월별집행·인력운영현황·사업제안현황·공통비·직원별경비수주) 또는 <strong>회사 원본 워크북</strong>(사업진행현황·사업별집행내역). 표준 양식은 열 이름으로 위치를 찾으므로 열 순서를 바꿔도 됩니다.</div>
           </div>
           <button onClick={onClose} style={{ padding: 8, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}><X size={20} /></button>
         </div>
