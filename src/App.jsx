@@ -3,7 +3,44 @@ import { Users, Settings, FileText, BarChart3, Save, Download, Upload, Search, A
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ComposedChart, Area, LabelList, ReferenceLine, ReferenceDot } from 'recharts';
 
 // ════════════════════════════════════════════════════════════
-// koition-hr  v178
+// koition-hr  v180
+//
+// [v182 → v183] 월말 실제 잔고 자동 기록
+// 23) 입출금 계좌조회 파일에서 '일자 + 원화잔액' 을 읽어 각 달의 마지막 거래 잔액을
+//     fin.actualBalances['YYYY-MM'] 에 자동 기록. 은행 조회를 2026/01/01~오늘로 잡으면
+//     한 번에 전 기간이 채워지고, ④ 예측 정확도가 바로 계산된다. 수기 입력 불필요.
+//     기준일이 25일 미만이면(=조회 기간이 중간에 끊김) 미리보기에서 경고한다.
+//
+// [v181 → v182] 경영자용 ④ 예측 정확도 · ② 고정 지출 캘린더
+// 20) [버그] 자동보정(#1)이 항상 0이었다. 확정월의 bal 을 실제잔고로 치환한 뒤 (실제 − bal) 을
+//     재고 있어서 표본이 전부 0. 실적을 입력해도 보정이 걸리지 않았다.
+//     → '직전 달 실제잔고 + 그 달 예상 수입 − 지출' 로 1개월 앞 예측을 재구성해 실제와 비교.
+// 21) 「예측 정확도」 패널 추가 — 평균 오차율(MAPE)·편향·MAE·1σ 오차범위와 월별 예측/실제/오차 표.
+//     오차율 5% 미만 '신뢰 가능', 15% 미만 '참고 수준', 그 이상 '신뢰 어려움'.
+//     실적이 없으면 월말 잔고 입력을 안내한다.
+// 22) 「고정 지출 캘린더」 추가 (cfg.recurring) — 임차료·대출이자처럼 매달 같은 금액이 빠지는 항목을
+//     시작월·종료월과 함께 등록. 종료월 이후 자동 제외, 미래 시작 항목은 시작월부터 반영.
+//     ★ 이중계상 방지: 정액 고정경비(opexCash)에 이미 포함된 금액이므로 '현재 진행 중인 항목 합계'만
+//     정액에서 차감하고 각 달의 해당 항목을 더한다. 미래 시작 항목은 차감하지 않는다
+//     (차감하면 시작 전 달의 경비가 잘못 줄어든다).
+//
+// [v179 → v180] 월 작업자 인원 예측 · 경영자용 급여 지급 지표
+// 19) 진척율 표를 화면 폭에 맞춰 확장 (상위 maxWidth 1120 밖으로, 상한 1800px).
+//     월 셀 46→60px · 입력칸 40→52px · 사업명 열 190→260px · 표시 높이 420→560px.
+//     좁은 화면에서는 이동량이 0이 되어 기존 폭으로 자동 복귀.
+// 17) 사업기간별 표에 「작업자(명)」 행 추가 (cfg.headcount[pid]['YYYY-MM']).
+//     값이 있는 달은 진척율 배분을 무시하고 그 달 계약직 인건비 = 인원 × 계약직 평균월급으로 확정.
+//     인원 계획이 잡힌 달은 진척율 추정보다 정확하다. 소수(0.5) 입력 가능.
+// 18) 자금예측 최상단에 「급여 지급 가능 여부」 지표 추가.
+//     판단 기준 = 이번 달을 마친 잔고가 다음 달 인건비를 덮는가 (급여는 매월 10일, 미룰 수 없는 지출).
+//     부족 시작월·부족액·마지막 안전월·확보 개월수와 향후 6개월 표를 함께 표시.
+//
+// [v178 → v179] 계정 정리 · 권한 주석 정정
+// 15) 미사용 'admin' 계정 제거. INITIAL_USERS 시드 삭제 + 마이그레이션 보존 목록에서 제외 +
+//     이미 서버·캐시에 저장된 계정도 1회 정리. 코드에 평문 비밀번호가 노출돼 있던 계정이라 삭제.
+//     안전장치: 다른 admin 권한 계정이 남아 있을 때만 제거한다(잠금 방지).
+// 16) 각자대표(정일영·최재교) 권한 주석을 실제 동작과 일치시킴. 동작 변경 없음.
+//     기존 주석은 "대여금·수금 편집은 admin 전용"이라 적혀 있었으나 실제로는 두 분도 편집 가능.
 //
 // [v177 → v178] 경영회계 업로드 사고 방지
 // 12) 월계표 등 ERP 파일의 첫 셀 기간 헤더(예: 2026/01/01 ~ 2026/06/30)를 읽어 patch._span 으로 전달.
@@ -887,7 +924,7 @@ function CardStat({ label, value, highlight }) {
 // ⚠️ 모든 계정은 첫 로그인 후 즉시 비밀번호를 변경하셔야 합니다
 // ============================================================
 const INITIAL_USERS = [
-  { username: 'admin', password: 'gsH$w77p', role: 'admin', name: '인사담당자', empId: null, deptScope: '전체' },
+  // 'admin' 계정 제거(2026-08) — 미사용이고 코드에 평문 비밀번호가 노출돼 있어 삭제. cys가 admin 역할을 담당.
   { username: 'cys', password: 'uj!5n3Rs', role: 'admin', name: '최영숙', empId: 'K-140403', deptScope: '전체' },
   { username: 'K-140401', password: 'zLSd83%R', role: 'manager', name: '정일영', empId: 'K-140401', deptScope: '전체' },
   { username: 'K-140402', password: 'RuBi77!j', role: 'manager', name: '최재교', empId: 'K-140402', deptScope: '전체' },
@@ -2700,7 +2737,34 @@ async function parseFinanceExcel(arrayBuffer, fileName) {
     }
     if (!bal) { for (const r of rows) { if (!r) continue; const vals = r.map(num).filter(v => v > 100000 && v < 100000000000); if (vals.length) { bal = vals[vals.length - 1]; break; } } }
     if (bal) patch.bankBalance = bal;
-    notes.push('통장 잔고 반영');
+    // ★ 월말 실제 잔고 자동 추출 — 예측 정확도(④) 측정을 위해 월별 이력을 만든다.
+    //   입출금 내역은 '일자 + 원화잔액' 이 한 줄씩 있고 최신순으로 정렬돼 있다.
+    //   각 달에서 가장 늦은 날짜의 첫 행(=그 달 마지막 거래) 잔액을 그 달의 월말 잔고로 본다.
+    if (hi >= 0) {
+      const hdr = rows[hi];
+      const bc = hdr.findIndex(c => /잔액|원화잔액|잔고/.test(String(c || '')));
+      const dc = hdr.findIndex(c => /일자|날짜|거래일/.test(String(c || '')));
+      if (bc >= 0 && dc >= 0) {
+        const best = {};   // 'YYYY-MM' -> { day, bal }
+        for (let i = hi + 1; i < rows.length; i++) {
+          const r = rows[i]; if (!r) continue;
+          const dm = String(r[dc] == null ? '' : r[dc]).match(/(20\d{2})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+          if (!dm) continue;
+          const v = num(r[bc]); if (!(v > 0)) continue;
+          const key = `${dm[1]}-${String(dm[2]).padStart(2, '0')}`;
+          const day = Number(dm[3]);
+          // 같은 달에서 더 늦은 날짜면 갱신. 같은 날짜면 먼저 나온 행(=최신 거래)을 유지.
+          if (!best[key] || day > best[key].day) best[key] = { day, bal: v };
+        }
+        const meb = {};
+        Object.keys(best).forEach(k => { meb[k] = Math.round(best[k].bal); });
+        if (Object.keys(meb).length) {
+          patch._monthEndBalances = meb;
+          patch._monthEndDays = Object.fromEntries(Object.keys(best).map(k => [k, best[k].day]));
+        }
+      }
+    }
+    notes.push('통장 잔고 반영' + (patch._monthEndBalances ? ` · 월말잔고 ${Object.keys(patch._monthEndBalances).length}개월 기록` : ''));
   }
 
   return { patch, notes };
@@ -3006,6 +3070,14 @@ function App() {
             const hasCys = parsed.some(u => u.username === 'cys');
             // 마이그레이션이 이미 끝난 정상 상태면 그대로 사용 (재저장 안 함 → 비번 변경분 보존)
             if (alreadyEmpId && hasCys) {
+              // ★ 미사용 'admin' 계정 정리(1회). 다른 admin 권한 계정이 남아 있을 때만 제거해 잠금을 방지한다.
+              const pruned = parsed.filter(u => u.username !== 'admin');
+              if (pruned.length !== parsed.length && pruned.some(u => u.role === 'admin')) {
+                persistUsers(pruned);
+                setUsers(pruned);
+                setUsersInitialized(true);
+                return;
+              }
               setUsers(parsed);
               setUsersInitialized(true);
               return;
@@ -3016,7 +3088,7 @@ function App() {
               migrated = [...migrated, { username: 'cys', passwordHash: await hashPassword('uj!5n3Rs'), role: 'admin', name: '최영숙', empId: 'K-140403', deptScope: '전체', mustChangePassword: true, lastPasswordChange: null }];
             }
             if (!alreadyEmpId) {
-              const keep = migrated.filter(u => u.username === 'cys' || u.username === 'admin');
+              const keep = migrated.filter(u => u.username === 'cys');   // 'admin' 은 더 이상 보존하지 않음
               const empAccts = await Promise.all(
                 INITIAL_USERS.filter(u => u.username !== 'cys' && u.username !== 'admin').map(async u => ({
                   username: u.username, passwordHash: await hashPassword(u.password),
@@ -3738,7 +3810,14 @@ function App() {
     { id: 'policy', label: '정책 설정', icon: Settings, roles: ['admin'] },
     { id: 'guide', label: '사용 가이드', icon: AlertCircle, roles: ['admin', 'manager', 'evaluator', 'employee'] },
   ];
-  // 각자대표(정일영·최재교): 전사 경영보고서·평가정보 열람 허용 (대여금·수금·정책 편집은 admin 전용 유지)
+  // 각자대표(정일영·최재교) 권한 — 실제 동작 기준. 변경 시 아래 주석도 함께 갱신할 것.
+  //   열람  : 경영보고서(report) · 경영회계 CMS(cms) · 대여금(loans) · 수금(receivables) + 전사 직원·평가정보
+  //   편집  : 대여금 · 수금 (LoansView·ReceivablesView에 역할 가드 없음 — setLoans/setReceivables 직결)
+  //   열람만: 경영회계 CMS(canEdit=admin) · 경영보고서 직원별 장부(canEditLedger=admin)
+  //   불가  : 정책 설정 · 내보내기/불러오기(admin 전용) ·
+  //           프로젝트 수익성 편집(ProjectProfitView의 canEdit = admin || deptScope==='경영지원부',
+  //           두 분의 deptScope는 '전체'라 불일치 → 편집 UI가 안 보임)
+  //   ※ 서버(api/store.js)의 PUT은 manager를 admin과 동일하게 취급한다. 즉 편집 제한은 화면 레벨에만 있다.
   const EXEC_IDS = ['K-140401', 'K-140402'];
   const isExec = user.role === 'admin' || EXEC_IDS.includes(user.empId);
   const visibleMenus = allMenus.filter(m => m.roles.includes(user.role) || (isExec && ['report', 'loans', 'receivables', 'cms'].includes(m.id)));
@@ -9567,8 +9646,13 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
   const commitFin = (merged, allNotes, span) => {
     setFin(prev => {
       const n = { ...prev };
+      // ★ 월말 실제 잔고를 actualBalances 에 병합 (예측 정확도 측정용). 기존 수기 입력값은 덮어쓴다 —
+      //   은행 원장이 사람 기억보다 정확하기 때문.
+      if (merged._monthEndBalances) {
+        n.actualBalances = { ...((prev || {}).actualBalances || {}), ...merged._monthEndBalances };
+      }
       Object.keys(merged).forEach(k => {
-        if (k === '_span' || k === '_cumulative') return;
+        if (k === '_span' || k === '_cumulative' || k === '_monthEndBalances' || k === '_monthEndDays') return;
         if (k === 'sga' || k === 'sales' || k === 'etc' || k === 'tax') n[k] = { ...(prev[k] || {}), ...merged[k] };
         else n[k] = merged[k];
       });
@@ -9638,8 +9722,18 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
     if (merged.sales && monthlySum > 0 && newSales > 0 && newSales < monthlySum * 0.8) {
       warns.push(`월별매출 합계 ${fmtMoney(monthlySum)}원과 어긋납니다 (반영 후 매출 합계 ${fmtMoney(newSales)}원).`);
     }
+    // 월말 실제 잔고 자동 기록 미리보기
+    const meb = merged._monthEndBalances || null;
+    const mebRows = meb ? Object.keys(meb).sort().map(k => ({
+      key: k, day: (merged._monthEndDays || {})[k], val: meb[k],
+      before: ((prev.actualBalances || {})[k] != null && (prev.actualBalances || {})[k] !== '') ? Number((prev.actualBalances || {})[k]) : null,
+    })) : [];
+    if (mebRows.length) {
+      const partial = mebRows.filter(r => r.day && r.day < 25);
+      if (partial.length) warns.push(`월말 잔고 중 ${partial.map(r => r.key).join(', ')} 는 그 달 ${partial.map(r => r.day + '일').join('/')} 기준입니다 — 월말이 아니라 조회 기간이 거기서 끊긴 것입니다.`);
+    }
     setUploadMsg('');
-    setFinPreview({ merged, allNotes, span, rows, warns, files: files.map(f => f.name) });
+    setFinPreview({ merged, allNotes, span, rows, warns, mebRows, files: files.map(f => f.name) });
   };
   const f = fin || {};
   const salesTotal = (f.sales?.용역 || 0) + (f.sales?.상품 || 0);
@@ -9717,6 +9811,32 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
                   </ul>
                   <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2] }}>
                     월계표는 조회 기간만큼의 누계입니다. 1~8월 누적을 보려면 ERP에서 기간을 <strong>2026/01/01 ~ 오늘</strong>로 잡아 다시 내려받으세요.
+                  </div>
+                </div>
+              )}
+              {pv.mebRows && pv.mebRows.length > 0 && (
+                <div style={{ background: 'rgba(27,122,67,0.06)', border: `1px solid ${T.success}`, borderRadius: 8, padding: S[3], marginBottom: S[3] }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: T.success, marginBottom: 6 }}>
+                    월말 실제 잔고 {pv.mebRows.length}개월 자동 기록 — 예측 정확도 측정에 쓰입니다
+                  </div>
+                  <table style={{ borderCollapse: 'collapse', fontSize: 11.5 }}>
+                    <thead><tr style={{ background: 'rgba(0,0,0,0.03)' }}>
+                      <Th style={{ fontSize: 10 }}>월</Th><Th align="center" style={{ fontSize: 10 }}>기준일</Th>
+                      <Th align="right" style={{ fontSize: 10 }}>기존</Th><Th align="right" style={{ fontSize: 10 }}>기록될 값</Th>
+                    </tr></thead>
+                    <tbody>
+                      {pv.mebRows.map(r => (
+                        <tr key={r.key} style={{ borderTop: `1px solid ${T.divider}` }}>
+                          <Td style={{ fontSize: 11 }}>{r.key}</Td>
+                          <Td align="center" style={{ fontSize: 11, color: r.day && r.day < 25 ? T.warning : T.textMute }}>{r.day ? r.day + '일' : '-'}</Td>
+                          <Td align="right" mono style={{ color: T.textMute }}>{r.before != null ? fmtMoney(r.before) : '-'}</Td>
+                          <Td align="right" mono><strong>{fmtMoney(r.val)}</strong></Td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6, lineHeight: 1.7 }}>
+                    은행 조회 기간을 <strong>2026/01/01 ~ 오늘</strong>로 잡으면 1월부터 모든 달의 월말 잔고가 한 번에 채워집니다.
                   </div>
                 </div>
               )}
@@ -10477,6 +10597,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         (employees || []).forEach(e => { empSalaryMap[e.id] = (Number(e.baseSalary) || 0) + (Number(e.allowance) || 0); });
         const progressCfg = cfg.progress || {};           // 계획 진척율 { pid: { 'YYYY-MM': % } }
         const progressActCfg = cfg.progressActual || {};   // 실제 진행율 { pid: { 'YYYY-MM': % } }
+        const headCfg = cfg.headcount || {};               // 월 작업자 인원(직접 입력) { pid: { 'YYYY-MM': 명 } }
         // 계약직 평균 월급 = 최저임금 기준(2025 시급 10,030 × 209h × 4대보험). 설정값 우선.
         const CON_AVG_WAGE = Number(cfg.conAvgWage) || 2306000;
         const estConHead = (p, dur) => {
@@ -10503,9 +10624,19 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           let progSum = 0;
           if (hasProgress) { for (let k = st; k <= en; k++) { const mk = months[k] ? months[k].key : null; progSum += (mk && pgMap[mk] != null && pgMap[mk] !== '') ? Number(pgMap[mk]) : 0; } }
           const totalLabor = monthlyLabor * dur;
+          const hcMap = headCfg[p.id] || {};   // ★ 월 작업자 인원 직접 입력값
           for (let k = st; k <= en; k++) {
             if (k < 0 || k >= FC_MONTHS) continue;
             const mk = months[k] ? months[k].key : null;
+            // ★ 그 달의 작업자 인원이 입력돼 있으면 진척율 배분을 무시하고 '인원 × 평균월급'으로 계약직 인건비를 확정한다.
+            //   진척율은 '얼마나 진행됐나'의 비중이고, 인원은 '몇 명이 붙나'의 실물이라 후자가 더 정확하다.
+            const hcRaw = mk != null ? hcMap[mk] : null;
+            if (hcRaw != null && hcRaw !== '') {
+              const hc = Number(hcRaw) || 0;
+              laborByProjMonth[k] += mgrMonthly + hc * CON_AVG_WAGE;
+              headByMonth[k] += mgrHead + hc;
+              continue;
+            }
             let w;
             if (hasProgress && progSum > 0) {
               const pv = (mk && pgMap[mk] != null && pgMap[mk] !== '') ? Number(pgMap[mk]) : 0;
@@ -10529,9 +10660,30 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           let c = 0; activeProjs.forEach(p => { const pr = parsePeriod(p.period); const s = idxOf(pr.sy, pr.sm), e = idxOf(pr.ey, pr.em); if (s <= i && e >= i) c++; });
           return baseActive > 0 ? c / baseActive : 1;   // 0~1 (최대 동시활성 대비)
         };
-        const fixedOpexUse = useFixedOpexAdj;   // 카드 사업변동분 제외된 고정경비
+        const fixedOpexUse = useFixedOpexAdj;   // 카드 사업변동분 제외된 고정경비(정액)
         const projOpexUse = Math.round(useProjOpex * projOpexScale / 100);
-        const opexOf = (i) => fixedOpexUse + Math.round(projOpexUse * activeRatioOf(i));   // 고정 + 프로젝트성×진행률
+        // ══ 경영자용 ②: 고정 지출 캘린더 ══
+        //   cfg.recurring = [{ id, label, amount, day, from:'YYYY-MM', to:'YYYY-MM' }]
+        //   정액 고정경비(opexCash) 안에 임차료·대출이자 등이 이미 포함돼 있으므로,
+        //   등록된 반복항목의 '월 합계'를 정액에서 차감한 뒤 각 달의 실제 해당 항목만 더한다.
+        //   → 이렇게 하지 않으면 캘린더에 등록하는 순간 그 금액이 두 번 잡힌다.
+        const recurList = (cfg.recurring || []).filter(r => r && Number(r.amount) > 0);
+        const mkIdx = (v) => { const m = String(v || '').match(/(\d{4})[.\-\/](\d{1,2})/); return m ? idxOf(+m[1], +m[2]) : null; };
+        const recurActiveAt = (r, i) => {
+          const f = mkIdx(r.from), t = mkIdx(r.to);
+          if (f != null && i < f) return false;
+          if (t != null && i > t) return false;
+          return true;
+        };
+        const recurAt = (i) => Math.round(recurList.reduce((a, r) => a + (recurActiveAt(r, i) ? (Number(r.amount) || 0) : 0), 0));
+        // 정액(opexCash)은 '지금까지의 실적 평균'이다. 따라서 정액에서 빼야 할 것은
+        // '지금 이미 나가고 있는 항목'뿐이다. 미래에 시작하는 신규 항목을 빼면 시작 전 달의 경비가 잘못 줄어든다.
+        const recurMonthlyTotal = recurAt(0);
+        const recurRegisteredTotal = recurList.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+        const fixedBase = Math.max(0, fixedOpexUse - recurMonthlyTotal);   // 진행 중 반복항목을 뺀 잔여 정액
+        const recurOverflow = Math.max(0, recurMonthlyTotal - fixedOpexUse);   // 정액을 초과한 등록액(경고용)
+        const fixedOf = (i) => fixedBase + recurAt(i);
+        const opexOf = (i) => fixedOf(i) + Math.round(projOpexUse * activeRatioOf(i));   // 고정(정액+반복) + 프로젝트성×진행률
         // 세금(부가세·법인세)은 추정액이라 기본 제외 — 실질 현금흐름 왜곡 방지. 옵션에서 켜면 반영.
         const taxOn = cfg.taxInclude === true;
         const taxOf = (mo) => taxOn ? (([1, 4, 7, 10].includes(mo.m) ? useVatQ : 0) + (mo.m === 3 ? useCorpTax : 0)) : 0;
@@ -10572,7 +10724,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           if (start < FC_MONTHS && advP > 0) { incOpt[start] += p.budget * wOpt * advP; incCons[start] += p.budget * wCons * advP; }
           const end = start + 6; if (end < FC_MONTHS) { incOpt[end] += p.budget * wOpt * (1 - advP); incCons[end] += p.budget * wCons * (1 - advP); }
         });
-        const expCons = months.map((mo, i) => laborOf(mo, i) + fixedOpexUse + Math.round(projOpexUse * activeRatioOf(i) * 1.1) + taxOf(mo) + extraExpArr[i]);   // 보수: 프로젝트성경비 +10%
+        const expCons = months.map((mo, i) => laborOf(mo, i) + fixedOf(i) + Math.round(projOpexUse * activeRatioOf(i) * 1.1) + taxOf(mo) + extraExpArr[i]);   // 보수: 프로젝트성경비 +10%
         const rows = months.map((mo, i) => {
           const isConfirmed = i <= startAfterIdx;   // 실제 잔고가 있는 확정 월
           const aVal = actualBalMapInit[mo.key];
@@ -10580,14 +10732,57 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             // 확정 월: 실제 통장잔고를 그대로 사용 (예측 아님)
             const av = Number(aVal);
             bal = av; balS = av; balOpt = av; balCons = av;
-            return { ...mo, confirmed: true, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), expEtc: extraExpArr[i], expFixed: fixedOpexUse, expProj: Math.round(projOpexUse * activeRatioOf(i)), incColl: incColl[i], incSched: incSched[i], incManual: incManual[i], incExtra: incExtra[i], incPipe: incPipe[i], prevBal: av, prevBalS: av, activeRatio: activeRatioOf(i), bal, balS, balOpt, balCons, allNotes: ['실제 통장잔고 (확정)'], notes: '실제 잔고' };
+            return { ...mo, confirmed: true, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), expEtc: extraExpArr[i], expFixed: fixedOf(i), expProj: Math.round(projOpexUse * activeRatioOf(i)), incColl: incColl[i], incSched: incSched[i], incManual: incManual[i], incExtra: incExtra[i], incPipe: incPipe[i], prevBal: av, prevBalS: av, activeRatio: activeRatioOf(i), bal, balS, balOpt, balCons, allNotes: ['실제 통장잔고 (확정)'], notes: '실제 잔고' };
           }
           bal += inc[i] - exp[i]; balS += incS[i] - exp[i];
           balOpt += incOpt[i] - exp[i]; balCons += incCons[i] - expCons[i];
-          return { ...mo, confirmed: false, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), expEtc: extraExpArr[i], expFixed: fixedOpexUse, expProj: Math.round(projOpexUse * activeRatioOf(i)), incColl: incColl[i], incSched: incSched[i], incManual: incManual[i], incExtra: incExtra[i], incPipe: incPipe[i], prevBal: bal - (inc[i] - exp[i]), prevBalS: balS - (incS[i] - exp[i]), activeRatio: activeRatioOf(i), bal, balS, balOpt, balCons, allNotes: incNote[i].slice(), notes: incNote[i].slice(0, 3).join(', ') };
+          return { ...mo, confirmed: false, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), expEtc: extraExpArr[i], expFixed: fixedOf(i), expProj: Math.round(projOpexUse * activeRatioOf(i)), incColl: incColl[i], incSched: incSched[i], incManual: incManual[i], incExtra: incExtra[i], incPipe: incPipe[i], prevBal: bal - (inc[i] - exp[i]), prevBalS: balS - (incS[i] - exp[i]), activeRatio: activeRatioOf(i), bal, balS, balOpt, balCons, allNotes: incNote[i].slice(), notes: incNote[i].slice(0, 3).join(', ') };
         });
         const safety = Number(cfg.safety) || 0;
         const danger = rows.find(r => r.bal < safety);
+        // ══ 경영자용 ①: 「다음 달 급여가 나갈 잔고가 있는가」 ══
+        //   급여는 매월 10일 지급 = 그 달 지출 중 미룰 수 없는 항목. 따라서 판단 기준은
+        //   '이번 달을 마친 잔고(bal)가 다음 달 급여액을 덮는가' 이다.
+        //   payroll[i] = i월 인건비 지출(정규직+계약직, 사업 투입분 포함)
+        const payrollAt = (i) => Math.round(rows[i] ? (Number(rows[i].expLabor) || 0) : 0);
+        const payrollCheck = (() => {
+          const list = [];
+          for (let i = 0; i < rows.length - 1; i++) {
+            const r = rows[i], need = payrollAt(i + 1);
+            if (need <= 0) continue;
+            const room = r.bal - need;                     // 다음 달 급여 지급 후 남는 돈
+            list.push({ i, month: rows[i + 1], bal: r.bal, need, room, ok: room >= 0, confirmed: r.confirmed });
+          }
+          const firstShort = list.find(x => !x.ok);
+          const lastSafe = (() => { let last = null; for (const x of list) { if (!x.ok) break; last = x; } return last; })();
+          // 여유 개월 수: 지금부터 몇 번의 급여를 무리 없이 지급할 수 있는가
+          let runway = 0; for (const x of list) { if (!x.ok) break; runway++; }
+          return { list, firstShort, lastSafe, runway };
+        })();
+        // ══ 경영자용 ④: 예측 vs 실적 오차 추적 ══
+        //   [버그 수정] 기존 자동보정은 확정월의 bal 을 실제값으로 치환한 뒤 (실제 − bal) 을 재던 탓에
+        //   표본이 항상 0이었다. 즉 실적을 입력해도 보정이 전혀 걸리지 않았다.
+        //   여기서는 '직전 달 실제잔고 + 그 달 예상 수입 − 예상 지출' 로 1개월 앞 예측을 다시 만들어
+        //   실제와 비교한다. "다음 달 잔고 예측이 믿을 만한가"에 답하는 지표.
+        const accuracy = (() => {
+          const am = (finData.actualBalances) || {};
+          const val = (mk) => (am[mk] != null && am[mk] !== '') ? Number(am[mk]) : null;
+          const errs = [];
+          for (let i = 1; i < rows.length; i++) {
+            const prevA = val(rows[i - 1].key), curA = val(rows[i].key);
+            if (prevA == null || curA == null) continue;
+            const pred = prevA + inc[i] - exp[i];        // 1개월 앞 예측
+            const err = curA - pred;                     // + = 예측보다 실제가 많음(보수적 예측)
+            errs.push({ key: rows[i].key, y: rows[i].y, m: rows[i].m, pred: Math.round(pred), actual: curA, err: Math.round(err), pct: curA !== 0 ? (err / Math.abs(curA) * 100) : null });
+          }
+          const n = errs.length;
+          if (n === 0) return { n: 0, errs };
+          const mean = errs.reduce((a, e) => a + e.err, 0) / n;                       // 편향
+          const mae = errs.reduce((a, e) => a + Math.abs(e.err), 0) / n;              // 평균 절대 오차
+          const mape = errs.filter(e => e.pct != null).reduce((a, e) => a + Math.abs(e.pct), 0) / Math.max(1, errs.filter(e => e.pct != null).length);
+          const sd = n > 1 ? Math.sqrt(errs.reduce((a, e) => a + Math.pow(e.err - mean, 2), 0) / (n - 1)) : 0;
+          return { n, errs, mean: Math.round(mean), mae: Math.round(mae), mape, sd: Math.round(sd) };
+        })();
         const minRow = rows.reduce((a, r) => r.bal < a.bal ? r : a, rows[0]);
         const inp = (label, k, step) => (
           <div key={k}>
@@ -10596,8 +10791,9 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           </div>
         );
         const actualBal = (finData.actualBalances) || {};
-        // #1 자동보정: 최근 실적월들의 (실제-예측단순) 평균 편향을 미래에 가산
-        const biasSamples = rows.map((r, i) => { const mk = r.y + '-' + String(r.m).padStart(2, '0'); const av = actualBal[mk]; return (av != null && av !== '') ? (Number(av) - r.bal) : null; }).filter(v => v != null);
+        // #1 자동보정 — accuracy 의 1개월 앞 오차를 편향으로 사용한다.
+        //   (기존 산식은 확정월 bal 이 실제값으로 치환된 뒤 차이를 재서 항상 0이었다.)
+        const biasSamples = accuracy.errs.map(e => e.err);
         const bias = (cfg.autoCorrect !== false && biasSamples.length >= 2) ? Math.round(biasSamples.slice(-3).reduce((a, v) => a + v, 0) / Math.min(3, biasSamples.length)) : 0;
         const chartData = rows.map((r, chartData_i) => {
           const mk = r.y + '-' + String(r.m).padStart(2, '0');
@@ -10621,6 +10817,122 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const hasActual = Object.keys(actualBal).some(k => actualBal[k] != null && actualBal[k] !== '');
         return (
           <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[5], marginTop: S[3] }}>
+            {/* ══ 경영자용 ①: 급여 지급 가능 여부 — 이 화면에서 가장 먼저 봐야 하는 한 줄 ══ */}
+            {payrollCheck.list.length > 0 && (() => {
+              const pc = payrollCheck, fs = pc.firstShort;
+              const tone = !fs ? T.success : (pc.runway <= 1 ? T.danger : T.warning);
+              const bg = !fs ? 'rgba(27,122,67,0.07)' : (pc.runway <= 1 ? '#FDECEC' : '#FFF4E5');
+              const mlabel = (m) => `${m.y}년 ${m.m}월`;
+              return (
+                <div style={{ background: bg, border: `2px solid ${tone}`, borderRadius: 10, padding: S[4], marginBottom: S[4] }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMute, letterSpacing: 0.4, marginBottom: 6 }}>급여 지급 가능 여부</div>
+                  <div style={{ fontSize: 19, fontWeight: 800, color: tone, lineHeight: 1.35 }}>
+                    {!fs
+                      ? `예측 기간 내 급여 지급에 문제 없습니다 (${pc.runway}개월분 확보)`
+                      : <>{mlabel(fs.month)} 급여 <span style={{ color: T.danger }}>{fmtMoney(Math.abs(fs.room))}원 부족</span> 예상</>}
+                  </div>
+                  <div style={{ fontSize: 12, color: T.text, marginTop: 6, lineHeight: 1.8 }}>
+                    {fs
+                      ? <>{pc.lastSafe ? <>{mlabel(pc.lastSafe.month)}까지는 지급 가능합니다. </> : <>당장 다음 급여부터 빠듯합니다. </>}
+                          {mlabel(fs.month)} 급여 <strong>{fmtMoney(fs.need)}원</strong>에 대해 그 시점 예상 잔고는 <strong>{fmtMoney(fs.bal)}원</strong>입니다.</>
+                      : <>가장 빠듯한 달은 {(() => { const w = pc.list.reduce((a, x) => x.room < a.room ? x : a, pc.list[0]); return <>{mlabel(w.month)} — 급여 {fmtMoney(w.need)}원 지급 후 <strong>{fmtMoney(w.room)}원</strong> 남음</>; })()}</>}
+                  </div>
+                  <div style={{ overflowX: 'auto', marginTop: S[3] }}>
+                    <table style={{ borderCollapse: 'collapse', fontSize: 11.5, minWidth: 460 }}>
+                      <thead><tr style={{ background: 'rgba(0,0,0,0.03)' }}>
+                        <Th style={{ fontSize: 10 }}>지급월</Th>
+                        <Th align="right" style={{ fontSize: 10 }}>지급 전 잔고</Th>
+                        <Th align="right" style={{ fontSize: 10 }}>급여 필요액</Th>
+                        <Th align="right" style={{ fontSize: 10 }}>지급 후 여유</Th>
+                      </tr></thead>
+                      <tbody>
+                        {pc.list.slice(0, 6).map(x => (
+                          <tr key={x.i} style={{ borderTop: `1px solid ${T.divider}` }}>
+                            <Td style={{ fontSize: 11 }}>{mlabel(x.month)}{x.confirmed ? <span style={{ color: T.textMute, fontSize: 9.5 }}> (확정잔고 기준)</span> : null}</Td>
+                            <Td align="right" mono>{fmtMoney(x.bal)}</Td>
+                            <Td align="right" mono>{fmtMoney(x.need)}</Td>
+                            <Td align="right" mono style={{ color: x.ok ? T.success : T.danger, fontWeight: 700 }}>{x.ok ? '' : '▲ '}{fmtMoney(x.room)}</Td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6, lineHeight: 1.7 }}>
+                    급여 필요액 = 그 달 인건비 지출(정규직 + 계약직·사업소득, 사업 투입분 포함) · 지급일 매월 10일 기준.
+                    수금 예정·고정비 가정이 바뀌면 이 표도 함께 바뀝니다.
+                  </div>
+                </div>
+              );
+            })()}
+            {/* ══ 경영자용 ④: 예측 vs 실적 오차 — 예측을 믿고 결정해도 되는지 판단 ══ */}
+            {(() => {
+              const ac = accuracy;
+              const mlabel = (e) => `${e.y}년 ${e.m}월`;
+              if (ac.n === 0) {
+                return (
+                  <div style={{ background: T.surfaceAlt, border: `1px dashed ${T.border}`, borderRadius: 10, padding: S[4], marginBottom: S[4] }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMute, letterSpacing: 0.4, marginBottom: 6 }}>예측 정확도</div>
+                    <div style={{ fontSize: 13, color: T.ink, fontWeight: 700, marginBottom: 4 }}>아직 측정할 수 없습니다</div>
+                    <div style={{ fontSize: 11.5, color: T.textMute, lineHeight: 1.8 }}>
+                      아래 <strong>「월말 실제 통장잔고」</strong>에 연속된 두 달 이상을 입력하면, 그 구간의 예측이 얼마나 맞았는지 자동으로 계산합니다.<br />
+                      은행 입출금 조회를 <strong>각 월 말일 기준</strong>으로 뽑아 1월부터 채우시면 됩니다. 표본이 2개 이상이면 미래 예측에 편향 보정도 자동으로 걸립니다.
+                    </div>
+                  </div>
+                );
+              }
+              const good = ac.mape < 5, mid = ac.mape < 15;
+              const tone = good ? T.success : (mid ? T.warning : T.danger);
+              const bg = good ? 'rgba(27,122,67,0.07)' : (mid ? '#FFF4E5' : '#FDECEC');
+              const grade = good ? '신뢰 가능' : (mid ? '참고 수준' : '신뢰 어려움');
+              const last = rows.filter(r => !r.confirmed)[0];
+              return (
+                <div style={{ background: bg, border: `2px solid ${tone}`, borderRadius: 10, padding: S[4], marginBottom: S[4] }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMute, letterSpacing: 0.4, marginBottom: 6 }}>예측 정확도 · 최근 {ac.n}개월</div>
+                  <div style={{ fontSize: 19, fontWeight: 800, color: tone, lineHeight: 1.35 }}>
+                    평균 오차 {ac.mape.toFixed(1)}% · {grade}
+                  </div>
+                  <div style={{ fontSize: 12, color: T.text, marginTop: 6, lineHeight: 1.8 }}>
+                    1개월 앞 예측이 실제와 평균 <strong>{fmtMoney(ac.mae)}원</strong> 차이났습니다.
+                    편향은 <strong style={{ color: ac.mean >= 0 ? T.success : T.danger }}>{ac.mean >= 0 ? '+' : ''}{fmtMoney(ac.mean)}원</strong>
+                    {ac.mean >= 0 ? ' — 실제가 예측보다 많았습니다(보수적 예측).' : ' — 실제가 예측보다 적었습니다(낙관적 예측).'}
+                    {bias !== 0 && <> 이 편향은 미래 예측에 자동 반영 중입니다.</>}
+                    {cfg.autoCorrect === false && <> <span style={{ color: T.warning }}>(자동보정 꺼져 있음)</span></>}
+                  </div>
+                  {last && ac.sd > 0 && (
+                    <div style={{ fontSize: 12, color: T.text, marginTop: 4, lineHeight: 1.8 }}>
+                      → {last.y}년 {last.m}월 예상 잔고 <strong>{fmtMoney(Math.round(last.bal + bias))}원</strong>,
+                      오차 범위 <strong>± {fmtMoney(ac.sd)}원</strong> <span style={{ color: T.textMute }}>(1σ · 약 68% 구간)</span>
+                    </div>
+                  )}
+                  <div style={{ overflowX: 'auto', marginTop: S[3] }}>
+                    <table style={{ borderCollapse: 'collapse', fontSize: 11.5, minWidth: 460 }}>
+                      <thead><tr style={{ background: 'rgba(0,0,0,0.03)' }}>
+                        <Th style={{ fontSize: 10 }}>월</Th>
+                        <Th align="right" style={{ fontSize: 10 }}>예측 잔고</Th>
+                        <Th align="right" style={{ fontSize: 10 }}>실제 잔고</Th>
+                        <Th align="right" style={{ fontSize: 10 }}>오차</Th>
+                        <Th align="right" style={{ fontSize: 10 }}>오차율</Th>
+                      </tr></thead>
+                      <tbody>
+                        {ac.errs.slice(-8).map(e => (
+                          <tr key={e.key} style={{ borderTop: `1px solid ${T.divider}` }}>
+                            <Td style={{ fontSize: 11 }}>{mlabel(e)}</Td>
+                            <Td align="right" mono>{fmtMoney(e.pred)}</Td>
+                            <Td align="right" mono>{fmtMoney(e.actual)}</Td>
+                            <Td align="right" mono style={{ color: Math.abs(e.err) > ac.mae ? T.danger : T.textMute, fontWeight: 600 }}>{e.err >= 0 ? '+' : ''}{fmtMoney(e.err)}</Td>
+                            <Td align="right" mono style={{ fontWeight: 700, color: e.pct != null && Math.abs(e.pct) < 5 ? T.success : T.warning }}>{e.pct != null ? (e.pct >= 0 ? '+' : '') + e.pct.toFixed(1) + '%' : '-'}</Td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6, lineHeight: 1.7 }}>
+                    예측 잔고 = 직전 달 <strong>실제</strong> 잔고 + 그 달 예상 수입 − 예상 지출. 누적 오차가 아닌 1개월 앞 오차라, 매달의 예측 실력을 그대로 보여줍니다.
+                    오차율 5% 미만이면 예측을 근거로 자금 결정을 해도 무리가 없습니다.
+                  </div>
+                </div>
+              );
+            })()}
             {/* CMS 실적 연동 배너 */}
             {cmsLinked && (
               <div style={{ background: '#EEF3FA', border: `1px solid ${T.brand}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12 }}>
@@ -10637,6 +10949,82 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 <span style={{ color: T.textMute, marginLeft: 6 }}>(해제 시 아래 수동 입력값 사용)</span>
               </div>
             )}
+            {/* ══ 경영자용 ②: 고정 지출 캘린더 ══ */}
+            <details className="no-print" style={{ marginBottom: S[4], background: T.surfaceAlt, borderRadius: 8, padding: `${S[3]}px ${S[4]}px` }}>
+              <summary style={{ fontSize: 12.5, fontWeight: 700, color: T.brand, cursor: 'pointer', padding: '4px 0' }}>
+                🗓 고정 지출 캘린더 — 반복 항목 {recurList.length}건 · 진행 중 월 {fmtMoney(recurMonthlyTotal)}원{recurRegisteredTotal !== recurMonthlyTotal ? ` (등록 총액 ${fmtMoney(recurRegisteredTotal)})` : ''}
+              </summary>
+              <div style={{ fontSize: 11.5, color: T.textMute, margin: '6px 0 10px', lineHeight: 1.8 }}>
+                임차료·대출이자·렌탈처럼 <strong>매달 같은 금액이 빠지는 항목</strong>을 등록합니다. 종료월을 넣으면 그 달 이후로는 예측에서 자동으로 빠집니다 (대출 상환 완료, 계약 종료 등).<br />
+                고정경비 정액 <strong>{fmtMoney(fixedOpexUse)}원</strong>에 이미 이 항목들이 포함돼 있으므로, 등록액을 정액에서 <strong>차감</strong>한 뒤 각 달의 해당 항목만 더합니다 — 그래서 이중계상되지 않습니다.
+                {recurList.length > 0 && <><br />현재 잔여 정액 <strong style={{ color: T.ink }}>{fmtMoney(fixedBase)}원</strong> + 그 달 반복항목.</>}
+              </div>
+              {recurOverflow > 0 && (
+                <div style={{ background: '#FDECEC', border: `1px solid ${T.danger}`, borderRadius: 6, padding: '8px 12px', fontSize: 11.5, color: T.danger, fontWeight: 600, marginBottom: S[2] }}>
+                  ⚠ 등록액 합계가 고정경비 정액을 {fmtMoney(recurOverflow)}원 초과합니다. 정액(CMS 현금경비)에 없는 항목을 넣었거나 금액이 과대합니다 — 확인하세요.
+                </div>
+              )}
+              {recurList.length > 0 && (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: S[3] }}>
+                  <thead><tr style={{ background: 'rgba(0,0,0,0.03)' }}>
+                    <Th style={{ fontSize: 10 }}>항목</Th>
+                    <Th align="right" style={{ fontSize: 10 }}>월 금액</Th>
+                    <Th align="center" style={{ fontSize: 10 }}>지급일</Th>
+                    <Th align="center" style={{ fontSize: 10 }}>시작월</Th>
+                    <Th align="center" style={{ fontSize: 10 }}>종료월</Th>
+                    <Th align="center" style={{ fontSize: 10 }}></Th>
+                  </tr></thead>
+                  <tbody>
+                    {recurList.map(r => (
+                      <tr key={r.id} style={{ borderTop: `1px solid ${T.divider}` }}>
+                        <Td>{r.label || '(이름 없음)'}</Td>
+                        <Td align="right" mono>{fmtMoney(Number(r.amount) || 0)}</Td>
+                        <Td align="center">{r.day ? r.day + '일' : '-'}</Td>
+                        <Td align="center" style={{ fontSize: 11, color: T.textMute }}>{r.from || '제한 없음'}</Td>
+                        <Td align="center" style={{ fontSize: 11, color: r.to ? T.warning : T.textMute, fontWeight: r.to ? 700 : 400 }}>{r.to || '무기한'}</Td>
+                        <Td align="center">
+                          <button onClick={() => setCashCfg(prev => ({ ...prev, recurring: (prev.recurring || []).filter(x => x.id !== r.id) }))}
+                            style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}><Trash2 size={14} /></button>
+                        </Td>
+                      </tr>
+                    ))}
+                    <tr style={{ borderTop: `1px solid ${T.border}`, background: T.surface }}>
+                      <Td><strong>합계</strong></Td>
+                      <Td align="right" mono><strong>{fmtMoney(recurRegisteredTotal)}</strong></Td>
+                      <Td colSpan={4} style={{ fontSize: 10.5, color: T.textMute }}>진행 중 {fmtMoney(recurMonthlyTotal)}원을 정액에서 차감 → 잔여 정액 {fmtMoney(fixedBase)}원</Td>
+                    </tr>
+                  </tbody>
+                </table>
+              )}
+              {(() => {
+                const setR = (k, v) => setCashCfg(prev => ({ ...prev, _recurDraft: { ...(prev._recurDraft || {}), [k]: v } }));
+                const d = cfg._recurDraft || {};
+                const add = () => {
+                  const amt = Number(String(d.amount || '').replace(/[^\d]/g, '')) || 0;
+                  if (!d.label || amt <= 0) { alert('항목명과 월 금액을 입력하세요.'); return; }
+                  setCashCfg(prev => ({
+                    ...prev,
+                    recurring: [...(prev.recurring || []), { id: 'R' + Date.now(), label: d.label, amount: amt, day: d.day ? Number(d.day) : null, from: d.from || '', to: d.to || '' }],
+                    _recurDraft: {},
+                  }));
+                };
+                const ip = (ph, k, w) => <input value={d[k] || ''} onChange={e => setR(k, e.target.value)} placeholder={ph} style={{ width: w, padding: '7px 9px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, fontFamily: FONT, boxSizing: 'border-box' }} />;
+                return (
+                  <div style={{ display: 'flex', gap: S[2], flexWrap: 'wrap', alignItems: 'center' }}>
+                    {ip('항목명 (예: 본사 임차료)', 'label', 180)}
+                    {ip('월 금액', 'amount', 110)}
+                    {ip('지급일', 'day', 70)}
+                    {ip('시작 2026.01', 'from', 110)}
+                    {ip('종료 2027.06', 'to', 110)}
+                    <Button variant="primary" size="sm" icon={Plus} onClick={add}>추가</Button>
+                  </div>
+                );
+              })()}
+              <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 8, lineHeight: 1.7 }}>
+                지출정리 파일에서 확인된 반복 항목 예시 — 임차료 2,420,000 · 렌탈 2,486,889 · 대출이자 약 2,490,000 · 컨테이너 231,000 · 시큐리티 132,000 (월).
+                금액이 바뀌는 항목은 기존 항목을 지우고 새 금액으로 다시 등록하세요.
+              </div>
+            </details>
             {/* 설정 입력 */}
             <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: S[3], marginBottom: S[4], background: T.surfaceAlt, borderRadius: 8, padding: S[4] }}>
               {inp('법인통장 잔고(원·이번 달 초)', 'balance')}
@@ -10954,9 +11342,18 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                   <details className="no-print" style={{ marginTop: S[3] }}>
                     <summary style={{ fontSize: 12.5, fontWeight: 700, color: T.brand, cursor: 'pointer', padding: '6px 0' }}>📅 사업기간별 진척율 (계획 vs 실제 · 인건비 배분)</summary>
                     <div style={{ fontSize: 11.5, color: T.textMute, margin: '4px 0 10px', lineHeight: 1.7 }}>
-                      각 사업의 진행 기간(색칠된 칸)에 <strong>월별 진행 비중(%)</strong>을 넣습니다. 한 사업의 <strong style={{ color: '#B8892B' }}>계획</strong> 줄 합계가 100%가 되도록 배분하세요 (예: 6개월이면 <code>15·20·20·20·15·10</code>). 인건비가 그 비중대로 배분됩니다. <strong style={{ color: '#D97706' }}>실제</strong> 줄엔 그달까지 실제 진행된 누적/월 비중을 넣으면 아래 그래프에서 계획과 비교됩니다. 비워두면 균등 배분됩니다.
+                      각 사업의 진행 기간(색칠된 칸)에 <strong>월별 진행 비중(%)</strong>을 넣습니다. 한 사업의 <strong style={{ color: '#B8892B' }}>계획</strong> 줄 합계가 100%가 되도록 배분하세요 (예: 6개월이면 <code>15·20·20·20·15·10</code>). 인건비가 그 비중대로 배분됩니다. <strong style={{ color: '#D97706' }}>실제</strong> 줄엔 그달까지 실제 진행된 누적/월 비중을 넣으면 아래 그래프에서 계획과 비교됩니다. 비워두면 균등 배분됩니다.<br />
+                      <strong style={{ color: T.ink }}>작업자</strong> 줄에 그 달에 투입할 <strong>계약직 인원(명)</strong>을 넣으면, 진척율 배분보다 <strong>우선해서</strong> 그 달 인건비를 <code>인원 × 계약직 평균월급</code>으로 계산합니다. 인원 계획이 확정된 달은 이쪽이 훨씬 정확합니다. 0.5처럼 소수도 됩니다.
                     </div>
-                    <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 420, border: `1px solid ${T.border}`, borderRadius: 8 }}>
+                    {/* 표만 상위 maxWidth(1120) 밖으로 넓힘. 화면이 좁으면 shift가 0이 되어 원래 폭으로 돌아온다. */}
+                    <div style={{
+                      overflowX: 'auto', overflowY: 'auto', maxHeight: 560,
+                      border: `1px solid ${T.border}`, borderRadius: 8,
+                      // 폭과 좌측 이동량을 같은 상한(1800px)으로 묶는다. 안 묶으면 초광폭 화면에서 우측이 넘친다.
+                      width: 'max(100%, min(calc(100vw - 72px), 1800px))',
+                      marginLeft: 'calc(-1 * max(0px, (min(100vw - 72px, 1800px) - 100%) / 2))',
+                      overscrollBehaviorX: 'contain',
+                    }}>
                       {(() => {
                         const mkSetter = (field) => (pid, mk, val) => setCashCfg && setCashCfg(prev => {
                           const root = { ...(prev[field] || {}) };
@@ -10966,26 +11363,31 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                         });
                         const setPlan = mkSetter('progress');
                         const setAct = mkSetter('progressActual');
+                        const setHead = mkSetter('headcount');   // ★ 월 작업자 인원
                         const actProjs = (projects || []).filter(p => { const pr = parsePeriod(p.period); if (!pr) return false; const en = idxOf(pr.ey, pr.em); return en >= 0; });
                         if (!actProjs.length) return <div style={{ fontSize: 11.5, color: T.textMute, padding: S[3] }}>계약기간이 입력된 사업이 없습니다. 사업 편집에서 계약기간을 먼저 입력하세요.</div>;
-                        const cell = (v, on, inRange, color) => (
-                          <Td align="center" style={{ padding: '2px 3px', background: inRange ? (color === 'plan' ? 'rgba(184,137,43,0.10)' : 'rgba(217,119,6,0.10)') : '#FAFAF8', minWidth: 46 }}>
-                            {inRange ? <input value={v ?? ''} onChange={on} placeholder="%" inputMode="numeric" style={{ width: 40, padding: '5px 3px', border: `1px solid ${color === 'plan' ? 'rgba(184,137,43,0.4)' : 'rgba(217,119,6,0.4)'}`, borderRadius: 5, fontSize: 12, textAlign: 'center', fontFamily: FONT, boxSizing: 'border-box', background: '#fff' }} /> : <span style={{ color: '#DDD', fontSize: 10 }}>·</span>}
-                          </Td>
-                        );
+                        const TONE = { plan: ['rgba(184,137,43,0.10)', 'rgba(184,137,43,0.4)', '%'], act: ['rgba(217,119,6,0.10)', 'rgba(217,119,6,0.4)', '%'], head: ['rgba(21,35,63,0.07)', 'rgba(21,35,63,0.35)', '명'] };
+                        const cell = (v, on, inRange, color) => {
+                          const [bg, bd, ph] = TONE[color] || TONE.plan;
+                          return (
+                            <Td align="center" style={{ padding: '3px 4px', background: inRange ? bg : '#FAFAF8', minWidth: 60 }}>
+                              {inRange ? <input value={v ?? ''} onChange={on} placeholder={ph} inputMode="decimal" style={{ width: 52, padding: '6px 4px', border: `1px solid ${bd}`, borderRadius: 5, fontSize: 12.5, textAlign: 'center', fontFamily: FONT, boxSizing: 'border-box', background: '#fff' }} /> : <span style={{ color: '#DDD', fontSize: 10 }}>·</span>}
+                            </Td>
+                          );
+                        };
                         const stickyLeft = { position: 'sticky', left: 0, zIndex: 2, background: T.surface, boxShadow: '2px 0 4px rgba(0,0,0,0.04)' };
                         const stickyTop = { position: 'sticky', top: 0, zIndex: 3, background: T.brand, color: '#fff' };
                         const stickyCorner = { position: 'sticky', left: 0, top: 0, zIndex: 4, background: T.brand, color: '#fff', boxShadow: '2px 0 4px rgba(0,0,0,0.08)' };
                         // 계획 합계 계산 헬퍼
                         const sumOf = (obj, st, en) => { let s = 0; for (let k = st; k <= en; k++) { const mk = months[k] ? months[k].key : null; if (mk && obj[mk] != null && obj[mk] !== '') s += Number(obj[mk]); } return s; };
                         return (
-                          <table style={{ borderCollapse: 'collapse', fontSize: 11, minWidth: 900 }}>
+                          <table style={{ borderCollapse: 'collapse', fontSize: 11.5, minWidth: 1180 }}>
                             <thead>
                               <tr>
-                                <Th style={{ ...stickyCorner, minWidth: 190, textAlign: 'left', padding: '8px 10px' }}>사업</Th>
-                                <Th style={{ ...stickyTop, fontSize: 10, minWidth: 42 }}>구분</Th>
-                                <Th style={{ ...stickyTop, fontSize: 10, minWidth: 44 }}>합계</Th>
-                                {months.map(mo => <Th key={mo.key} align="center" style={{ ...stickyTop, padding: '6px 3px', fontSize: 10, minWidth: 46 }}>{String(mo.y).slice(2)}.{String(mo.m).padStart(2, '0')}</Th>)}
+                                <Th style={{ ...stickyCorner, minWidth: 260, textAlign: 'left', padding: '8px 12px' }}>사업</Th>
+                                <Th style={{ ...stickyTop, fontSize: 10.5, minWidth: 52 }}>구분</Th>
+                                <Th style={{ ...stickyTop, fontSize: 10.5, minWidth: 66 }}>합계</Th>
+                                {months.map(mo => <Th key={mo.key} align="center" style={{ ...stickyTop, padding: '7px 4px', fontSize: 10.5, minWidth: 60 }}>{String(mo.y).slice(2)}.{String(mo.m).padStart(2, '0')}</Th>)}
                               </tr>
                             </thead>
                             <tbody>
@@ -10993,12 +11395,14 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                                 const pr = parsePeriod(p.period); const st = idxOf(pr.sy, pr.sm), en = idxOf(pr.ey, pr.em);
                                 const pg = (cfg.progress && cfg.progress[p.id]) || {};
                                 const pa = (cfg.progressActual && cfg.progressActual[p.id]) || {};
+                                const hc = (cfg.headcount && cfg.headcount[p.id]) || {};
                                 const planSum = sumOf(pg, st, en), actSum = sumOf(pa, st, en);
+                                const headMax = (() => { let mx = 0; for (let k = st; k <= en; k++) { const mk = months[k] ? months[k].key : null; if (mk && hc[mk] != null && hc[mk] !== '') mx = Math.max(mx, Number(hc[mk])); } return mx; })();
                                 const rowBg = ri % 2 ? '#fff' : '#FBFAF7';
                                 return (
                                   <React.Fragment key={p.id}>
                                     <tr style={{ borderTop: `2px solid ${T.border}` }}>
-                                      <Td rowSpan={2} style={{ ...stickyLeft, fontSize: 11, verticalAlign: 'middle', padding: '6px 10px', background: rowBg, maxWidth: 190, lineHeight: 1.4 }}>
+                                      <Td rowSpan={3} style={{ ...stickyLeft, fontSize: 11.5, verticalAlign: 'middle', padding: '8px 12px', background: rowBg, minWidth: 260, maxWidth: 300, lineHeight: 1.45 }}>
                                         <div style={{ fontWeight: 700, color: T.brand, fontSize: 10.5 }}>{p.id}</div>
                                         <div style={{ color: T.ink, whiteSpace: 'normal', wordBreak: 'keep-all' }}>{p.name}</div>
                                         <div style={{ fontSize: 9.5, color: T.textMute, marginTop: 2 }}>{p.period}</div>
@@ -11007,10 +11411,15 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                                       <Td align="center" style={{ fontSize: 10.5, fontWeight: 700, color: planSum === 100 ? T.success : planSum > 0 ? T.warning : T.textLight, background: rowBg }}>{planSum > 0 ? planSum + '%' : '-'}</Td>
                                       {months.map((mo, k) => cell(pg[mo.key], e => setPlan(p.id, mo.key, e.target.value), k >= st && k <= en, 'plan'))}
                                     </tr>
-                                    <tr style={{ borderBottom: `1px solid ${T.divider}` }}>
+                                    <tr>
                                       <Td style={{ fontSize: 10, color: '#D97706', fontWeight: 800, background: rowBg }}>실제</Td>
                                       <Td align="center" style={{ fontSize: 10.5, fontWeight: 700, color: actSum > 0 ? '#D97706' : T.textLight, background: rowBg }}>{actSum > 0 ? actSum + '%' : '-'}</Td>
                                       {months.map((mo, k) => cell(pa[mo.key], e => setAct(p.id, mo.key, e.target.value), k >= st && k <= en, 'act'))}
+                                    </tr>
+                                    <tr style={{ borderBottom: `1px solid ${T.divider}` }}>
+                                      <Td style={{ fontSize: 10, color: T.ink, fontWeight: 800, background: rowBg }}>작업자</Td>
+                                      <Td align="center" style={{ fontSize: 10.5, fontWeight: 700, color: headMax > 0 ? T.ink : T.textLight, background: rowBg }}>{headMax > 0 ? '최대 ' + headMax + '명' : '-'}</Td>
+                                      {months.map((mo, k) => cell(hc[mo.key], e => setHead(p.id, mo.key, e.target.value), k >= st && k <= en, 'head'))}
                                     </tr>
                                   </React.Fragment>
                                 );
@@ -11020,7 +11429,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                         );
                       })()}
                     </div>
-                    <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6 }}>💡 계획 합계가 <strong style={{ color: T.success }}>100%</strong>가 되면 초록색으로 표시됩니다. 표를 좌우로 스크롤해도 사업명과 월 헤더는 고정됩니다.</div>
+                    <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6 }}>💡 계획 합계가 <strong style={{ color: T.success }}>100%</strong>가 되면 초록색으로 표시됩니다. 표를 좌우로 스크롤해도 사업명·구분·합계 열과 월 헤더는 고정됩니다. 표는 화면 폭에 맞춰 넓어집니다.</div>
                     {/* 계획 vs 실제 누적 진척 비교 그래프 (전체 사업 가중평균) */}
                     {(() => {
                       const actProjs = (projects || []).filter(p => { const pr = parsePeriod(p.period); return !!pr; });
