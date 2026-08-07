@@ -5,6 +5,12 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v183 → v184] 진척율 표 레이아웃 수정
+// 24) [버그] v181에서 넣은 음수 마진(full-bleed)이 표를 화면 왼쪽 밖으로 밀어내 사업명 열이 잘렸다.
+//     .report-wrap 이 가운데 정렬이 아니라 왼쪽 정렬이어서, 중앙 정렬을 전제한 shift 계산이 틀렸다.
+//     → 음수 마진 제거(표 폭은 부모 기준 100%). 대신 .report-wrap 자체를 가운데 정렬하고
+//        1700px 이상 화면에서 max-width 1400 → 1640 으로 넓혔다. 화면 밖으로 나가지 않는다.
+//
 // [v182 → v183] 월말 실제 잔고 자동 기록
 // 23) 입출금 계좌조회 파일에서 '일자 + 원화잔액' 을 읽어 각 달의 마지막 거래 잔액을
 //     fin.actualBalances['YYYY-MM'] 에 자동 기록. 은행 조회를 2026/01/01~오늘로 잡으면
@@ -10415,10 +10421,14 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   return (
     <div className="report-wrap" style={{ maxWidth: 1120 }}>
       <style>{`
+        .report-wrap { margin-left: auto; margin-right: auto; }
         @media screen and (min-width: 768px) {
           .report-wrap { max-width: 1400px !important; }
         }
-        @media print { .report-wrap { max-width: 1120px !important; } }
+        @media screen and (min-width: 1700px) {
+          .report-wrap { max-width: 1640px !important; }
+        }
+        @media print { .report-wrap { max-width: 1120px !important; margin-left: 0; } }
       `}</style>
       <div style={{ ...card(), padding: S[6], marginBottom: S[5], background: `linear-gradient(135deg, ${T.brandDark}, ${T.brand})`, color: '#fff', border: 'none' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: S[3] }}>
@@ -11345,14 +11355,12 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                       각 사업의 진행 기간(색칠된 칸)에 <strong>월별 진행 비중(%)</strong>을 넣습니다. 한 사업의 <strong style={{ color: '#B8892B' }}>계획</strong> 줄 합계가 100%가 되도록 배분하세요 (예: 6개월이면 <code>15·20·20·20·15·10</code>). 인건비가 그 비중대로 배분됩니다. <strong style={{ color: '#D97706' }}>실제</strong> 줄엔 그달까지 실제 진행된 누적/월 비중을 넣으면 아래 그래프에서 계획과 비교됩니다. 비워두면 균등 배분됩니다.<br />
                       <strong style={{ color: T.ink }}>작업자</strong> 줄에 그 달에 투입할 <strong>계약직 인원(명)</strong>을 넣으면, 진척율 배분보다 <strong>우선해서</strong> 그 달 인건비를 <code>인원 × 계약직 평균월급</code>으로 계산합니다. 인원 계획이 확정된 달은 이쪽이 훨씬 정확합니다. 0.5처럼 소수도 됩니다.
                     </div>
-                    {/* 표만 상위 maxWidth(1120) 밖으로 넓힘. 화면이 좁으면 shift가 0이 되어 원래 폭으로 돌아온다. */}
+                    {/* 폭은 부모(.report-wrap) 기준 100%. 음수 마진으로 화면 밖까지 늘리지 않는다 —
+                        .report-wrap 은 가운데 정렬이 아니라 왼쪽 정렬이라 좌측으로 밀려 사업명 열이 잘린다. */}
                     <div style={{
                       overflowX: 'auto', overflowY: 'auto', maxHeight: 560,
                       border: `1px solid ${T.border}`, borderRadius: 8,
-                      // 폭과 좌측 이동량을 같은 상한(1800px)으로 묶는다. 안 묶으면 초광폭 화면에서 우측이 넘친다.
-                      width: 'max(100%, min(calc(100vw - 72px), 1800px))',
-                      marginLeft: 'calc(-1 * max(0px, (min(100vw - 72px, 1800px) - 100%) / 2))',
-                      overscrollBehaviorX: 'contain',
+                      width: '100%', overscrollBehaviorX: 'contain',
                     }}>
                       {(() => {
                         const mkSetter = (field) => (pid, mk, val) => setCashCfg && setCashCfg(prev => {
