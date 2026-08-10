@@ -5,6 +5,13 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v186 → v187] 급여일 4대보험 누락 수정
+// 29) [중대] 급여일 필요액에 4대보험이 빠져 있었다. 실측: 2026/08/10 주계좌에서 '2607사회보험'
+//     49,212,060원이 급여와 함께 인출됨. 급여 243,629,160 대비 20.2%.
+//     → payrollAt() = 인건비 + 4대보험. cfg.socialInsFixed(고정액) 우선, 없으면 cfg.socialInsRate(%),
+//        둘 다 없으면 기본 20.2%. 표에 급여·4대보험·필요액 계를 분리 표시.
+//     이 수정 전에는 필요액이 20% 과소평가돼 '지급 가능'으로 보이던 달이 실제로는 부족했다.
+//
 // [v185 → v186] 전사 공통비율 경고
 // 28) policy.diag 에 ohRevWarn(20%) · ohRevAlert(28%) 추가 — 전사 공통비 풀 / 매출 기준.
 //     공통비율 MetricCard 에 기준 대비 색상·부제를 붙이고, 주의 이상이면 경고 카드를 띄운다.
@@ -10823,7 +10830,17 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         //   급여는 매월 10일 지급 = 그 달 지출 중 미룰 수 없는 항목. 따라서 판단 기준은
         //   '이번 달을 마친 잔고(bal)가 다음 달 급여액을 덮는가' 이다.
         //   payroll[i] = i월 인건비 지출(정규직+계약직, 사업 투입분 포함)
-        const payrollAt = (i) => Math.round(rows[i] ? (Number(rows[i].expLabor) || 0) : 0);
+        // ★ 급여일(10일)에는 급여와 함께 전월분 4대보험이 함께 인출된다. (실측: 2026/08/10 '2607사회보험' 49,212,060)
+        //    이걸 빼면 필요액이 20% 넘게 과소평가된다.
+        const insRate = Number(cfg.socialInsRate);
+        const insFixed = Number(cfg.socialInsFixed);
+        const socialInsAt = (i) => {
+          const lab = rows[i] ? (Number(rows[i].expLabor) || 0) : 0;
+          if (insFixed > 0) return Math.round(insFixed);
+          const r = insRate > 0 ? insRate : 20.2;   // 기본 20.2% (2026.08 실측 49,212,060 / 급여 243,629,160)
+          return Math.round(lab * r / 100);
+        };
+        const payrollAt = (i) => Math.round((rows[i] ? (Number(rows[i].expLabor) || 0) : 0) + socialInsAt(i));
         const payrollCheck = (() => {
           const list = [];
           // 급여는 매월 10일 지급. {m}월 10일 급여의 재원은 '{m-1}월 말 잔고' 이므로 (i, i+1) 짝을 쓴다.
@@ -10833,7 +10850,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             if (need <= 0) continue;
             const room = r.bal - need;
             list.push({ i, month: rows[i + 1], payFull: rows[i + 1].payFull, fundedBy: rows[i].payFull,
-                        bal: r.bal, need, room, ok: room >= 0, confirmed: r.confirmed });
+                        bal: r.bal, need, salary: Math.round(Number(rows[i + 1].expLabor) || 0), ins: socialInsAt(i + 1),
+                        room, ok: room >= 0, confirmed: r.confirmed });
           }
           const firstShort = list.find(x => !x.ok);
           const lastSafe = (() => { let last = null; for (const x of list) { if (!x.ok) break; last = x; } return last; })();
@@ -10924,7 +10942,9 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                       <thead><tr style={{ background: 'rgba(0,0,0,0.03)' }}>
                         <Th style={{ fontSize: 10 }}>급여일</Th>
                         <Th align="right" style={{ fontSize: 10 }}>지급 전 잔고</Th>
-                        <Th align="right" style={{ fontSize: 10 }}>급여 필요액</Th>
+                        <Th align="right" style={{ fontSize: 10 }}>급여</Th>
+                        <Th align="right" style={{ fontSize: 10 }}>4대보험</Th>
+                        <Th align="right" style={{ fontSize: 10 }}>필요액 계</Th>
                         <Th align="right" style={{ fontSize: 10 }}>지급 후 여유</Th>
                       </tr></thead>
                       <tbody>
@@ -10932,7 +10952,9 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                           <tr key={x.i} style={{ borderTop: `1px solid ${T.divider}` }}>
                             <Td style={{ fontSize: 11 }}>{x.payFull}{x.confirmed ? <span style={{ color: T.textMute, fontSize: 9.5 }}> (확정잔고 기준)</span> : null}</Td>
                             <Td align="right" mono>{fmtMoney(x.bal)}</Td>
-                            <Td align="right" mono>{fmtMoney(x.need)}</Td>
+                            <Td align="right" mono>{fmtMoney(x.salary)}</Td>
+                            <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(x.ins)}</Td>
+                            <Td align="right" mono><strong>{fmtMoney(x.need)}</strong></Td>
                             <Td align="right" mono style={{ color: x.ok ? T.success : T.danger, fontWeight: 700 }}>{x.ok ? '' : '▲ '}{fmtMoney(x.room)}</Td>
                           </tr>
                         ))}
@@ -10940,7 +10962,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                     </table>
                   </div>
                   <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6, lineHeight: 1.7 }}>
-                    급여 필요액 = 그 급여일에 나갈 인건비(정규직 + 계약직·사업소득, 사업 투입분 포함). 재원은 직전 달 말 잔고.
+                    급여 필요액 = 인건비(정규직 + 계약직·사업소득) + 전월분 4대보험. 재원은 직전 달 말 잔고. 4대보험은 급여의 {insRate > 0 ? insRate : 20.2}%로 추정하며, 「설정 입력」의 socialInsRate·socialInsFixed로 조정합니다.
                     수금 예정·고정비 가정이 바뀌면 이 표도 함께 바뀝니다.
                   </div>
                 </div>
