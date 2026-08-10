@@ -5,6 +5,22 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v195 → v196] 접이식 마감
+// 41) summary 안의 급여 요약 카드는 접힘/펼침 양쪽에서 렌더되는 것을 SSR로 확인.
+//     cashCfg.fcOpen === true 일 때만 open 속성이 붙는다.
+//
+// [v194 → v195] 자금흐름 예측 시나리오를 접이식으로
+// 40) 섹션 전체(약 1,300줄 분량의 대시보드)를 접이식으로 감쌌다. 기본은 접힘,
+//     cashCfg.fcOpen === true 면 펼친 상태로 시작.
+//     ★ 접혀 있어도 "다음 급여일에 급여를 줄 수 있나"는 헤더에 항상 노출한다(fcSummary).
+//       실측 잔고·실측 인출액 우선, 최근 3개월 평균 순증으로 6개월 롤링. 본문 산식과 동일 기준.
+//
+// [v193 → v194] 급여일 판정을 '앞으로 올 급여일'로 한정
+// 39) [버그] 예측 창이 1월부터 시작하므로 payrollCheck.list[0] 이 지나간 2026년 1월이었다.
+//     초록 박스가 '2026년 1월 10일 지급 여력'을 보여줬고, runway·firstShort 도 과거를 포함해
+//     의미가 없었다. → 확정월(confirmed)을 제외한 upcoming 기준으로 판정.
+//     과거 실적은 별도로 '지난 N회 중 M회 지급 가능'으로 요약 표시.
+//
 // [v192 → v193] 12개월 추이 단절 · 지급여력 박스 불일치 수정
 // 37) [버그] 확정월(실제 잔고 보유)의 값은 '10일 인출 직전' 잔고인데, 이 값을 그대로 다음 달로
 //     이월해 이미 나간 급여가 남아 있는 것처럼 계산했다. 실측 2026/08: 인출 직전 315,600,698 을
@@ -10215,6 +10231,65 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   const cutM = (() => { const m = String((fin || {}).period || '').match(/-(\d{2})/); return m ? Number(m[1]) : null; })();
   const basisLabel = cutM ? `${currentYear || new Date().getFullYear()}년 1~${cutM}월 누계 기준` : '연초~최근 마감월 누계 기준';
   const canEditLedger = !!setEmpLedger && user.role === 'admin';
+
+  // ── 접힌 상태에서도 보여줄 급여 지급 판정 요약 ──
+  //   본문(자금흐름 예측)은 접히지만, "다음 급여일에 급여를 줄 수 있나"는 항상 보여야 한다.
+  //   본문 계산과 중복을 피하려 필요한 값만 가볍게 재산출한다(실측 우선, 예측은 단순 롤링).
+  const fcSummary = React.useMemo(() => {
+    try {
+      const cfg = cashCfg || {}, f = fin || {};
+      const A = f.actualBalances || {};
+      const drawn = cfg.payrollDrawn || {};
+      const payAct = cfg.payrollActual || {};
+      const base = Number(cfg.payrollBase) || 0;
+      const keys = Object.keys(A).filter(k => A[k] != null && A[k] !== '').sort();
+      if (!keys.length) return null;
+      const lastKey = keys[keys.length - 1];
+      const need = (k) => {
+        const v = payAct[k];
+        if (v != null && v !== '' && Number(v) > 0) return Math.round(Number(v));
+        if (base > 0) return Math.round(base);
+        return Math.round((Number(f.salaryReg) || 0) + (Number(f.salaryCon) || 0));
+      };
+      // 확정 마지막 달의 '급여일 인출 후' 잔고에서 출발
+      let carry = Number(A[lastKey]) - (drawn[lastKey] != null && drawn[lastKey] !== '' ? Number(drawn[lastKey]) : need(lastKey));
+      const [ly, lm] = lastKey.split('-').map(Number);
+      // 월 순증 추정: 최근 확정 3개월의 (인출후 → 다음달 인출직전) 평균
+      const deltas = [];
+      for (let i = 1; i < keys.length; i++) {
+        const pk = keys[i - 1], ck = keys[i];
+        const pd = drawn[pk] != null && drawn[pk] !== '' ? Number(drawn[pk]) : need(pk);
+        deltas.push(Number(A[ck]) - (Number(A[pk]) - pd));
+      }
+      const recent = deltas.slice(-3);
+      const growth = recent.length ? Math.round(recent.reduce((a, b) => a + b, 0) / recent.length) : 0;
+      const up = [];
+      for (let i = 1; i <= 6; i++) {
+        const d = new Date(ly, lm - 1 + i, 1);
+        const k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+        const bal = carry + growth;
+        const nd = need(k);
+        up.push({ key: k, label: `${d.getFullYear()}년 ${d.getMonth() + 1}월 10일`, bal, need: nd, room: bal - nd, ok: bal - nd >= 0 });
+        carry = bal - nd;
+      }
+      const fs = up.find(x => !x.ok);
+      let runway = 0; for (const x of up) { if (!x.ok) break; runway++; }
+      const past = keys.map(k => {
+        const nd = need(k);
+        return { key: k, ok: Number(A[k]) - nd >= 0 };
+      });
+      const pastOk = past.filter(x => x.ok).length;
+      const tone = !fs ? T.success : (runway <= 1 ? T.danger : T.warning);
+      const nx = up[0];
+      const headline = fs
+        ? `${fs.label} 급여일 ${fmtMoney(Math.abs(fs.room))}원 부족 예상`
+        : `앞으로 ${runway}회 급여일 모두 지급 가능`;
+      const detail = `다음 급여일 ${nx.label} — 인출 직전 예상 잔고 ${fmtMoney(nx.bal)}원, 필요액 ${fmtMoney(nx.need)}원 (여유 ${fmtMoney(nx.room)}원). `
+        + `기준 잔고 ${lastKey} ${fmtMoney(Number(A[lastKey]))}원(10일 인출 직전) · 최근 3개월 평균 순증 ${fmtMoney(growth)}원 적용. `
+        + `지난 실적 ${past.length}회 중 ${pastOk}회 지급 가능.`;
+      return { headline, detail, tone, ok: !fs, runway, next: nx };
+    } catch (e) { return null; }
+  }, [cashCfg, fin]);
   const [ledgerForm, setLedgerForm] = React.useState(null); // {name, empId, card, newOrder}
   const removeLedger = (row) => {
     if (!window.confirm(`[${row.name}] 항목을 직원별 원장에서 삭제할까요?\n(사업 참여 데이터는 유지되며, 신규수주·카드 기록만 제거됩니다)`)) return;
@@ -10550,8 +10625,26 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         </div>
       </div>
 
-      {/* ★ 핵심: 자금흐름 예측 시나리오 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: `0 0 ${S[4]}px` }}><span style={{ padding: '4px 12px', borderRadius: 8, background: T.brand, color: '#fff', fontSize: 13, fontWeight: 800 }}>핵심</span><h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>자금흐름 예측 시나리오 (2026.01 ~ 2027.04)</h2></div>
+      {/* ★ 핵심: 자금흐름 예측 시나리오 — 접이식. 접혀 있어도 급여 판정은 헤더에 노출된다. */}
+      <details className="no-print" open={cashCfg && cashCfg.fcOpen === true} style={{ marginBottom: S[5] }}>
+        <summary style={{ listStyle: 'none', cursor: 'pointer', padding: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: S[2] }}>
+            <span style={{ padding: '4px 12px', borderRadius: 8, background: T.brand, color: '#fff', fontSize: 13, fontWeight: 800 }}>핵심</span>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>자금흐름 예측 시나리오 (2026.01 ~ 2027.04)</h2>
+            <span style={{ fontSize: 12, color: T.textMute, fontWeight: 600 }}>▼ 펼치기</span>
+          </div>
+          {fcSummary && (
+            <div style={{
+              background: fcSummary.ok ? 'rgba(27,122,67,0.07)' : (fcSummary.runway <= 1 ? '#FDECEC' : '#FFF4E5'),
+              border: `2px solid ${fcSummary.tone}`, borderRadius: 10, padding: `${S[3]}px ${S[4]}px`, marginBottom: S[2],
+            }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: fcSummary.tone, lineHeight: 1.45 }}>
+                {fcSummary.headline}
+              </div>
+              <div style={{ fontSize: 11.5, color: T.text, marginTop: 4, lineHeight: 1.75 }}>{fcSummary.detail}</div>
+            </div>
+          )}
+        </summary>
       {(() => {
         const cfg = cashCfg || {};
         const up = (k, v) => setCashCfg && setCashCfg(prev => ({ ...prev, [k]: Number(v) || 0 }));
@@ -10938,11 +11031,16 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                         bal: r.bal, need, salary: Math.round(Number(r.expLabor) || 0), ins: socialInsAt(i),
                         src: payrollSrc(i), room, ok: room >= 0, confirmed: r.confirmed });
           }
-          const firstShort = list.find(x => !x.ok);
-          const lastSafe = (() => { let last = null; for (const x of list) { if (!x.ok) break; last = x; } return last; })();
-          // 여유 개월 수: 지금부터 몇 번의 급여를 무리 없이 지급할 수 있는가
-          let runway = 0; for (const x of list) { if (!x.ok) break; runway++; }
-          return { list, firstShort, lastSafe, runway };
+          // ★ 판정은 '앞으로 다가올 급여일'만 대상으로 한다.
+          //   예측 창이 1월부터 시작하므로 list[0] 은 지나간 1월이고, 그걸 '다음 급여일'로 쓰면 안 된다.
+          const upcoming = list.filter(x => !x.confirmed);
+          const past = list.filter(x => x.confirmed);
+          const firstShort = upcoming.find(x => !x.ok);
+          const lastSafe = (() => { let last = null; for (const x of upcoming) { if (!x.ok) break; last = x; } return last; })();
+          // 여유 회수: 지금부터 몇 번의 급여를 무리 없이 지급할 수 있는가
+          let runway = 0; for (const x of upcoming) { if (!x.ok) break; runway++; }
+          const pastOk = past.filter(x => x.ok).length;
+          return { list, upcoming, past, pastOk, next: upcoming[0] || null, firstShort, lastSafe, runway };
         })();
         // ══ 경영자용 ④: 예측 vs 실적 오차 추적 ══
         //   [버그 수정] 기존 자동보정은 확정월의 bal 을 실제값으로 치환한 뒤 (실제 − bal) 을 재던 탓에
@@ -11010,7 +11108,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         return (
           <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[5], marginTop: S[3] }}>
             {/* ══ 경영자용 ①: 급여 지급 가능 여부 — 이 화면에서 가장 먼저 봐야 하는 한 줄 ══ */}
-            {payrollCheck.list.length > 0 && (() => {
+            {payrollCheck.upcoming.length > 0 && (() => {
               const pc = payrollCheck, fs = pc.firstShort;
               const tone = !fs ? T.success : (pc.runway <= 1 ? T.danger : T.warning);
               const bg = !fs ? 'rgba(27,122,67,0.07)' : (pc.runway <= 1 ? '#FDECEC' : '#FFF4E5');
@@ -11020,14 +11118,14 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                   <div style={{ fontSize: 11, fontWeight: 700, color: T.textMute, letterSpacing: 0.4, marginBottom: 6 }}>급여 지급 가능 여부 · 매월 10일 지급 기준</div>
                   <div style={{ fontSize: 19, fontWeight: 800, color: tone, lineHeight: 1.35 }}>
                     {!fs
-                      ? `예측 기간 내 모든 급여일(매월 10일) 지급 가능 — ${pc.runway}회분 확보`
+                      ? `앞으로 ${pc.runway}회 급여일 모두 지급 가능`
                       : <>{mlabel(fs.month)} <span style={{ color: T.danger }}>{fmtMoney(Math.abs(fs.room))}원 부족</span> 예상</>}
                   </div>
                   <div style={{ fontSize: 12, color: T.text, marginTop: 6, lineHeight: 1.8 }}>
                     {fs
                       ? <>{pc.lastSafe ? <>{mlabel(pc.lastSafe.month)}까지는 지급 가능합니다. </> : <>당장 다음 급여일부터 빠듯합니다. </>}
                           {fs.payFull} 급여 <strong>{fmtMoney(fs.need)}원</strong>에 대해 그 날 인출 직전 예상 잔고는 <strong>{fmtMoney(fs.bal)}원</strong>입니다.</>
-                      : <>가장 빠듯한 달은 {(() => { const w = pc.list.reduce((a, x) => x.room < a.room ? x : a, pc.list[0]); return <>{mlabel(w.month)} — 급여 {fmtMoney(w.need)}원 지급 후 <strong>{fmtMoney(w.room)}원</strong> 남음</>; })()}</>}
+                      : <>가장 빠듯한 급여일은 {(() => { const w = pc.upcoming.reduce((a, x) => x.room < a.room ? x : a, pc.upcoming[0]); return <>{mlabel(w.month)} — 필요액 {fmtMoney(w.need)}원 지급 후 <strong>{fmtMoney(w.room)}원</strong> 남음</>; })()}</>}
                   </div>
                   <div style={{ overflowX: 'auto', marginTop: S[3] }}>
                     <table style={{ borderCollapse: 'collapse', fontSize: 11.5, minWidth: 460 }}>
@@ -11039,7 +11137,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                         <Th align="right" style={{ fontSize: 10 }}>지급 후 여유</Th>
                       </tr></thead>
                       <tbody>
-                        {pc.list.slice(0, 6).map(x => (
+                        {pc.upcoming.slice(0, 6).map(x => (
                           <tr key={x.i} style={{ borderTop: `1px solid ${T.divider}` }}>
                             <Td style={{ fontSize: 11 }}>{x.payFull}{x.confirmed ? <span style={{ color: T.textMute, fontSize: 9.5 }}> (확정잔고 기준)</span> : null}</Td>
                             <Td align="right" mono>{fmtMoney(x.bal)}</Td>
@@ -11051,6 +11149,13 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                       </tbody>
                     </table>
                   </div>
+                  {pc.past.length > 0 && (
+                    <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2], paddingTop: S[2], borderTop: `1px solid ${T.divider}` }}>
+                      지난 실적: {pc.past.length}회 급여일 중 <strong style={{ color: pc.pastOk === pc.past.length ? T.success : T.danger }}>{pc.pastOk}회 지급 가능</strong>
+                      {pc.pastOk === pc.past.length ? ' — 부족한 적 없음' : ` — ${pc.past.length - pc.pastOk}회 부족`}
+                      {' '}(실제 인출액 기준)
+                    </div>
+                  )}
                   <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6, lineHeight: 1.7 }}>
                     잔고는 <strong>그 달 10일 급여 인출 직전</strong>(전날 마감) 기준입니다. 필요액은 <strong>실제 인출 이력</strong>이 있으면 그 값을, 없으면 최근 실측 평균을 씁니다 — 모델 추정은 실측보다 22.6% 과대했습니다. 회사부담률 기본 {insRate > 0 ? insRate : 9.56}% (2026.07 실측 24,351,330 / 254,851,770) — 「설정 입력」의 socialInsCorpRate로 조정합니다.
                     수금 예정·고정비 가정이 바뀌면 이 표도 함께 바뀝니다.
@@ -11441,8 +11546,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             </details>
             {/* 다음 급여일 지급 여력 — 상단 「급여 지급 가능 여부」 패널과 같은 산식(실측 우선)을 쓴다.
                 예전엔 '잔고 − 월 인건비' 였고 4대보험이 빠져 여력을 과대평가했다. */}
-            {startBal > 0 && payrollCheck.list.length > 0 && (() => {
-              const nx = payrollCheck.list[0];
+            {startBal > 0 && payrollCheck.next && (() => {
+              const nx = payrollCheck.next;
               const gap = nx.room, ok = nx.ok;
               return (
                 <div style={{ background: ok ? 'rgba(27,122,67,0.06)' : 'rgba(180,35,24,0.07)', border: `1px solid ${ok ? T.success : T.danger}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12.5, lineHeight: 1.8 }}>
@@ -11835,7 +11940,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           </div>
         );
       })()}
-
+      </details>
 
       <details className="no-print" style={{ marginTop: S[6] }}>
         <summary style={{ fontSize: 15, fontWeight: 800, color: T.ink, cursor: 'pointer', padding: `${S[3]}px 0`, borderTop: `2px solid ${T.border}` }}>📊 상세 경영분석 펼치기 <span style={{ fontSize: 12, fontWeight: 600, color: T.textMute }}>(경영요약·매출·조직손익·인건비·생산성·순기여·원가·수익성·위험·제언)</span></summary>
