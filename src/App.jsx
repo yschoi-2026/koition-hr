@@ -5,6 +5,24 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v191 → v192] 급여 필요액을 실측 기준으로
+// 36) cfg.payrollActual[YYYY-MM] (급여일 실제 인출액) 을 최우선 사용. 없으면 cfg.payrollBase
+//     (최근 3개월 실측 평균), 둘 다 없으면 기존 모델 추정.
+//     실측 8개월: 1월 140,932,640 → 8월 214,258,244 (임직원급여+작업자급여+4대보험, 전 계좌).
+//     모델 추정 262,727,005 는 실측 214,258,244 대비 22.6% 과대 — 표에 '근거' 열로 실측/추정 구분 표시.
+//
+// [v190 → v191] 급여일 '당일' 거래 제외
+// 35) [v190 오류] 10일 당일 거래를 포함해 잔고를 잡으면 급여가 인출된 뒤 잔액이 기준이 되어
+//     판정이 무의미해진다. 실측 2026/08/10: 인출 전 315,600,698 → 인출 후 89,750,714.
+//     → day < 10 (전날까지 마감 잔고)로 수정.
+//
+// [v189 → v190] 잔고 기준을 월말 → 급여일(10일)로 전환
+// 33) actualBalances 의 의미를 '그 달 10일 급여 인출 직전 잔고'로 재정의.
+//     입출금 자동추출도 10일 이전 가장 늦은 거래 잔액을 쓰도록 변경(10일 이후 거래는 제외).
+// 34) 급여 판정을 같은 달 짝짓기로 단순화. 기존엔 '{m}월 급여 ← {m-1}월 말 잔고' 였으나
+//     기준이 10일 잔고가 되면서 '9월 10일 잔고로 9월 10일 급여' 로 질문과 계산이 1:1 일치.
+//     화면 문구도 '지급 전 잔고' → '그 날 인출 직전 잔고' 로 정정.
+//
 // [v188 → v189] 4대보험 이중계상 수정 · 급여 실측 반영
 // 31) [v187 오류] 4대보험 전액(49,212,060)을 지급총액에 더해 직원 공제분 24,860,730 을 두 번 셌다.
 //     납부액 = 직원공제 24,860,730 + 회사부담 24,351,330 이고 직원공제는 이미 지급총액 안에 있다.
@@ -2786,23 +2804,29 @@ async function parseFinanceExcel(arrayBuffer, fileName) {
     }
     if (!bal) { for (const r of rows) { if (!r) continue; const vals = r.map(num).filter(v => v > 100000 && v < 100000000000); if (vals.length) { bal = vals[vals.length - 1]; break; } } }
     if (bal) patch.bankBalance = bal;
-    // ★ 월말 실제 잔고 자동 추출 — 예측 정확도(④) 측정을 위해 월별 이력을 만든다.
-    //   입출금 내역은 '일자 + 원화잔액' 이 한 줄씩 있고 최신순으로 정렬돼 있다.
-    //   각 달에서 가장 늦은 날짜의 첫 행(=그 달 마지막 거래) 잔액을 그 달의 월말 잔고로 본다.
+    // ★ 급여일(10일) 실제 잔고 자동 추출.
+    //   모든 예측의 질문은 "10일에 급여를 줄 수 있나" 이므로, 기준 잔고도 월말이 아니라
+    //   그 달 10일(급여 인출 직전) 잔고여야 한다.
+    //   10일 당일 거래는 제외하고, 그 이전 가장 늦은 날의 마감 잔액을 쓴다.
     if (hi >= 0) {
       const hdr = rows[hi];
       const bc = hdr.findIndex(c => /잔액|원화잔액|잔고/.test(String(c || '')));
       const dc = hdr.findIndex(c => /일자|날짜|거래일/.test(String(c || '')));
       if (bc >= 0 && dc >= 0) {
-        const best = {};   // 'YYYY-MM' -> { day, bal }
+        const PAYDAY = 10;
+        const best = {};   // 'YYYY-MM' -> { day, bal }  (10일 '전날까지' 중 가장 늦은 날 마감 잔고)
         for (let i = hi + 1; i < rows.length; i++) {
           const r = rows[i]; if (!r) continue;
           const dm = String(r[dc] == null ? '' : r[dc]).match(/(20\d{2})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
           if (!dm) continue;
           const v = num(r[bc]); if (!(v > 0)) continue;
-          const key = `${dm[1]}-${String(dm[2]).padStart(2, '0')}`;
           const day = Number(dm[3]);
-          // 같은 달에서 더 늦은 날짜면 갱신. 같은 날짜면 먼저 나온 행(=최신 거래)을 유지.
+          // ★ 급여일 '당일' 거래는 제외한다. 10일에 급여가 인출된 뒤의 잔액을 쓰면
+          //   "급여를 줄 수 있었나"를 사후 결과로 되묻는 셈이 되어 판정이 항상 통과한다.
+          //   실측: 2026/08/10 인출 전 315,600,698 → 인출 후 89,750,714 (차이 225,849,984)
+          if (day >= PAYDAY) continue;
+          const key = `${dm[1]}-${String(dm[2]).padStart(2, '0')}`;
+          // 같은 달에서 10일에 더 가까운(늦은) 날짜로 갱신. 같은 날짜면 먼저 나온 행(=그날 마지막 거래) 유지.
           if (!best[key] || day > best[key].day) best[key] = { day, bal: v };
         }
         const meb = {};
@@ -9722,7 +9746,7 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
   const commitFin = (merged, allNotes, span) => {
     setFin(prev => {
       const n = { ...prev };
-      // ★ 월말 실제 잔고를 actualBalances 에 병합 (예측 정확도 측정용). 기존 수기 입력값은 덮어쓴다 —
+      // ★ 급여일(10일) 실제 잔고를 actualBalances 에 병합. 기존 수기 입력값은 덮어쓴다 —
       //   은행 원장이 사람 기억보다 정확하기 때문.
       if (merged._monthEndBalances) {
         n.actualBalances = { ...((prev || {}).actualBalances || {}), ...merged._monthEndBalances };
@@ -9805,8 +9829,8 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
       before: ((prev.actualBalances || {})[k] != null && (prev.actualBalances || {})[k] !== '') ? Number((prev.actualBalances || {})[k]) : null,
     })) : [];
     if (mebRows.length) {
-      const partial = mebRows.filter(r => r.day && r.day < 25);
-      if (partial.length) warns.push(`월말 잔고 중 ${partial.map(r => r.key).join(', ')} 는 그 달 ${partial.map(r => r.day + '일').join('/')} 기준입니다 — 월말이 아니라 조회 기간이 거기서 끊긴 것입니다.`);
+      const partial = mebRows.filter(r => r.day && r.day < 7);
+      if (partial.length) warns.push(`급여일 잔고 중 ${partial.map(r => `${r.key}(${r.day}일)`).join(', ')} 는 급여일보다 3일 이상 이른 날짜 기준입니다 — 그 사이 거래가 반영되지 않습니다.`);
     }
     setUploadMsg('');
     setFinPreview({ merged, allNotes, span, rows, warns, mebRows, files: files.map(f => f.name) });
@@ -9893,7 +9917,7 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
               {pv.mebRows && pv.mebRows.length > 0 && (
                 <div style={{ background: 'rgba(27,122,67,0.06)', border: `1px solid ${T.success}`, borderRadius: 8, padding: S[3], marginBottom: S[3] }}>
                   <div style={{ fontSize: 12.5, fontWeight: 700, color: T.success, marginBottom: 6 }}>
-                    월말 실제 잔고 {pv.mebRows.length}개월 자동 기록 — 예측 정확도 측정에 쓰입니다
+                    급여일(10일) 실제 잔고 {pv.mebRows.length}개월 자동 기록 — 예측 기준점이자 정확도 측정에 쓰입니다
                   </div>
                   <table style={{ borderCollapse: 'collapse', fontSize: 11.5 }}>
                     <thead><tr style={{ background: 'rgba(0,0,0,0.03)' }}>
@@ -9912,7 +9936,7 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
                     </tbody>
                   </table>
                   <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6, lineHeight: 1.7 }}>
-                    은행 조회 기간을 <strong>2026/01/01 ~ 오늘</strong>로 잡으면 1월부터 모든 달의 월말 잔고가 한 번에 채워집니다.
+                    은행 조회 기간을 <strong>2026/01/01 ~ 오늘</strong>로 잡으면 1월부터 모든 달의 급여일 잔고가 한 번에 채워집니다.
                   </div>
                 </div>
               )}
@@ -10143,7 +10167,7 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
               const [, m] = lastK.match(/(\d{4})-(\d{2})/) || [];
               return <div style={{ fontSize: 11.5, color: T.textMute }}>최근 실제 잔고 <span style={{ color: T.textLight }}>({Number(m)}월 말)</span>: <strong style={{ color: T.brand }}>{fmtMoney(Number(ab[lastK]))}원</strong> <span style={{ color: T.textLight }}>· 예측 시작점으로 자동 사용</span></div>;
             }
-            return <div style={{ fontSize: 11.5, color: T.warning }}>⚠ 실제 잔고 미입력 — 아래에 월말 잔고를 입력하면 예측 시작점이 됩니다</div>;
+            return <div style={{ fontSize: 11.5, color: T.warning }}>⚠ 실제 잔고 미입력 — 아래에 급여일(10일) 잔고를 입력하면 예측 시작점이 됩니다</div>;
           })()}
         </div>
         <div style={{ fontSize: 11.5, color: T.textMute, margin: `4px 0 ${S[3]}px`, lineHeight: 1.6 }}>
@@ -10859,18 +10883,35 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           const r = insRate > 0 ? insRate : 9.56;
           return Math.round(lab * r / 100);
         };
-        const payrollAt = (i) => Math.round((rows[i] ? (Number(rows[i].expLabor) || 0) : 0) + socialInsAt(i));
+        // ★ 실측 우선: cfg.payrollActual[월] 이 있으면 그 값을, 없으면 cfg.payrollBase(최근 실측 평균),
+        //   둘 다 없으면 모델 추정(인건비+회사부담 4대보험)을 쓴다.
+        //   실측 대비 모델 추정이 22.6% 과대했다(2026.08: 모델 262,727,005 vs 실제 214,258,244).
+        const payActual = cfg.payrollActual || {};
+        const payBase = Number(cfg.payrollBase) || 0;
+        const payrollAt = (i) => {
+          const r = rows[i]; if (!r) return 0;
+          const av = payActual[r.key];
+          if (av != null && av !== '' && Number(av) > 0) return Math.round(Number(av));
+          if (payBase > 0) return Math.round(payBase);
+          return Math.round((Number(r.expLabor) || 0) + socialInsAt(i));
+        };
+        const payrollSrc = (i) => {
+          const r = rows[i]; if (!r) return '추정';
+          const av = payActual[r.key];
+          if (av != null && av !== '' && Number(av) > 0) return '실측';
+          return payBase > 0 ? '실측평균' : '추정';
+        };
         const payrollCheck = (() => {
           const list = [];
-          // 급여는 매월 10일 지급. {m}월 10일 급여의 재원은 '{m-1}월 말 잔고' 이므로 (i, i+1) 짝을 쓴다.
-          // 표기는 '지급일' 기준 — {m}월 10일 급여일.
-          for (let i = 0; i < rows.length - 1; i++) {
-            const r = rows[i], need = payrollAt(i + 1);
+          // ★ 잔고 기준이 '그 달 10일 급여 인출 직전' 이므로 같은 달끼리 비교한다.
+          //   9월 10일 잔고로 9월 10일 급여를 지급할 수 있는가 — 질문과 계산이 1:1로 맞는다.
+          for (let i = 0; i < rows.length; i++) {
+            const r = rows[i], need = payrollAt(i);
             if (need <= 0) continue;
             const room = r.bal - need;
-            list.push({ i, month: rows[i + 1], payFull: rows[i + 1].payFull, fundedBy: rows[i].payFull,
-                        bal: r.bal, need, salary: Math.round(Number(rows[i + 1].expLabor) || 0), ins: socialInsAt(i + 1),
-                        room, ok: room >= 0, confirmed: r.confirmed });
+            list.push({ i, month: r, payFull: r.payFull, fundedBy: r.payFull,
+                        bal: r.bal, need, salary: Math.round(Number(r.expLabor) || 0), ins: socialInsAt(i),
+                        src: payrollSrc(i), room, ok: room >= 0, confirmed: r.confirmed });
           }
           const firstShort = list.find(x => !x.ok);
           const lastSafe = (() => { let last = null; for (const x of list) { if (!x.ok) break; last = x; } return last; })();
@@ -10960,17 +11001,16 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                   <div style={{ fontSize: 12, color: T.text, marginTop: 6, lineHeight: 1.8 }}>
                     {fs
                       ? <>{pc.lastSafe ? <>{mlabel(pc.lastSafe.month)}까지는 지급 가능합니다. </> : <>당장 다음 급여일부터 빠듯합니다. </>}
-                          급여 <strong>{fmtMoney(fs.need)}원</strong>의 재원은 <strong>{fs.fundedBy.replace(' 10일','')} 말 잔고</strong>이고, 그 시점 예상 잔고는 <strong>{fmtMoney(fs.bal)}원</strong>입니다.</>
+                          {fs.payFull} 급여 <strong>{fmtMoney(fs.need)}원</strong>에 대해 그 날 인출 직전 예상 잔고는 <strong>{fmtMoney(fs.bal)}원</strong>입니다.</>
                       : <>가장 빠듯한 달은 {(() => { const w = pc.list.reduce((a, x) => x.room < a.room ? x : a, pc.list[0]); return <>{mlabel(w.month)} — 급여 {fmtMoney(w.need)}원 지급 후 <strong>{fmtMoney(w.room)}원</strong> 남음</>; })()}</>}
                   </div>
                   <div style={{ overflowX: 'auto', marginTop: S[3] }}>
                     <table style={{ borderCollapse: 'collapse', fontSize: 11.5, minWidth: 460 }}>
                       <thead><tr style={{ background: 'rgba(0,0,0,0.03)' }}>
                         <Th style={{ fontSize: 10 }}>급여일</Th>
-                        <Th align="right" style={{ fontSize: 10 }}>지급 전 잔고</Th>
-                        <Th align="right" style={{ fontSize: 10 }}>급여</Th>
-                        <Th align="right" style={{ fontSize: 10 }}>4대보험<br/>(회사부담)</Th>
-                        <Th align="right" style={{ fontSize: 10 }}>필요액 계</Th>
+                        <Th align="right" style={{ fontSize: 10 }}>그 날 인출 직전 잔고</Th>
+                        <Th align="right" style={{ fontSize: 10 }}>필요액</Th>
+                        <Th align="center" style={{ fontSize: 10 }}>근거</Th>
                         <Th align="right" style={{ fontSize: 10 }}>지급 후 여유</Th>
                       </tr></thead>
                       <tbody>
@@ -10978,9 +11018,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                           <tr key={x.i} style={{ borderTop: `1px solid ${T.divider}` }}>
                             <Td style={{ fontSize: 11 }}>{x.payFull}{x.confirmed ? <span style={{ color: T.textMute, fontSize: 9.5 }}> (확정잔고 기준)</span> : null}</Td>
                             <Td align="right" mono>{fmtMoney(x.bal)}</Td>
-                            <Td align="right" mono>{fmtMoney(x.salary)}</Td>
-                            <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(x.ins)}</Td>
                             <Td align="right" mono><strong>{fmtMoney(x.need)}</strong></Td>
+                            <Td align="center" style={{ fontSize: 10, color: x.src === '실측' ? T.success : T.textMute }}>{x.src}</Td>
                             <Td align="right" mono style={{ color: x.ok ? T.success : T.danger, fontWeight: 700 }}>{x.ok ? '' : '▲ '}{fmtMoney(x.room)}</Td>
                           </tr>
                         ))}
@@ -10988,7 +11027,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                     </table>
                   </div>
                   <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6, lineHeight: 1.7 }}>
-                    급여 필요액 = 인건비(지급총액) + 4대보험 회사부담분. 직원 공제분은 이미 지급총액에 포함돼 있어 제외합니다. 회사부담률 기본 {insRate > 0 ? insRate : 9.56}% (2026.07 실측 24,351,330 / 254,851,770) — 「설정 입력」의 socialInsCorpRate로 조정합니다.
+                    잔고는 <strong>그 달 10일 급여 인출 직전</strong>(전날 마감) 기준입니다. 필요액은 <strong>실제 인출 이력</strong>이 있으면 그 값을, 없으면 최근 실측 평균을 씁니다 — 모델 추정은 실측보다 22.6% 과대했습니다. 회사부담률 기본 {insRate > 0 ? insRate : 9.56}% (2026.07 실측 24,351,330 / 254,851,770) — 「설정 입력」의 socialInsCorpRate로 조정합니다.
                     수금 예정·고정비 가정이 바뀌면 이 표도 함께 바뀝니다.
                   </div>
                 </div>
@@ -11004,8 +11043,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                     <div style={{ fontSize: 11, fontWeight: 700, color: T.textMute, letterSpacing: 0.4, marginBottom: 6 }}>예측 정확도</div>
                     <div style={{ fontSize: 13, color: T.ink, fontWeight: 700, marginBottom: 4 }}>아직 측정할 수 없습니다</div>
                     <div style={{ fontSize: 11.5, color: T.textMute, lineHeight: 1.8 }}>
-                      아래 <strong>「월말 실제 통장잔고」</strong>에 연속된 두 달 이상을 입력하면, 그 구간의 예측이 얼마나 맞았는지 자동으로 계산합니다.<br />
-                      은행 입출금 조회를 <strong>각 월 말일 기준</strong>으로 뽑아 1월부터 채우시면 됩니다. 표본이 2개 이상이면 미래 예측에 편향 보정도 자동으로 걸립니다.
+                      아래 <strong>「급여일(10일) 실제 잔고」</strong>에 연속된 두 달 이상을 입력하면, 그 구간의 예측이 얼마나 맞았는지 자동으로 계산합니다.<br />
+                      은행 입출금 조회를 <strong>1/1 ~ 오늘</strong>로 한 번 뽑으면 각 달 10일 잔고가 자동으로 채워집니다. 표본이 2개 이상이면 미래 예측에 편향 보정도 자동으로 걸립니다.
                     </div>
                   </div>
                 );
@@ -11062,7 +11101,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                     </table>
                   </div>
                   <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6, lineHeight: 1.7 }}>
-                    예측 잔고 = 직전 달 <strong>실제</strong> 잔고 + 그 달 예상 수입 − 예상 지출. 누적 오차가 아닌 1개월 앞 오차라, 매달의 예측 실력을 그대로 보여줍니다.
+                    예측 잔고 = 직전 달 10일 <strong>실제</strong> 잔고 + 한 달간 예상 수입 − 예상 지출 (= 다음 달 10일 인출 직전). 누적 오차가 아닌 1개월 앞 오차라, 매달의 예측 실력을 그대로 보여줍니다.
                     이 회사는 월 잔고가 ±3억 널뛰어 절대 오차율만으로는 판단할 수 없습니다. 그래서 「전월 잔고 유지」라는 가장 단순한 예측과 비교합니다 — 30% 이상 나으면 쓸 만하고, 음수면 모델 가정이 현실과 어긋난 것입니다.
                   </div>
                 </div>
