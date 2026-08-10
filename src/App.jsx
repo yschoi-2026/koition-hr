@@ -5,6 +5,12 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v197 → v198] 12개월 차트에서 확정 구간 예측선이 실제선과 벌어지던 문제
+// 44) [버그] 차트가 확정월에도 자동보정 bias 를 더했다. 확정월은 r.bal 이 이미 실제 잔고이므로
+//     같은 값에 상수를 더하는 셈이 되어, 1~8월 예측선 전체가 실제선과 '일정 간격'으로 평행 이동했다.
+//     → bias 는 미래월(!confirmed)에만 적용. 표·모달·요약은 원래 bias 를 쓰지 않아 영향 없었고,
+//        차트만 어긋나 있었다(그래서 표의 숫자와 그래프가 서로 달랐다).
+//
 // [v196 → v197] 수입 내역과 금액 불일치 수정
 // 42) [버그] 수주예정(파이프라인) 선급·잔금 내역을 확정 수입 내역(incNote)에 함께 push 하고 있었다.
 //     그래서 상세 모달에서 '수입 2.03억' 아래에 파이프라인 2.66억 항목까지 나열돼
@@ -11102,10 +11108,13 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           const av = actualBal[mk];
           const d = {
             name: r.payLabel,   // ★ 급여일(10일) 기준 표기
-            예측잔고: Math.round((r.bal + bias) / 1000000),
-            '예측(파이프라인)': Math.round((r.balS + bias) / 1000000),
-            낙관: Math.round((r.balOpt + bias) / 1000000),
-            보수: Math.round((r.balCons + bias) / 1000000),
+            // ★ 자동보정(bias)은 '미래 예측'에만 적용한다.
+            //   확정월은 r.bal 이 이미 실제 잔고라, 여기에 bias 를 더하면 과거 구간 전체가
+            //   실제선과 일정 간격으로 벌어져 버린다(같은 값에 상수를 더하는 셈).
+            예측잔고: Math.round((r.bal + (r.confirmed ? 0 : bias)) / 1000000),
+            '예측(파이프라인)': Math.round((r.balS + (r.confirmed ? 0 : bias)) / 1000000),
+            낙관: Math.round((r.balOpt + (r.confirmed ? 0 : bias)) / 1000000),
+            보수: Math.round((r.balCons + (r.confirmed ? 0 : bias)) / 1000000),
             안전선: Math.round(safety / 1000000),
             순증감: Math.round((r.inc - r.exp) / 1000000),   // 그 달 현금 순증감(수입−지출)
             인건비: Math.round((r.expLabor || 0) / 1000000),           // 실제 반영 인건비
