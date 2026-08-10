@@ -5,6 +5,14 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v196 → v197] 수입 내역과 금액 불일치 수정
+// 42) [버그] 수주예정(파이프라인) 선급·잔금 내역을 확정 수입 내역(incNote)에 함께 push 하고 있었다.
+//     그래서 상세 모달에서 '수입 2.03억' 아래에 파이프라인 2.66억 항목까지 나열돼
+//     제목 금액과 내역 합계가 안 맞았다(내역 합 4.68억).
+//     → pipeNote 배열로 분리. 화면도 '확정 내역'과 '수주예정 내역'을 색으로 나눠 표기하고,
+//        수주예정 줄에 '확정 수입에는 포함되지 않습니다'를 명시.
+// 43) 파이프라인 '잔금'은 금액만 더하고 내역을 아예 남기지 않았다(선급만 기록) → 잔금 내역도 추가.
+//
 // [v195 → v196] 접이식 마감
 // 41) summary 안의 급여 요약 카드는 접힘/펼침 양쪽에서 렌더되는 것을 SSR로 확인.
 //     cashCfg.fcOpen === true 일 때만 open 속성이 붙는다.
@@ -10785,6 +10793,9 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const pipeCfg = cfg.pipeline || {};
         const incS = inc.slice();
         const incPipe = Array(FC_MONTHS).fill(0);   // 수주예정(파이프라인) 선급·잔금 추적 — 시각화용
+        // ★ 수주예정 내역은 확정 수입 내역(incNote)과 섞지 않는다.
+        //   섞으면 '수입 2.03억' 아래에 파이프라인 2.66억까지 나열돼 금액과 내역이 안 맞는다.
+        const pipeNote = Array.from({ length: FC_MONTHS }, () => []);
         (proposals || []).filter(p => p.status !== '수주' && Number(p.budget) > 0).forEach(p => {
           const pc = pipeCfg[p.id] || {};
           if (pc.on === false) return;
@@ -10796,8 +10807,9 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           if (start == null) { const bm = String(p.bidDate || '').match(/(\d{4})[.\-\/](\d{1,2})/); start = bm ? idxOf(+bm[1], +bm[2]) + 1 : 2; }
           if (start < 1) start = 1;
           const advP = ((pc.rate != null && pc.rate !== '') ? Number(pc.rate) : (Number(cfg.advRate) || 0)) / 100;
-          if (start < FC_MONTHS && advP > 0) { const a = expBudget * advP; incS[start] += a; incPipe[start] += a; incNote[start].push(`${p.name} 수주예정 선급 ${fmtEok(a)}(수주율 ${Math.round(winW*100)}%)`); }
-          const end = start + 6; if (end < FC_MONTHS) { const rem = expBudget * (1 - advP); incS[end] += rem; incPipe[end] += rem; }
+          if (start < FC_MONTHS && advP > 0) { const a = expBudget * advP; incS[start] += a; incPipe[start] += a; pipeNote[start].push(`${p.name} 수주예정 선급 ${fmtEok(a)}(수주율 ${Math.round(winW*100)}%)`); }
+          const end = start + 6;
+          if (end < FC_MONTHS) { const rem = expBudget * (1 - advP); incS[end] += rem; incPipe[end] += rem; pipeNote[end].push(`${p.name} 수주예정 잔금 ${fmtEok(rem)}(수주율 ${Math.round(winW * 100)}%)`); }
         });
         // 지출: 인건비 + 운영경비 + 세금(부가세 1·4·7·10월, 법인세 3월)
         // 계약직 인건비 자동 증감: 각 사업의 작업자인건비(계약직, 월액)를 계약기간 동안만 배분.
@@ -10977,11 +10989,11 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               ? Number(cfg.payrollDrawn[mo.key]) : payrollAtRaw(i);
             const carry = av - Math.max(0, drawn);
             bal = carry; balS = carry; balOpt = carry; balCons = carry;
-            return { ...mo, confirmed: true, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), expEtc: extraExpArr[i], expFixed: fixedOf(i), expProj: Math.round(projOpexUse * activeRatioOf(i)), incColl: incColl[i], incSched: incSched[i], incManual: incManual[i], incExtra: incExtra[i], incPipe: incPipe[i], prevBal: av, prevBalS: av, activeRatio: activeRatioOf(i), bal: av, balS: av, balOpt: av, balCons: av, carry, drawn: Math.max(0, drawn), allNotes: [`실제 잔고 (10일 인출 직전) · 급여일 인출 ${fmtMoney(Math.max(0, drawn))} 차감 후 ${fmtMoney(carry)} 로 이월`], notes: '실제 잔고' };
+            return { ...mo, confirmed: true, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), expEtc: extraExpArr[i], expFixed: fixedOf(i), expProj: Math.round(projOpexUse * activeRatioOf(i)), incColl: incColl[i], incSched: incSched[i], incManual: incManual[i], incExtra: incExtra[i], incPipe: incPipe[i], pipeNotes: pipeNote[i].slice(), prevBal: av, prevBalS: av, activeRatio: activeRatioOf(i), bal: av, balS: av, balOpt: av, balCons: av, carry, drawn: Math.max(0, drawn), allNotes: [`실제 잔고 (10일 인출 직전) · 급여일 인출 ${fmtMoney(Math.max(0, drawn))} 차감 후 ${fmtMoney(carry)} 로 이월`], notes: '실제 잔고' };
           }
           bal += inc[i] - exp[i]; balS += incS[i] - exp[i];
           balOpt += incOpt[i] - exp[i]; balCons += incCons[i] - expCons[i];
-          return { ...mo, confirmed: false, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), expEtc: extraExpArr[i], expFixed: fixedOf(i), expProj: Math.round(projOpexUse * activeRatioOf(i)), incColl: incColl[i], incSched: incSched[i], incManual: incManual[i], incExtra: incExtra[i], incPipe: incPipe[i], prevBal: bal - (inc[i] - exp[i]), prevBalS: balS - (incS[i] - exp[i]), activeRatio: activeRatioOf(i), bal, balS, balOpt, balCons, allNotes: incNote[i].slice(), notes: incNote[i].slice(0, 3).join(', ') };
+          return { ...mo, confirmed: false, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), expEtc: extraExpArr[i], expFixed: fixedOf(i), expProj: Math.round(projOpexUse * activeRatioOf(i)), incColl: incColl[i], incSched: incSched[i], incManual: incManual[i], incExtra: incExtra[i], incPipe: incPipe[i], pipeNotes: pipeNote[i].slice(), prevBal: bal - (inc[i] - exp[i]), prevBalS: balS - (incS[i] - exp[i]), activeRatio: activeRatioOf(i), bal, balS, balOpt, balCons, allNotes: incNote[i].slice(), notes: incNote[i].slice(0, 3).join(', ') };
         });
         const safety = Number(cfg.safety) || 0;
         const danger = rows.find(r => r.bal < safety);
@@ -11841,7 +11853,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               <div style={{ overflow: 'auto', marginTop: S[2] }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, minWidth: 860 }}>
                   <thead><tr style={{ background: T.surfaceAlt }}>
-                    <Th>월</Th><Th align="right">수입(확정)</Th><Th align="right">인건비</Th><Th align="right">운영경비</Th><Th align="right">세금</Th><Th align="right">예정지출</Th><Th align="right">지출 계</Th><Th align="right">예측 잔고<br /><span style={{ fontSize: 9, fontWeight: 400, color: T.textLight }}>수주예정(파이프라인) 반영</span></Th><Th align="right"><span style={{ fontWeight: 400, color: T.textMute }}>통장 잔고<br /><span style={{ fontSize: 9, color: T.textLight }}>확정 수입만</span></span></Th><Th>수입 내역</Th>
+                    <Th>월</Th><Th align="right">수입(확정)</Th><Th align="right">인건비</Th><Th align="right">운영경비</Th><Th align="right">세금</Th><Th align="right">예정지출</Th><Th align="right">지출 계</Th><Th align="right">예측 잔고<br /><span style={{ fontSize: 9, fontWeight: 400, color: T.textLight }}>수주예정(파이프라인) 반영</span></Th><Th align="right"><span style={{ fontWeight: 400, color: T.textMute }}>통장 잔고<br /><span style={{ fontSize: 9, color: T.textLight }}>확정 수입만</span></span></Th><Th>수입 내역<br /><span style={{ fontSize: 9, fontWeight: 400, color: T.textLight }}>확정 / 수주예정 구분</span></Th>
                   </tr></thead>
                   <tbody>
                     {rows.map((r, i) => (
@@ -11855,7 +11867,14 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                         <Td align="right" mono>{fmtMoney(r.exp)}</Td>
                         <Td align="right" mono><strong style={{ color: r.balS < 0 ? T.danger : r.balS < safety ? T.warning : T.ink }}>{fmtMoney(r.balS)}</strong></Td>
                         <Td align="right" mono style={{ color: T.textLight }}>{fmtMoney(r.bal)}</Td>
-                        <Td style={{ fontSize: 10.5, color: T.textMute }}>{r.notes}</Td>
+                        <Td style={{ fontSize: 10.5, color: T.textMute, lineHeight: 1.5 }}>
+                          {r.notes}
+                          {r.pipeNotes && r.pipeNotes.length > 0 && (
+                            <div style={{ color: '#C2410C', marginTop: 2 }}>
+                              + 수주예정 {fmtEok(r.incPipe)}<span style={{ color: T.textLight }}> (확정 아님)</span>
+                            </div>
+                          )}
+                        </Td>
                       </tr>
                     ))}
                   </tbody>
@@ -11901,7 +11920,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                     <div style={{ marginBottom: S[4] }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: T.success, marginBottom: 4, borderBottom: `1px solid ${T.divider}`, paddingBottom: 3 }}>💰 수입 {fmtMoney(r.inc)}원</div>
                       {incItems.length ? incItems.map((x, i) => row(x[0], x[1], x[2], true)) : <div style={{ fontSize: 12, color: T.textMute, paddingLeft: 14 }}>이 달 예정된 확정 수입 없음</div>}
-                      {r.allNotes && r.allNotes.length > 0 && <div style={{ fontSize: 11, color: T.textMute, marginTop: 6, paddingLeft: 14, lineHeight: 1.6 }}>내역: {r.allNotes.join(' · ')}</div>}
+                      {r.allNotes && r.allNotes.length > 0 && <div style={{ fontSize: 11, color: T.textMute, marginTop: 6, paddingLeft: 14, lineHeight: 1.6 }}><strong style={{ color: T.text }}>확정 내역:</strong> {r.allNotes.join(' · ')}</div>}
+                      {r.pipeNotes && r.pipeNotes.length > 0 && <div style={{ fontSize: 11, color: '#C2410C', marginTop: 3, paddingLeft: 14, lineHeight: 1.6 }}><strong>수주예정 내역:</strong> {r.pipeNotes.join(' · ')} <span style={{ color: T.textMute }}>— 확정 수입에는 포함되지 않습니다</span></div>}
                     </div>
 
                     {/* 지출 구성 */}
