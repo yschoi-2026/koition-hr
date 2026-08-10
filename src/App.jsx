@@ -5,6 +5,23 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v188 → v189] 4대보험 이중계상 수정 · 급여 실측 반영
+// 31) [v187 오류] 4대보험 전액(49,212,060)을 지급총액에 더해 직원 공제분 24,860,730 을 두 번 셌다.
+//     납부액 = 직원공제 24,860,730 + 회사부담 24,351,330 이고 직원공제는 이미 지급총액 안에 있다.
+//     → 회사부담분만 가산. cfg.socialInsCorpRate 기본 9.56%(=24,351,330/254,851,770 실측).
+//     검증: 정규 실지급 80,206,550 + 계약 월평균 69,933,166 + 4대보험 32,243,429 = 182,383,145
+//           vs 일계표 보통예금 출금 월평균 174,087,438 → 오차 4.8%. 모순 해소.
+// 32) 계약직 급여가 1월 44,177,600 → 7월 149,784,490 으로 3.4배 증가한 것을 확인(사업 확대).
+//     salaryCon 은 최신월(7월) 기준이라 미래 예측용으로 적절하다.
+//
+// [v187 → v188] 예측 정확도 지표를 skill score 로 교체
+// 30) 절대 오차율(MAPE)로 등급을 매기던 것을 '단순예측 대비 개선도'로 바꿨다.
+//     이 회사는 월 잔고 증감이 ±3억(표준편차 271,488,819 / 평균잔고 468,814,461 = 58%)이라
+//     아무 모델 없이 '전월 잔고 유지'만 해도 오차율 47.5% 가 나온다. 즉 MAPE 58.2% 는
+//     모델 결함이 아니라 잔고 변동성 그 자체였고, 등급 표기가 오해를 유발했다.
+//     → skill = 1 - MAE(모델)/MAE(단순예측). 30% 이상 '쓸 만함', 10% 이상 '보통', 음수면 '개선 필요'.
+//     화면에 모델 MAE·단순예측 MAE·양쪽 오차율을 나란히 표시해 판단 근거를 남긴다.
+//
 // [v186 → v187] 급여일 4대보험 누락 수정
 // 29) [중대] 급여일 필요액에 4대보험이 빠져 있었다. 실측: 2026/08/10 주계좌에서 '2607사회보험'
 //     49,212,060원이 급여와 함께 인출됨. 급여 243,629,160 대비 20.2%.
@@ -10832,12 +10849,14 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         //   payroll[i] = i월 인건비 지출(정규직+계약직, 사업 투입분 포함)
         // ★ 급여일(10일)에는 급여와 함께 전월분 4대보험이 함께 인출된다. (실측: 2026/08/10 '2607사회보험' 49,212,060)
         //    이걸 빼면 필요액이 20% 넘게 과소평가된다.
-        const insRate = Number(cfg.socialInsRate);
-        const insFixed = Number(cfg.socialInsFixed);
+        // ★ 4대보험은 '회사부담분'만 더한다.
+        //   납부액 49,212,060 = 직원 공제분 24,860,730 + 회사부담 24,351,330 이고,
+        //   직원 공제분은 이미 지급총액(expLabor) 안에 들어 있다. 전액을 더하면 그만큼 이중계상된다.
+        //   실측 회사부담률 = 24,351,330 / 지급총액 254,851,770 = 9.56%
+        const insRate = Number(cfg.socialInsCorpRate);
         const socialInsAt = (i) => {
           const lab = rows[i] ? (Number(rows[i].expLabor) || 0) : 0;
-          if (insFixed > 0) return Math.round(insFixed);
-          const r = insRate > 0 ? insRate : 20.2;   // 기본 20.2% (2026.08 실측 49,212,060 / 급여 243,629,160)
+          const r = insRate > 0 ? insRate : 9.56;
           return Math.round(lab * r / 100);
         };
         const payrollAt = (i) => Math.round((rows[i] ? (Number(rows[i].expLabor) || 0) : 0) + socialInsAt(i));
@@ -10873,7 +10892,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             if (prevA == null || curA == null) continue;
             const pred = prevA + inc[i] - exp[i];        // 1개월 앞 예측
             const err = curA - pred;                     // + = 예측보다 실제가 많음(보수적 예측)
-            errs.push({ key: rows[i].key, y: rows[i].y, m: rows[i].m, pred: Math.round(pred), actual: curA, err: Math.round(err), pct: curA !== 0 ? (err / Math.abs(curA) * 100) : null });
+            errs.push({ key: rows[i].key, y: rows[i].y, m: rows[i].m, pred: Math.round(pred), actual: curA, prevActual: prevA,
+                        err: Math.round(err), pct: curA !== 0 ? (err / Math.abs(curA) * 100) : null });
           }
           const n = errs.length;
           if (n === 0) return { n: 0, errs };
@@ -10881,7 +10901,13 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           const mae = errs.reduce((a, e) => a + Math.abs(e.err), 0) / n;              // 평균 절대 오차
           const mape = errs.filter(e => e.pct != null).reduce((a, e) => a + Math.abs(e.pct), 0) / Math.max(1, errs.filter(e => e.pct != null).length);
           const sd = n > 1 ? Math.sqrt(errs.reduce((a, e) => a + Math.pow(e.err - mean, 2), 0) / (n - 1)) : 0;
-          return { n, errs, mean: Math.round(mean), mae: Math.round(mae), mape, sd: Math.round(sd) };
+          // ★ 절대 오차율만 보면 안 된다. 이 회사는 월 잔고가 ±3억 널뛰어서, 아무 모델 없이
+          //   "전월과 같다"고만 해도 오차율이 47%대로 나온다. 따라서 진짜 지표는
+          //   '단순예측(전월 잔고 유지) 대비 얼마나 나은가' = skill score 다.
+          const naiveMae = errs.reduce((a, e) => a + Math.abs(e.actual - e.prevActual), 0) / n;
+          const skill = naiveMae > 0 ? (1 - mae / naiveMae) * 100 : 0;
+          return { n, errs, mean: Math.round(mean), mae: Math.round(mae), mape,
+                   sd: Math.round(sd), naiveMae: Math.round(naiveMae), skill };
         })();
         const minRow = rows.reduce((a, r) => r.bal < a.bal ? r : a, rows[0]);
         const inp = (label, k, step) => (
@@ -10943,7 +10969,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                         <Th style={{ fontSize: 10 }}>급여일</Th>
                         <Th align="right" style={{ fontSize: 10 }}>지급 전 잔고</Th>
                         <Th align="right" style={{ fontSize: 10 }}>급여</Th>
-                        <Th align="right" style={{ fontSize: 10 }}>4대보험</Th>
+                        <Th align="right" style={{ fontSize: 10 }}>4대보험<br/>(회사부담)</Th>
                         <Th align="right" style={{ fontSize: 10 }}>필요액 계</Th>
                         <Th align="right" style={{ fontSize: 10 }}>지급 후 여유</Th>
                       </tr></thead>
@@ -10962,7 +10988,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                     </table>
                   </div>
                   <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6, lineHeight: 1.7 }}>
-                    급여 필요액 = 인건비(정규직 + 계약직·사업소득) + 전월분 4대보험. 재원은 직전 달 말 잔고. 4대보험은 급여의 {insRate > 0 ? insRate : 20.2}%로 추정하며, 「설정 입력」의 socialInsRate·socialInsFixed로 조정합니다.
+                    급여 필요액 = 인건비(지급총액) + 4대보험 회사부담분. 직원 공제분은 이미 지급총액에 포함돼 있어 제외합니다. 회사부담률 기본 {insRate > 0 ? insRate : 9.56}% (2026.07 실측 24,351,330 / 254,851,770) — 「설정 입력」의 socialInsCorpRate로 조정합니다.
                     수금 예정·고정비 가정이 바뀌면 이 표도 함께 바뀝니다.
                   </div>
                 </div>
@@ -10984,19 +11010,24 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                   </div>
                 );
               }
-              const good = ac.mape < 5, mid = ac.mape < 15;
+              const good = ac.skill >= 30, mid = ac.skill >= 10;
               const tone = good ? T.success : (mid ? T.warning : T.danger);
               const bg = good ? 'rgba(27,122,67,0.07)' : (mid ? '#FFF4E5' : '#FDECEC');
-              const grade = good ? '신뢰 가능' : (mid ? '참고 수준' : '신뢰 어려움');
+              const grade = good ? '쓸 만함' : (mid ? '보통' : '개선 필요');
               const last = rows.filter(r => !r.confirmed)[0];
               return (
                 <div style={{ background: bg, border: `2px solid ${tone}`, borderRadius: 10, padding: S[4], marginBottom: S[4] }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMute, letterSpacing: 0.4, marginBottom: 6 }}>예측 정확도 · 최근 {ac.n}개월</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMute, letterSpacing: 0.4, marginBottom: 6 }}>예측 정확도 · 최근 {ac.n}개월 · 단순예측 대비 평가</div>
                   <div style={{ fontSize: 19, fontWeight: 800, color: tone, lineHeight: 1.35 }}>
-                    평균 오차 {ac.mape.toFixed(1)}% · {grade}
+                    단순예측 대비 {ac.skill >= 0 ? '+' : ''}{ac.skill.toFixed(0)}% · {grade}
                   </div>
                   <div style={{ fontSize: 12, color: T.text, marginTop: 6, lineHeight: 1.8 }}>
                     1개월 앞 예측이 실제와 평균 <strong>{fmtMoney(ac.mae)}원</strong> 차이났습니다.
+                    아무 모델 없이 「전월 잔고와 같다」고만 해도 <strong>{fmtMoney(ac.naiveMae)}원</strong> 차이가 나는데,
+                    {ac.skill >= 0
+                      ? <> 모델이 그보다 <strong style={{ color: T.success }}>{ac.skill.toFixed(0)}% 정확</strong>합니다.</>
+                      : <> 모델이 그보다 <strong style={{ color: T.danger }}>{Math.abs(ac.skill).toFixed(0)}% 부정확</strong>합니다 — 가정을 손봐야 합니다.</>}
+                    {' '}(잔고 대비 오차율 {ac.mape.toFixed(1)}%, 단순예측은 {(ac.naiveMae / (ac.errs.reduce((a, e) => a + Math.abs(e.actual), 0) / ac.n) * 100).toFixed(1)}%)
                     편향은 <strong style={{ color: ac.mean >= 0 ? T.success : T.danger }}>{ac.mean >= 0 ? '+' : ''}{fmtMoney(ac.mean)}원</strong>
                     {ac.mean >= 0 ? ' — 실제가 예측보다 많았습니다(보수적 예측).' : ' — 실제가 예측보다 적었습니다(낙관적 예측).'}
                     {bias !== 0 && <> 이 편향은 미래 예측에 자동 반영 중입니다.</>}
@@ -11032,7 +11063,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                   </div>
                   <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6, lineHeight: 1.7 }}>
                     예측 잔고 = 직전 달 <strong>실제</strong> 잔고 + 그 달 예상 수입 − 예상 지출. 누적 오차가 아닌 1개월 앞 오차라, 매달의 예측 실력을 그대로 보여줍니다.
-                    오차율 5% 미만이면 예측을 근거로 자금 결정을 해도 무리가 없습니다.
+                    이 회사는 월 잔고가 ±3억 널뛰어 절대 오차율만으로는 판단할 수 없습니다. 그래서 「전월 잔고 유지」라는 가장 단순한 예측과 비교합니다 — 30% 이상 나으면 쓸 만하고, 음수면 모델 가정이 현실과 어긋난 것입니다.
                   </div>
                 </div>
               );
