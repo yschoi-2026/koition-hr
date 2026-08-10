@@ -5,6 +5,23 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v185 → v186] 전사 공통비율 경고
+// 28) policy.diag 에 ohRevWarn(20%) · ohRevAlert(28%) 추가 — 전사 공통비 풀 / 매출 기준.
+//     공통비율 MetricCard 에 기준 대비 색상·부제를 붙이고, 주의 이상이면 경고 카드를 띄운다.
+//     공헌이익은 흑자인데 완전영업이익이 적자인 경우를 명시적으로 지적한다
+//     ("개별 사업은 흑자인데 회사 전체는 적자입니다").
+//     ※ 원가 2계층 분리·배부(allocateOverhead)·공헌이익/완전영업이익 2줄 표시·배부기준 토글은
+//        v174 이전부터 이미 구현돼 있어 건드리지 않았다. 기본 배부기준도 이미 'labor'.
+//
+// [v184 → v185] 모든 예측을 '매월 10일 급여일' 기준으로 통일
+// 25) months 에 payLabel('9/10')·payFull('2026년 9월 10일') 추가. 자금예측 그래프 X축을 급여일 표기로.
+// 26) 급여 지급 가능 여부 패널을 지급일 기준으로 재작성.
+//     '10월 급여' → '2026년 10월 10일 급여일', 재원이 되는 달('9월말 잔고')을 함께 표시.
+//     {m}월 10일 급여의 재원은 {m-1}월 말 잔고 — 짝짓기 규칙을 화면에 명시.
+// 27) 수금 반영율 보정 — 기간이 끝난 사업의 미수 잔금을 전부 '이번 달 수입'으로 잡던 문제.
+//     그 합계가 실제 매출채권 잔액(fin.receivable)을 넘으면 채권 실잔액까지로 축소하고
+//     반영율을 배너에 표시한다. 보정 없이는 이번 달 수입이 수억 부풀어 예측이 무의미해진다.
+//
 // [v183 → v184] 진척율 표 레이아웃 수정
 // 24) [버그] v181에서 넣은 음수 마진(full-bleed)이 표를 화면 왼쪽 밖으로 밀어내 사업명 열이 잘렸다.
 //     .report-wrap 이 가운데 정렬이 아니라 왼쪽 정렬이어서, 중앙 정렬을 전제한 shift 계산이 틀렸다.
@@ -1428,6 +1445,8 @@ const INITIAL_POLICY = {
     costRevWarn: 90, costRevAlert: 98,   // 원가율(원가/매출) % 주의·경고
     peerDev: 12,                    // 동종 중앙값 대비 초과 폭(%p)
     pmFloor: 20,                    // PM 최소 기여도 %
+    // 전사 공통비율(공통비 풀 / 매출) 주의·경고 — "프로젝트는 흑자인데 회사는 적자"를 잡는 지표
+    ohRevWarn: 20, ohRevAlert: 28,
   },
   // 로그인 화면 회사 정보 카드 (admin이 직접 편집)
   coverStats: {
@@ -8722,6 +8741,8 @@ function OverheadView({ projects, overheads, currentYear, yearFilter, policy, se
   const totContrib = rows.reduce((s, r) => s + r.contrib, 0);
   const totFull = totContrib - poolTotal;
   const ohRatio = totRev > 0 ? (poolTotal / totRev * 100) : 0;
+  const ohWarn = Number((policy && policy.diag && policy.diag.ohRevWarn) ?? 20);
+  const ohAlert = Number((policy && policy.diag && policy.diag.ohRevAlert) ?? 28);
   const setBasis = (b) => setPolicy(prev => ({ ...prev, allocation: { ...(prev.allocation || {}), basis: b } }));
   const setMode = (m) => setPolicy(prev => ({ ...prev, allocation: { ...(prev.allocation || {}), mode: m } }));
   const add = () => {
@@ -8735,8 +8756,33 @@ function OverheadView({ projects, overheads, currentYear, yearFilter, policy, se
         <MetricCard icon={Wallet} label={`${poolYear}년 공통비(간접비)`} value={fmtMoney(poolTotal)} unit="원" color={T.warning} />
         <MetricCard icon={TrendingUp} label="공헌이익 계" value={fmtMoney(totContrib)} unit="원" color={T.brand} />
         <MetricCard icon={Award} label="완전영업이익 계" value={fmtMoney(totFull)} unit="원" color={totFull >= 0 ? T.success : T.danger} />
-        <MetricCard icon={PieIcon} label="공통비율(공통비/매출)" value={ohRatio.toFixed(1)} unit="%" color={T.warning} />
+        <MetricCard icon={PieIcon} label="공통비율(공통비/매출)" value={ohRatio.toFixed(1)} unit="%"
+          color={ohRatio >= ohAlert ? T.danger : (ohRatio >= ohWarn ? T.warning : T.success)}
+          sub={`주의 ${ohWarn}% · 경고 ${ohAlert}%`} />
       </div>
+
+      {/* 전사 공통비율 경고 — 프로젝트별 흑자와 회사 적자의 괴리를 잡는 지표 */}
+      {totRev > 0 && ohRatio >= ohWarn && (
+        <div style={{ ...card({ borderLeft: `4px solid ${ohRatio >= ohAlert ? T.danger : T.warning}` }), padding: S[4], marginBottom: S[5] }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: S[2], marginBottom: 6 }}>
+            <AlertTriangle size={15} style={{ color: ohRatio >= ohAlert ? T.danger : T.warning, flexShrink: 0 }} />
+            <span style={{ fontSize: 13.5, fontWeight: 800, color: ohRatio >= ohAlert ? T.danger : T.warning }}>
+              공통비율 {ohRatio.toFixed(1)}% — {ohRatio >= ohAlert ? '경고' : '주의'} 수준
+            </span>
+          </div>
+          <div style={{ fontSize: 12, color: T.text, lineHeight: 1.85 }}>
+            매출 {fmtMoney(totRev)}원에 본사·간접비 {fmtMoney(poolTotal)}원이 실려 있습니다.
+            프로젝트 공헌이익 합계는 <strong>{fmtMoney(totContrib)}원</strong>이지만, 공통비를 배부한 완전영업이익은
+            <strong style={{ color: totFull >= 0 ? T.success : T.danger }}> {fmtMoney(totFull)}원</strong>입니다.
+            {totContrib > 0 && totFull < 0 && <strong style={{ color: T.danger }}> 개별 사업은 흑자인데 회사 전체는 적자입니다 — 공통비 구조를 먼저 손봐야 합니다.</strong>}
+            {totFull >= 0 && <> 아직 흑자이지만, 공통비가 공헌이익의 {totContrib > 0 ? (poolTotal / totContrib * 100).toFixed(0) : '-'}%를 잠식하고 있습니다.</>}
+          </div>
+          <div style={{ fontSize: 11, color: T.textMute, marginTop: 6, lineHeight: 1.7 }}>
+            기준은 정책 설정 → 원가구조 진단의 <code>ohRevWarn</code>({ohWarn}%) · <code>ohRevAlert</code>({ohAlert}%)에서 조정합니다.
+            매출이 늘지 않는데 이 비율이 오르면 본사 고정비가 커지고 있다는 신호입니다.
+          </div>
+        </div>
+      )}
 
       <div style={{ ...card(), padding: S[6], marginBottom: S[5] }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: S[3], marginBottom: S[3] }}>
@@ -10504,7 +10550,13 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const FC_START_Y = (cfg.startY || 2026), FC_START_M = (cfg.startM || 1);   // 시작 연·월 (설정 가능)
         const FC_MONTHS = cfg.horizonMonths || 16;                                    // 총 개월수 (2026.01~2027.04)
         const y0 = FC_START_Y, m0 = FC_START_M - 1;   // m0: 0-based 월
-        const months = Array.from({ length: FC_MONTHS }, (_, i) => { const d = new Date(y0, m0 + i, 1); return { y: d.getFullYear(), m: d.getMonth() + 1, key: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), label: (d.getMonth() + 1) + '월' }; });
+        // 모든 예측의 기준 시점은 '매월 10일 급여일'. 라벨도 그 날짜로 표시한다.
+        //   payLabel: 그 달 급여일(그래프 X축)  ·  payFull: 연도 포함 전체 표기
+        const months = Array.from({ length: FC_MONTHS }, (_, i) => {
+          const d = new Date(y0, m0 + i, 1); const mm = d.getMonth() + 1, yy = d.getFullYear();
+          return { y: yy, m: mm, key: yy + '-' + String(mm).padStart(2, '0'), label: mm + '월',
+                   payLabel: mm + '/10', payFull: `${yy}년 ${mm}월 10일` };
+        });
         const idxOf = (yy, mm) => (yy - y0) * 12 + (mm - 1 - m0);
         const parsePeriod = (p) => { const m = String(p || '').match(/(\d{4})[.\-\/](\d{1,2})\s*~\s*(\d{4})[.\-\/](\d{1,2})/); return m ? { sy: +m[1], sm: +m[2], ey: +m[3], em: +m[4] } : null; };
         // #2 선급률 자동학습: 수금 실적(receivables)에서 사업별 첫 입금/계약금액 비율의 중앙값을 기본 선급률로 추천
@@ -10522,6 +10574,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const covered = new Set();
         // 수입 카테고리별 추적 (월별 구성 시각화용)
         const incColl = Array(FC_MONTHS).fill(0), incSched = Array(FC_MONTHS).fill(0), incManual = Array(FC_MONTHS).fill(0), incExtra = Array(FC_MONTHS).fill(0);
+        let overdueColl = 0;   // 기간 종료 후 미수로 index 0 에 몰린 잔금 합계
         // ① 수금 관리 등록분 (미입금) — 가장 확정적
         (receivables || []).filter(r => !r.paidDate && r.dueDate && Number(r.amount) > 0).forEach(r => {
           const d = new Date(r.dueDate); if (isNaN(d)) return;
@@ -10552,8 +10605,24 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           const si = idxOf(pr.sy, pr.sm), eiRaw = idxOf(pr.ey, pr.em) + 1; // 잔금 = 검수 익월
           if (si >= 0 && si < FC_MONTHS && adv > 0) { const a = rev * adv; inc[si] += a; incSched[si] += a; incNote[si].push(`${p.id} 선급 ${fmtEok(a)}`); }
           const ei = eiRaw < 0 ? 0 : eiRaw; // 이미 종료됐는데 미수금 → 이번 달 수금 가정
-          if (ei < FC_MONTHS) { const rem = rev * (1 - adv); inc[ei] += rem; incSched[ei] += rem; incNote[ei].push(`${p.id} 잔금 ${fmtEok(rem)}${eiRaw < 0 ? '(지연)' : ''}`); }
+          if (ei < FC_MONTHS) { const rem = rev * (1 - adv); inc[ei] += rem; incSched[ei] += rem; if (eiRaw < 0) overdueColl += rem; incNote[ei].push(`${p.id} 잔금 ${fmtEok(rem)}${eiRaw < 0 ? '(지연)' : ''}`); }
         });
+        // ══ 수금 반영율 보정 ══
+        //   기간이 이미 끝난 사업의 잔금은 위에서 '이번 달 수금'(index 0)으로 몰아넣는다.
+        //   그런데 그 돈은 대부분 이미 들어와 있다. 실제로 못 받은 금액은 매출채권 잔액뿐이므로,
+        //   index 0 에 쌓인 지연 잔금 합계가 실제 매출채권을 넘으면 그 비율로 축소한다.
+        //   (안 하면 이번 달 수입이 몇 억씩 부풀어 예측이 통째로 무의미해진다.)
+        const arActual = Math.max(0, Number(finData.receivable) || 0);
+        let collAdj = null;
+        if (overdueColl > 0 && arActual > 0 && overdueColl > arActual) {
+          const ratio = arActual / overdueColl;
+          const cut = overdueColl - arActual;
+          inc[0] -= cut; incSched[0] -= cut;
+          incNote[0].push(`지연 잔금 ${fmtEok(overdueColl)} → 매출채권 실잔액 ${fmtEok(arActual)} 로 축소 (반영율 ${(ratio * 100).toFixed(0)}%)`);
+          collAdj = { before: Math.round(overdueColl), after: arActual, ratio, cut: Math.round(cut) };
+        } else if (overdueColl > 0) {
+          collAdj = { before: Math.round(overdueColl), after: Math.round(overdueColl), ratio: 1, cut: 0 };
+        }
         // ②-B 기타 예정 수입 (사용자 직접 등록: 소규모 매출·비매출조직 수익 등) — cfg.extraIncome[]
         (cfg.extraIncome || []).forEach(e => {
           const mm = String(e.month || '').match(/(\d{4})[.\-\/](\d{1,2})/);
@@ -10757,11 +10826,14 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const payrollAt = (i) => Math.round(rows[i] ? (Number(rows[i].expLabor) || 0) : 0);
         const payrollCheck = (() => {
           const list = [];
+          // 급여는 매월 10일 지급. {m}월 10일 급여의 재원은 '{m-1}월 말 잔고' 이므로 (i, i+1) 짝을 쓴다.
+          // 표기는 '지급일' 기준 — {m}월 10일 급여일.
           for (let i = 0; i < rows.length - 1; i++) {
             const r = rows[i], need = payrollAt(i + 1);
             if (need <= 0) continue;
-            const room = r.bal - need;                     // 다음 달 급여 지급 후 남는 돈
-            list.push({ i, month: rows[i + 1], bal: r.bal, need, room, ok: room >= 0, confirmed: r.confirmed });
+            const room = r.bal - need;
+            list.push({ i, month: rows[i + 1], payFull: rows[i + 1].payFull, fundedBy: rows[i].payFull,
+                        bal: r.bal, need, room, ok: room >= 0, confirmed: r.confirmed });
           }
           const firstShort = list.find(x => !x.ok);
           const lastSafe = (() => { let last = null; for (const x of list) { if (!x.ok) break; last = x; } return last; })();
@@ -10809,7 +10881,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           const mk = r.y + '-' + String(r.m).padStart(2, '0');
           const av = actualBal[mk];
           const d = {
-            name: r.label,
+            name: r.payLabel,   // ★ 급여일(10일) 기준 표기
             예측잔고: Math.round((r.bal + bias) / 1000000),
             '예측(파이프라인)': Math.round((r.balS + bias) / 1000000),
             낙관: Math.round((r.balOpt + bias) / 1000000),
@@ -10835,22 +10907,22 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               const mlabel = (m) => `${m.y}년 ${m.m}월`;
               return (
                 <div style={{ background: bg, border: `2px solid ${tone}`, borderRadius: 10, padding: S[4], marginBottom: S[4] }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMute, letterSpacing: 0.4, marginBottom: 6 }}>급여 지급 가능 여부</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textMute, letterSpacing: 0.4, marginBottom: 6 }}>급여 지급 가능 여부 · 매월 10일 지급 기준</div>
                   <div style={{ fontSize: 19, fontWeight: 800, color: tone, lineHeight: 1.35 }}>
                     {!fs
-                      ? `예측 기간 내 급여 지급에 문제 없습니다 (${pc.runway}개월분 확보)`
-                      : <>{mlabel(fs.month)} 급여 <span style={{ color: T.danger }}>{fmtMoney(Math.abs(fs.room))}원 부족</span> 예상</>}
+                      ? `예측 기간 내 모든 급여일(매월 10일) 지급 가능 — ${pc.runway}회분 확보`
+                      : <>{mlabel(fs.month)} <span style={{ color: T.danger }}>{fmtMoney(Math.abs(fs.room))}원 부족</span> 예상</>}
                   </div>
                   <div style={{ fontSize: 12, color: T.text, marginTop: 6, lineHeight: 1.8 }}>
                     {fs
-                      ? <>{pc.lastSafe ? <>{mlabel(pc.lastSafe.month)}까지는 지급 가능합니다. </> : <>당장 다음 급여부터 빠듯합니다. </>}
-                          {mlabel(fs.month)} 급여 <strong>{fmtMoney(fs.need)}원</strong>에 대해 그 시점 예상 잔고는 <strong>{fmtMoney(fs.bal)}원</strong>입니다.</>
+                      ? <>{pc.lastSafe ? <>{mlabel(pc.lastSafe.month)}까지는 지급 가능합니다. </> : <>당장 다음 급여일부터 빠듯합니다. </>}
+                          급여 <strong>{fmtMoney(fs.need)}원</strong>의 재원은 <strong>{fs.fundedBy.replace(' 10일','')} 말 잔고</strong>이고, 그 시점 예상 잔고는 <strong>{fmtMoney(fs.bal)}원</strong>입니다.</>
                       : <>가장 빠듯한 달은 {(() => { const w = pc.list.reduce((a, x) => x.room < a.room ? x : a, pc.list[0]); return <>{mlabel(w.month)} — 급여 {fmtMoney(w.need)}원 지급 후 <strong>{fmtMoney(w.room)}원</strong> 남음</>; })()}</>}
                   </div>
                   <div style={{ overflowX: 'auto', marginTop: S[3] }}>
                     <table style={{ borderCollapse: 'collapse', fontSize: 11.5, minWidth: 460 }}>
                       <thead><tr style={{ background: 'rgba(0,0,0,0.03)' }}>
-                        <Th style={{ fontSize: 10 }}>지급월</Th>
+                        <Th style={{ fontSize: 10 }}>급여일</Th>
                         <Th align="right" style={{ fontSize: 10 }}>지급 전 잔고</Th>
                         <Th align="right" style={{ fontSize: 10 }}>급여 필요액</Th>
                         <Th align="right" style={{ fontSize: 10 }}>지급 후 여유</Th>
@@ -10858,7 +10930,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                       <tbody>
                         {pc.list.slice(0, 6).map(x => (
                           <tr key={x.i} style={{ borderTop: `1px solid ${T.divider}` }}>
-                            <Td style={{ fontSize: 11 }}>{mlabel(x.month)}{x.confirmed ? <span style={{ color: T.textMute, fontSize: 9.5 }}> (확정잔고 기준)</span> : null}</Td>
+                            <Td style={{ fontSize: 11 }}>{x.payFull}{x.confirmed ? <span style={{ color: T.textMute, fontSize: 9.5 }}> (확정잔고 기준)</span> : null}</Td>
                             <Td align="right" mono>{fmtMoney(x.bal)}</Td>
                             <Td align="right" mono>{fmtMoney(x.need)}</Td>
                             <Td align="right" mono style={{ color: x.ok ? T.success : T.danger, fontWeight: 700 }}>{x.ok ? '' : '▲ '}{fmtMoney(x.room)}</Td>
@@ -10868,7 +10940,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                     </table>
                   </div>
                   <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6, lineHeight: 1.7 }}>
-                    급여 필요액 = 그 달 인건비 지출(정규직 + 계약직·사업소득, 사업 투입분 포함) · 지급일 매월 10일 기준.
+                    급여 필요액 = 그 급여일에 나갈 인건비(정규직 + 계약직·사업소득, 사업 투입분 포함). 재원은 직전 달 말 잔고.
                     수금 예정·고정비 가정이 바뀌면 이 표도 함께 바뀝니다.
                   </div>
                 </div>
@@ -10943,6 +11015,14 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 </div>
               );
             })()}
+            {collAdj && collAdj.cut > 0 && (
+              <div style={{ background: '#FFF4E5', border: `1px solid ${T.warning}`, borderRadius: 8, padding: S[3], marginBottom: S[3], fontSize: 11.5, lineHeight: 1.8 }}>
+                <strong style={{ color: T.warning }}>수금 반영율 보정</strong> — 기간이 끝난 사업의 미수 잔금 {fmtMoney(collAdj.before)}원이
+                이번 달 수입으로 잡혀 있었는데, 실제 매출채권 잔액은 {fmtMoney(collAdj.after)}원입니다.
+                <strong> {fmtMoney(collAdj.cut)}원을 차감</strong>해 반영율 {(collAdj.ratio * 100).toFixed(0)}%로 맞췄습니다.
+                <span style={{ color: T.textMute }}> 개별 수금 예정일을 「수금 관리」에 입력하면 이 추정 대신 실제 일정으로 계산합니다.</span>
+              </div>
+            )}
             {/* CMS 실적 연동 배너 */}
             {cmsLinked && (
               <div style={{ background: '#EEF3FA', border: `1px solid ${T.brand}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12 }}>
