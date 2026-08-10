@@ -5,6 +5,15 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v192 → v193] 12개월 추이 단절 · 지급여력 박스 불일치 수정
+// 37) [버그] 확정월(실제 잔고 보유)의 값은 '10일 인출 직전' 잔고인데, 이 값을 그대로 다음 달로
+//     이월해 이미 나간 급여가 남아 있는 것처럼 계산했다. 실측 2026/08: 인출 직전 315,600,698 을
+//     그대로 이월 → 9월 예측이 인출액 225,849,984 만큼 과대. 그래프가 9월에서 튀는 원인.
+//     → 표시값은 인출 직전(av) 유지, 이월값(carry)은 급여일 인출액을 차감한 값으로 분리.
+//        cfg.payrollDrawn[월] 로 실제 인출액을 덮어쓸 수 있고, 없으면 payrollActual/payrollBase 사용.
+// 38) 기존 「다음 급여일 지급 여력」 박스가 '잔고 − 월 인건비' 였다. 4대보험이 빠지고 실측도
+//     반영되지 않아 상단 패널과 숫자가 어긋났다 → payrollCheck 와 같은 산식으로 통일.
+//
 // [v191 → v192] 급여 필요액을 실측 기준으로
 // 36) cfg.payrollActual[YYYY-MM] (급여일 실제 인출액) 을 최우선 사용. 없으면 cfg.payrollBase
 //     (최근 3개월 실측 평균), 둘 다 없으면 기존 모델 추정.
@@ -10835,6 +10844,16 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const startAfterIdx = (lastActualIdx != null) ? lastActualIdx : -99;   // 이 인덱스(그 달)까지는 실제 확정 → 잔고 고정, 다음 달부터 예측
         // #1 실제잔고 자동보정: 최근 3개월 (실제-예측) 평균 편향을 미래 예측에 반영
         const actualBalMap = (finData.actualBalances) || {};
+        // 급여일 인출액 — rows 생성 전에도 쓸 수 있는 버전 (실측 우선, 없으면 최근 실측 평균)
+        const payActualRaw = cfg.payrollActual || {};
+        const payBaseRaw = Number(cfg.payrollBase) || 0;
+        const payrollAtRaw = (i) => {
+          const mo = months[i]; if (!mo) return 0;
+          const av = payActualRaw[mo.key];
+          if (av != null && av !== '' && Number(av) > 0) return Math.round(Number(av));
+          if (payBaseRaw > 0) return Math.round(payBaseRaw);
+          return Math.round(laborOf(mo, i) * 1.0956);
+        };
         // #3 시나리오 밴드: 낙관(수주율+20%p·수금 정상)·보수(수주율-20%p·프로젝트성경비+10%)
         let bal = startBal, balS = startBal, balOpt = startBal, balCons = startBal;
         const incOpt = inc.slice(), incCons = inc.slice();
@@ -10855,11 +10874,17 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const rows = months.map((mo, i) => {
           const isConfirmed = i <= startAfterIdx;   // 실제 잔고가 있는 확정 월
           const aVal = actualBalMapInit[mo.key];
+          // ★ 확정 구간의 실제값은 '10일 인출 직전' 잔고다. 다음 달로 굴릴 때는 그 달 급여일 인출을
+          //   먼저 빼야 한다. 안 빼면 이미 나간 급여가 남아 있는 것처럼 계산되어 이후 예측이 통째로 과대해진다.
           if (isConfirmed && aVal != null && aVal !== '') {
             // 확정 월: 실제 통장잔고를 그대로 사용 (예측 아님)
             const av = Number(aVal);
-            bal = av; balS = av; balOpt = av; balCons = av;
-            return { ...mo, confirmed: true, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), expEtc: extraExpArr[i], expFixed: fixedOf(i), expProj: Math.round(projOpexUse * activeRatioOf(i)), incColl: incColl[i], incSched: incSched[i], incManual: incManual[i], incExtra: incExtra[i], incPipe: incPipe[i], prevBal: av, prevBalS: av, activeRatio: activeRatioOf(i), bal, balS, balOpt, balCons, allNotes: ['실제 통장잔고 (확정)'], notes: '실제 잔고' };
+            // 다음 달로 굴릴 기준(carry)은 '급여일 인출 후' 잔고. 표시값(av)은 인출 직전 그대로 둔다.
+            const drawn = (cfg.payrollDrawn && cfg.payrollDrawn[mo.key] != null && cfg.payrollDrawn[mo.key] !== '')
+              ? Number(cfg.payrollDrawn[mo.key]) : payrollAtRaw(i);
+            const carry = av - Math.max(0, drawn);
+            bal = carry; balS = carry; balOpt = carry; balCons = carry;
+            return { ...mo, confirmed: true, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), expEtc: extraExpArr[i], expFixed: fixedOf(i), expProj: Math.round(projOpexUse * activeRatioOf(i)), incColl: incColl[i], incSched: incSched[i], incManual: incManual[i], incExtra: incExtra[i], incPipe: incPipe[i], prevBal: av, prevBalS: av, activeRatio: activeRatioOf(i), bal: av, balS: av, balOpt: av, balCons: av, carry, drawn: Math.max(0, drawn), allNotes: [`실제 잔고 (10일 인출 직전) · 급여일 인출 ${fmtMoney(Math.max(0, drawn))} 차감 후 ${fmtMoney(carry)} 로 이월`], notes: '실제 잔고' };
           }
           bal += inc[i] - exp[i]; balS += incS[i] - exp[i];
           balOpt += incOpt[i] - exp[i]; balCons += incCons[i] - expCons[i];
@@ -11414,13 +11439,18 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               ))}
               <Button variant="outline" size="sm" onClick={() => setCashCfg(prev => ({ ...prev, extraExpense: [...(prev.extraExpense || []), { month: '', amount: '', memo: '' }] }))}>+ 예정 지출 추가</Button>
             </details>
-            {/* 다음 급여일 지급 여력 */}
-            {startBal > 0 && (() => {
-              const gap = startBal - useLabor;
-              const ok = gap >= 0;
+            {/* 다음 급여일 지급 여력 — 상단 「급여 지급 가능 여부」 패널과 같은 산식(실측 우선)을 쓴다.
+                예전엔 '잔고 − 월 인건비' 였고 4대보험이 빠져 여력을 과대평가했다. */}
+            {startBal > 0 && payrollCheck.list.length > 0 && (() => {
+              const nx = payrollCheck.list[0];
+              const gap = nx.room, ok = nx.ok;
               return (
-                <div style={{ background: ok ? 'rgba(27,122,67,0.06)' : 'rgba(180,35,24,0.07)', border: `1px solid ${ok ? T.success : T.danger}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12.5 }}>
-                  <strong style={{ color: ok ? T.success : T.danger }}>{ok ? '✅' : '🚨'} 다음 급여일(매월 10일) 지급 여력</strong> — 현재 잔고 {fmtMoney(startBal)}원 − 월 인건비 {fmtMoney(useLabor)}원 = <strong style={{ color: ok ? T.success : T.danger }}>{fmtMoney(gap)}원</strong>{ok ? ' (지급 가능)' : ' — 수금 앞당기기·자금 확보 필요!'}
+                <div style={{ background: ok ? 'rgba(27,122,67,0.06)' : 'rgba(180,35,24,0.07)', border: `1px solid ${ok ? T.success : T.danger}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12.5, lineHeight: 1.8 }}>
+                  <strong style={{ color: ok ? T.success : T.danger }}>{ok ? '✅' : '🚨'} {nx.payFull} 급여일 지급 여력</strong> — 인출 직전 잔고 {fmtMoney(nx.bal)}원 − 필요액 {fmtMoney(nx.need)}원
+                  <span style={{ color: T.textMute, fontSize: 11 }}> ({nx.src})</span> = <strong style={{ color: ok ? T.success : T.danger }}>{fmtMoney(gap)}원</strong>{ok ? ' (지급 가능)' : ' — 수금 앞당기기·자금 확보 필요!'}
+                  <br /><span style={{ fontSize: 11, color: T.textMute }}>
+                    필요액은 임직원급여 + 작업자급여 + 4대보험 실제 인출 이력 기준입니다. 월 인건비(급여만)와는 다릅니다.
+                  </span>
                 </div>
               );
             })()}
