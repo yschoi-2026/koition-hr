@@ -5,6 +5,29 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v205 → v206] 수주 확정 버튼 사각지대 · 손익 분석 대상 한정
+// 55) [버그] 제안 목록의 [수주] 버튼이 `p.status !== '수주'` 조건이라, 편집에서 상태를 먼저
+//     '수주'로 바꾸면 버튼이 사라져 사업 생성을 실행할 방법이 없었다.
+//     실측: '한국지질자원연구원 아날로그 자료 디지털화 용역'이 상태만 수주이고 wonProjectId=null
+//     → 수익성·예측·분석 선택에서 통째로 누락.
+//     → 조건을 `status !== '수주' || !wonProjectId` 로 변경하고, 그 경우 버튼 라벨을
+//        '사업 생성'(danger 색)으로 바꿔 조치가 필요함을 드러낸다. 상태 배지 아래에 '사업 미생성' 경고도 표시.
+// 56) 사업별 손익 분석의 사업 선택 목록을 '해당 연도 + 진행 중'으로 한정(41건 → 19건).
+//     종료 사업은 분석 의미가 없고 목록이 길어 찾기 어려웠다. ID 순 정렬 추가.
+//
+// [v204 → v205] 수의계약·유지보수 사업 분리 확대 · 수주 확정 누락 사업 등록
+// 53) ETC_PROJECT_IDS 에 2025년 소액 유지보수 5건 추가(2025-004·005·006·007·024).
+//     기존엔 2026년 3건만 분리돼 있어 같은 성격의 2025년 건이 수익성·평가에 섞였다.
+//     8건 합계 매출 27,991,100 — 전부 수의계약 반복 유지보수.
+// 54) [데이터] '한국지질자원연구원 아날로그 자료 디지털화 용역' 이 제안 상태만 '수주'로
+//     바뀌고 사업이 생성되지 않아(wonProjectId=null) 수익성·예측에서 통째로 빠져 있었다.
+//     → 2026-199 로 등록(매출 122,630,000 · PM 오윤경 100% · 선급 2026.08 / 잔금 2027.01).
+//
+// [v203 → v204] 데이터 정합성 점검 패널 접이식
+// 52) 상시 펼쳐져 있어 화면을 차지하던 정합성 점검 패널을 접이식으로 바꿨다.
+//     헤더에 건수 배지가 남아 문제 유무는 접힌 상태에서도 보인다.
+//     점검 대상 데이터(projects·overheads)를 하단에 명시 — 급여·잔고·수금은 이 패널 범위 밖.
+//
 // [v202 → v203] 고정 지출 캘린더 실측 등록
 // 51) 1~8월 주계좌 원장 전수 스캔으로 '3개월 이상 반복 + 월 10만원↑' 출금을 추출해 12건 등록.
 //     본사임차료 2,420,000 · 우리금융캐피탈 1,337,609 · 반석관리비 1,266,000 · 신한할부금융 1,149,280 ·
@@ -2522,7 +2545,12 @@ function rateGrade(rate) {
 // 직원의 프로젝트 기여도 점수 산정
 // 참여 프로젝트별 (수익률점수 × 기여도비중)의 가중평균
 // 기타(비프로젝트) 사업: 유지보수 연단가 등 계약구조가 달라 프로젝트 수익성 평가에서 제외 (경영보고서에 별도 표기)
-const ETC_PROJECT_IDS = ['2026-005', '2026-009', '2026-013'];
+// 수의계약·소액 유지보수 사업 — 수익성 분석·공통비 배부·평가에서 제외한다.
+//   금액이 작고 매년 반복되는 성격이라 수익률·기여도 계산에 넣으면 지표가 흔들린다.
+//   2026: 005(부천시 비전자기록물) · 009(태안군 서고관리) · 013(이천시 보유목록)
+//   2025: 004·005·007(비전자기록물관리시스템 유지관리) · 006(서고관리) · 024(비전자기록관리)
+const ETC_PROJECT_IDS = ['2026-005', '2026-009', '2026-013',
+                         '2025-004', '2025-005', '2025-006', '2025-007', '2025-024'];
 function isEtcProject(p) { return !!p && (p.etc === true || ETC_PROJECT_IDS.includes(p.id)); }
 
 // 평가용 프로젝트 점수: 완료 사업=확정 수익률, 진행중=진행기준(pocRate) 수익률 사용.
@@ -9134,8 +9162,13 @@ function ProjectPipeline({ proposals, projects, yearFilter, canEdit, deletePropo
                   <Td align="center"><Badge color={p.status === '수주' ? T.success : p.status === '입찰예정' ? T.warning : T.textMute} variant={p.status === '수주' ? 'solid' : 'outline'} size="sm">{p.status}</Badge></Td>
                   {canEdit && <Td align="center">
                     <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-                      {p.status !== '수주' && winProposal && (
-                        <Button size="sm" variant="secondary" icon={Award} onClick={() => winProposal(p.id)}>수주</Button>
+                      {/* ★ 상태만 '수주'로 바꾸고 사업이 생성되지 않은 제안(wonProjectId 없음)도 버튼을 남긴다.
+                          예전엔 status!=='수주' 조건이라 편집에서 상태를 먼저 바꾸면 버튼이 사라져
+                          사업 생성을 실행할 방법이 없었다. */}
+                      {winProposal && (p.status !== '수주' || !p.wonProjectId) && (
+                        <Button size="sm" variant={p.status === '수주' ? 'danger' : 'secondary'} icon={Award} onClick={() => winProposal(p.id)}>
+                          {p.status === '수주' ? '사업 생성' : '수주'}
+                        </Button>
                       )}
                       <button title="사업 정보 편집" onClick={() => openEdit(p)} style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.brand }}><Pencil size={14} /></button>
                       {updateProposal && <button title="제안 인력 편집 (PM·참여·지원)" onClick={() => setEdit({ id: p.id, pm: p.pm || '', participants: (p.participants || []).join(', '), support: (p.support || []).join(', ') })} style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}><Users size={14} /></button>}
@@ -12819,12 +12852,14 @@ function DataIntegrityPanel({ projects, overheads, currentYear }) {
   const COLOR = { danger: T.danger, warn: T.warning, info: T.brand };
 
   return (
-    <div style={{ ...card({ borderLeft: `4px solid ${T.warning}` }), padding: S[4], marginBottom: S[4] }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: S[2], marginBottom: S[3] }}>
+    <details className="no-print" style={{ ...card({ borderLeft: `4px solid ${T.warning}` }), padding: S[4], marginBottom: S[4] }}>
+      <summary style={{ display: 'flex', alignItems: 'center', gap: S[2], cursor: 'pointer', listStyle: 'none' }}>
         <AlertTriangle size={15} style={{ color: T.warning, flexShrink: 0 }} />
         <SectionTitle>데이터 정합성 점검</SectionTitle>
         <Badge color={T.warning} variant="outline" size="sm">{issues.length}건</Badge>
-      </div>
+        <span style={{ fontSize: 11, color: T.textMute, fontWeight: 600 }}>▼ 펼치기</span>
+      </summary>
+      <div style={{ marginTop: S[3] }} />
       {issues.map(it => (
         <details key={it.key} style={{ marginBottom: S[2], background: T.surfaceAlt, borderRadius: 8, padding: `${S[2]}px ${S[3]}px` }}>
           <summary style={{ cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: COLOR[it.level] }}>
@@ -12837,9 +12872,10 @@ function DataIntegrityPanel({ projects, overheads, currentYear }) {
         </details>
       ))}
       <div style={{ fontSize: 11, color: T.textMute, lineHeight: 1.7, marginTop: S[2] }}>
-        이 패널은 계산을 바꾸지 않고 확인만 합니다. 원본 엑셀을 고쳐 다시 업로드하거나, 각 사업의 [수정]에서 직접 맞춰 주세요.
+        이 패널은 계산을 바꾸지 않고 확인만 합니다. 원본 엑셀을 고쳐 다시 업로드하거나, 각 사업의 [수정]에서 직접 맞춰 주세요.<br />
+        점검 대상 데이터 — 사업목록(<strong>projects</strong>: 인건비·제경비·기타비·매출·사업명)과 공통비 풀(<strong>overheads</strong>: 연도·월별 금액). 급여·잔고·수금 데이터는 이 패널에서 보지 않습니다.
       </div>
-    </div>
+    </details>
   );
 }
 
@@ -13081,7 +13117,12 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
           <SectionTitle>📊 사업별 손익 분석</SectionTitle>
           <select value={analId} onChange={e => setAnalId(e.target.value)} style={{ padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 7, fontSize: 12.5, fontFamily: FONT, maxWidth: 420 }}>
             <option value="">분석할 사업 선택…</option>
-            {(projects || []).filter(p => !isEtcProject(p) && Number(p.revenue) > 0).map(p => <option key={p.id} value={p.id}>{p.id} {p.name}</option>)}
+                {/* ★ 분석 대상은 '해당 연도 + 진행 중' 으로 한정. 종료 사업은 분석 의미가 없고
+                    목록이 길어져 찾기 어려워진다. 기타(수의계약·유지보수) 사업도 제외. */}
+                {(projects || []).filter(p => !isEtcProject(p) && Number(p.revenue) > 0
+                    && Number(p.year) === Number(currentYear) && p.status !== 'completed')
+                  .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+                  .map(p => <option key={p.id} value={p.id}>{p.id} {p.name}</option>)}
           </select>
           {analId && <Button variant={analEdit ? 'primary' : 'outline'} size="sm" onClick={() => setAnalEdit(v => !v)}>{analEdit ? '편집 완료 (자동 저장됨)' : '✏ 편집'}</Button>}
         </div>
