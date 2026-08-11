@@ -5,6 +5,16 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v206 → v207] 제안 수정 → 사업 미반영 · 회차-매출 불일치 경고
+// 57) [버그] 수주 파이프라인에서 제안을 수정해도 연결된 사업(wonProjectId)에 반영되지 않았다.
+//     save() 가 upsertProposal 만 호출해 proposals 만 갱신 → 사업목록·수익성·자금예측은 옛 값 유지.
+//     → 수주 확정된 제안이면 사업명·발주처·계약기간·계약금액을 사업목록에도 동기화.
+// 58) 회차(paySched)를 직접 입력한 사업은 매출을 고쳐도 회차가 자동 재분배되지 않는다(의도된 설계 —
+//     사용자가 넣은 실제 계약조건을 지우면 안 되므로). 그래서 수입 내역이 옛 금액으로 남는다.
+//     → fcCapacity 에 schedGap 을 수집해 지급여력 카드에 표시.
+//        회차합 > 계약금액 = 확실한 오류(수입 과대) → 경고(주황).
+//        회차합 < 계약금액 = 이전 연도 수령 또는 일부만 등록 → 정보 표시만(회색).
+//
 // [v205 → v206] 수주 확정 버튼 사각지대 · 손익 분석 대상 한정
 // 55) [버그] 제안 목록의 [수주] 버튼이 `p.status !== '수주'` 조건이라, 편집에서 상태를 먼저
 //     '수주'로 바꾸면 버튼이 사라져 사업 생성을 실행할 방법이 없었다.
@@ -9058,7 +9068,7 @@ function OverheadView({ projects, overheads, currentYear, yearFilter, policy, se
 }
 
 // 수주 파이프라인 (사업제안현황 연동)
-function ProjectPipeline({ proposals, projects, yearFilter, canEdit, deleteProposal, winProposal, updateProposal, upsertProposal }) {
+function ProjectPipeline({ proposals, projects, yearFilter, canEdit, deleteProposal, winProposal, updateProposal, upsertProposal, upsertProject }) {
   const [edit, setEdit] = React.useState(null); // 인력 편집
   const [form, setForm] = React.useState(null); // 관심사업 등록/편집
   const [typeFilter, setTypeFilter] = React.useState('전체'); // 사업 유형 토글: 전체/경쟁입찰/수의계약/유지보수
@@ -9078,7 +9088,19 @@ function ProjectPipeline({ proposals, projects, yearFilter, canEdit, deletePropo
   const openEdit = (p) => setForm({ ...blank(), ...p, budget: p.budget || '', winRate: p.winRate != null ? p.winRate : 50 });
   const save = () => {
     if (!form.name.trim()) { alert('사업명을 입력하세요.'); return; }
-    upsertProposal({ ...form, budget: Number(String(form.budget).replace(/[^\d.-]/g, '')) || 0, winRate: Number(form.winRate) || 0 });
+    const budget = Number(String(form.budget).replace(/[^\d.-]/g, '')) || 0;
+    const next = { ...form, budget, winRate: Number(form.winRate) || 0 };
+    upsertProposal(next);
+    // ★ 이미 수주 확정돼 사업이 생성된 제안이면, 사업목록에도 같은 내용을 반영한다.
+    //   예전엔 제안만 갱신되어 사업목록·수익성·자금예측이 옛 값으로 남았다.
+    if (next.status === '수주' && next.wonProjectId && upsertProject) {
+      const linked = (projects || []).find(x => x.id === next.wonProjectId);
+      if (linked) {
+        const patch = { ...linked, name: next.name, client: next.client || linked.client, period: next.period || linked.period };
+        if (budget > 0 && budget !== Number(linked.revenue)) patch.revenue = budget;
+        upsertProject(patch);
+      }
+    }
     setForm(null);
   };
   const hasData = proposals && proposals.length > 0;
@@ -10450,6 +10472,36 @@ function PayrollCapacityCards({ cap }) {
                 );
               })}
             </div>
+            {cap.schedGap && cap.schedGap.length > 0 && (() => {
+              const warns = cap.schedGap.filter(g => g.level === 'warn');
+              const infos = cap.schedGap.filter(g => g.level === 'info');
+              return (
+                <div style={{ background: warns.length ? '#FFF4E5' : T.surfaceAlt, border: `1px solid ${warns.length ? T.warning : T.border}`, borderRadius: 8, padding: S[3], marginBottom: S[3], fontSize: 11.5, lineHeight: 1.8 }}>
+                  {warns.length > 0 && (
+                    <>
+                      <strong style={{ color: T.warning }}>⚠ 회차 합계가 계약금액을 초과한 사업 {warns.length}건</strong> — 회차를 직접 입력한 사업은 매출을 고쳐도 회차가 자동으로 바뀌지 않습니다. 수입이 과대 계상됩니다.
+                      {warns.map(g => (
+                        <div key={g.id} style={{ color: T.text, paddingLeft: 8 }}>
+                          <strong>{g.id}</strong> {shorten(g.name, 26)} · 계약 {fmtMoney(g.rev)} vs 회차합 {fmtMoney(g.tot)}
+                          <strong style={{ color: T.danger }}> (+{fmtMoney(g.diff)})</strong>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                  {infos.length > 0 && (
+                    <div style={{ marginTop: warns.length ? S[2] : 0, color: T.textMute }}>
+                      회차가 계약금액보다 적은 사업 {infos.length}건 — 이전 연도에 이미 수령했거나 회차를 일부만 등록한 경우입니다.
+                      {infos.map(g => (
+                        <div key={g.id} style={{ paddingLeft: 8 }}>
+                          {g.id} {shorten(g.name, 24)} · 계약 {fmtMoney(g.rev)} · 등록 회차 {fmtMoney(g.tot)} (미등록 {fmtMoney(-g.diff)})
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ color: T.textMute, marginTop: 4 }}>자금흐름 예측 시나리오 → 사업별 수금 설정 → 「회차 직접 편집」에서 확인·수정할 수 있습니다.</div>
+                </div>
+              );
+            })()}
             <div style={{ fontSize: 10.5, color: T.textMute, lineHeight: 1.8 }}>
               기준 잔고 {cap.lastKey} 급여일 인출 후 <strong>{fmtMoney(cap.startCarry)}원</strong>에서 출발 · 월 운영경비 {fmtMoney(cap.opex)}원 ·
               급여 필요액은 실제 인출 이력(임직원급여 + 작업자급여 + 4대보험) 기준. 매월 10일에 <strong>전월분</strong>을 지급합니다(개인별 가불·퇴직금은 제외).
@@ -10572,8 +10624,22 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         let runway = 0; for (const x of list) { if (!x[sel].ok) break; runway++; }
         return { firstShort: fs || null, runway, next: list[0] };
       };
+      // ★ 회차(paySched)가 있는 사업은 매출을 고쳐도 회차 금액이 자동 재분배되지 않는다(의도된 설계).
+      //   그래서 매출과 회차 합계가 어긋나면 수입 내역이 옛 값으로 남는다 → 카드에 경고로 노출한다.
+      const schedGap = [];
+      Object.keys(sched).forEach(pid => {
+        const pj = (projects || []).find(x => x.id === pid); if (!pj) return;
+        const rows = (sched[pid] || []).filter(r => r && r.month && Number(r.amount) > 0);
+        if (!rows.length) return;
+        const tot = rows.reduce((a, r) => a + Number(r.amount), 0);
+        const rev = Number(pj.revenue) || 0;
+        // 회차합 > 매출 = 확실한 오류(과다 등록) → 경고.
+        // 회차합 < 매출 = 이전 연도에 이미 수령했거나 회차를 일부만 등록한 경우 → 정보 표시만.
+        if (tot > rev) schedGap.push({ id: pid, name: pj.name, rev, tot, diff: tot - rev, level: 'warn' });
+        else if (tot < rev) schedGap.push({ id: pid, name: pj.name, rev, tot, diff: tot - rev, level: 'info' });
+      });
       const past = keys.map(k => ({ key: k, ok: Number(A[k]) - needOf(k) >= 0 }));
-      return { list, lastKey, startCarry: Math.round(startCarry), opex,
+      return { list, lastKey, startCarry: Math.round(startCarry), opex, schedGap,
                conf: track('conf'), pipe: track('pipe'),
                past, pastOk: past.filter(x => x.ok).length };
     } catch (e) { return null; }
@@ -13438,7 +13504,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
       </div>
 
       {view === 'pipeline' ? (
-        <ProjectPipeline proposals={proposals || []} projects={projects || []} yearFilter={yearFilter} canEdit={canEdit} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertProposal={upsertProposal} />
+        <ProjectPipeline proposals={proposals || []} projects={projects || []} yearFilter={yearFilter} canEdit={canEdit} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertProposal={upsertProposal} upsertProject={upsertProject} />
       ) : view === 'overhead' ? (
         <OverheadView projects={shown} overheads={overheads || []} currentYear={currentYear} yearFilter={yearFilter}
           policy={policy} setPolicy={setPolicy} canEdit={canEdit}
