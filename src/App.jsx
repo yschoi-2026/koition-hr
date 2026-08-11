@@ -5,6 +5,52 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v202 → v203] 고정 지출 캘린더 실측 등록
+// 51) 1~8월 주계좌 원장 전수 스캔으로 '3개월 이상 반복 + 월 10만원↑' 출금을 추출해 12건 등록.
+//     본사임차료 2,420,000 · 우리금융캐피탈 1,337,609 · 반석관리비 1,266,000 · 신한할부금융 1,149,280 ·
+//     세종관리비 493,060 · 서울대숙소임차료 360,000 · 서울보증 304,820 · 컨테이너 231,000 ·
+//     세정회계 137,500 · 시큐리티 132,000 · 이카운트 104,500 · 코웨이 64,800 = 월 8,000,569
+//     ※ 급여·4대보험·부가세·카드대금·가불급여는 각각 별도 경로로 이미 계산되므로 제외(이중계상 방지).
+//     안내 문구도 그 규칙을 명시하도록 교체.
+//
+// [v201 → v202] 급여일 라벨에 '전월분' 명시
+// 49) 실측 확인: 급여는 매월 10일에 '전월분'을 지급한다(4/10 적요 '2026년03월-임직원급여').
+//     라벨을 '2026년 4월 10일 (3월분)' 형태로 보강. 금액 산정은 변화 없음.
+// 50) 급여 인출 인식 패턴 정정 — 4월만 적요가 코드형(01/02)이 아니라 한글형이어서
+//     4대보험 20,249,200 만 잡히고 급여 103,671,970 이 누락됐다(실측 123,921,170 이 정답).
+//     정규 급여만 인식: 코드형 | 'YYYY년MM월-임직원|작업자급여' | 사회보험.
+//     개인명_급여(가불)·1일급여·퇴직금은 제외 — 넓게 잡으면 1·3·6·7월에 개인 지급건이 섞인다.
+//
+// [v200 → v201] 경영회계 CMS 잔고 표기를 급여일 기준으로 통일
+// 48) CMS 의 '월별 실제 통장잔고' 라벨·안내문·입력칸(N월 말 잔고)이 여전히 월말 기준이었다.
+//     실제 저장값(actualBalances)은 v190 부터 급여일(10일 인출 직전) 기준인데 화면 문구만
+//     월말로 남아 있어 입력자가 월말 잔고를 넣을 위험이 있었다. → 11곳 전부 급여일 기준으로 정정.
+//     입력칸 라벨 'N월 말 잔고' → 'N월 10일', 안내에 "인출 직전(전날 마감)" 명시.
+//
+// [v199 → v200] 원가 미확정 사업의 평가 왜곡 차단
+// 47) 계약 전이거나 원가가 아직 안 들어온 사업(매출>0, 인건비·제경비·기타비 모두 0)은
+//     수익률이 100%로 계산되어 참여자 점수를 부풀린다. → 평가 점수 산정에서 제외.
+//     사업관리 엑셀·월마감으로 원가가 반영되면 자동으로 다시 포함된다.
+//     단, 완료 사업은 제외하지 않는다 — 소액 유지보수처럼 원가가 거의 없는 정상 사례가 있다
+//     (2025-004·005·006·007 등 9건). 진행 중 사업만 대상. 실측 6건의 성격은 서로 다르지만
+//     '원가 0 → 수익률 100%' 라는 왜곡은 동일하므로 한 조건으로 처리한다:
+//       · 컨소시엄 지분 수령    2026-015(55%, 주관 태일정보) · 2026-196(60%, +한국전산 40%)
+//       · 수주 확정·원가 미집행  2026-193 · 2026-195
+//       · 계약 전·원가 미정     2026-197 · 2026-198
+//
+// [v198 → v199] 급여일 지급여력 2트랙 + 대시보드 모달 분리
+//  ROLE: 인사평가 부서장 겸 월간 경영보고 담당. 경영진의 단일 질문은
+//        "매월 10일 급여가 무리 없이 나가는가" 이므로 그 지표를 최상단 단독 배치한다.
+// 45) 자금흐름 예측 시나리오(약 1,300줄 대시보드)를 접이식에서 모달로 분리.
+//     보고서 본문은 종전처럼 펼쳐진 상태를 유지하고, 상세는 버튼으로 연다.
+//     부수 효과: 초기 렌더 850KB → 246KB (평시 계산·DOM 부담 감소).
+// 46) 지급여력을 2트랙으로 산출(fcCapacity).
+//     ① 확정 기준(녹색 #1B7A43) — 계약 사업의 수금만. 의사결정 하한.
+//     ② 수주반영 기준(파랑 #1D4ED8) — 수주예정 기대수금(수주율 가중) 포함.
+//     수동 회차(paySched) 우선, 없으면 계약기간 기반 선급·잔금 자동 산출.
+//     카드에 인출직전잔고·급여필요액·수입·운영경비를 분해 표시하고,
+//     6개월 추이표와 사업별 수입 내역(수주예정은 예산×수주율×선급률까지)을 펼쳐 볼 수 있게 함.
+//
 // [v197 → v198] 12개월 차트에서 확정 구간 예측선이 실제선과 벌어지던 문제
 // 44) [버그] 차트가 확정월에도 자동보정 bias 를 더했다. 확정월은 r.bal 이 이미 실제 잔고이므로
 //     같은 값에 상수를 더하는 셈이 되어, 1~8월 예측선 전체가 실제선과 '일정 간격'으로 평행 이동했다.
@@ -26,7 +72,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // [v194 → v195] 자금흐름 예측 시나리오를 접이식으로
 // 40) 섹션 전체(약 1,300줄 분량의 대시보드)를 접이식으로 감쌌다. 기본은 접힘,
 //     cashCfg.fcOpen === true 면 펼친 상태로 시작.
-//     ★ 접혀 있어도 "다음 급여일에 급여를 줄 수 있나"는 헤더에 항상 노출한다(fcSummary).
+//     ★ v199 에서 모달+2트랙 카드(fcCapacity)로 대체됨.
 //       실측 잔고·실측 인출액 우선, 최근 3개월 평균 순증으로 6개월 롤링. 본문 산식과 동일 기준.
 //
 // [v193 → v194] 급여일 판정을 '앞으로 올 급여일'로 한정
@@ -2525,6 +2571,13 @@ function calcContributionScore(empId, projects, year) {
     const me = norm.find(x => x.empId === empId);
     const pct = me ? me._pct : Math.max(0, Number(m.contribution) || 0);
     if (pct < EVAL_CFG.coreMin) return;   // 소액 참여(제안서지원 등)는 수행 기여에서 제외(기준: 정책설정)
+    // ★ '진행 중인데 원가가 아직 안 들어온' 사업은 수익률이 100%로 계산되어 점수를 부풀린다.
+    //   계약 전이거나 집행이 시작되지 않은 사업이므로 평가 대상에서 제외한다.
+    //   완료 사업은 제외하지 않는다 — 소액 유지보수처럼 실제로 원가가 거의 없는 건이 정상적으로 존재.
+    //   (사업관리 엑셀·월마감으로 원가가 반영되면 자동으로 다시 포함)
+    if (p.status !== 'completed' && (Number(p.revenue) || 0) > 0
+        && (Number(p.laborCost) || 0) === 0 && (Number(p.overhead) || 0) === 0
+        && (Number(p.otherCost) || 0) === 0) return;
     const w = pct * revFactor(mm.revenue);   // 기여도% × 매출규모 계수
     wsum += w;
     ssum += ps * w;
@@ -9837,7 +9890,7 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
       ['부가세예수금(누적)', 'tax.vatOutCum'], ['부가세대급금(누적)', 'tax.vatInCum'],
       ['당기순이익(누적)', 'tax.netIncomeCum'],
       ['정규직 급여', 'salaryReg'], ['계약직 급여', 'salaryCon'],
-      ['통장 잔고', 'bankBalance'], ['매출채권', 'receivable'], ['매입채무', 'payable'],
+      ['통장 잔고(주계좌·급여일 기준)', 'bankBalance'], ['매출채권', 'receivable'], ['매입채무', 'payable'],
     ];
     const rows = KEYS.map(([label, path]) => {
       const b = Number(cur(path)) || 0, a = nxt(path);
@@ -9861,7 +9914,7 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
     if (merged.sales && monthlySum > 0 && newSales > 0 && newSales < monthlySum * 0.8) {
       warns.push(`월별매출 합계 ${fmtMoney(monthlySum)}원과 어긋납니다 (반영 후 매출 합계 ${fmtMoney(newSales)}원).`);
     }
-    // 월말 실제 잔고 자동 기록 미리보기
+    // 급여일(10일) 실제 잔고 자동 기록 미리보기
     const meb = merged._monthEndBalances || null;
     const mebRows = meb ? Object.keys(meb).sort().map(k => ({
       key: k, day: (merged._monthEndDays || {})[k], val: meb[k],
@@ -10194,23 +10247,23 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
         })()}
       </div>
 
-      {/* 월별 실제 통장잔고 (예측 대비용) */}
+      {/* 급여일(10일) 실제 통장잔고 — 예측 시작점 겸 정확도 측정 기준 */}
       <div style={{ ...card(), padding: S[4], marginTop: S[4] }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-          <SectionTitle>월별 실제 통장잔고 (자금흐름 예측 대비용)</SectionTitle>
+          <SectionTitle>급여일(10일) 실제 통장잔고 (자금흐름 예측 기준점)</SectionTitle>
           {(() => {
             const ab = f.actualBalances || {};
             const keys = Object.keys(ab).filter(k => ab[k] != null && ab[k] !== '').sort();
             if (keys.length) {
               const lastK = keys[keys.length - 1];
               const [, m] = lastK.match(/(\d{4})-(\d{2})/) || [];
-              return <div style={{ fontSize: 11.5, color: T.textMute }}>최근 실제 잔고 <span style={{ color: T.textLight }}>({Number(m)}월 말)</span>: <strong style={{ color: T.brand }}>{fmtMoney(Number(ab[lastK]))}원</strong> <span style={{ color: T.textLight }}>· 예측 시작점으로 자동 사용</span></div>;
+              return <div style={{ fontSize: 11.5, color: T.textMute }}>최근 실제 잔고 <span style={{ color: T.textLight }}>({Number(m)}월 10일 인출 직전)</span>: <strong style={{ color: T.brand }}>{fmtMoney(Number(ab[lastK]))}원</strong> <span style={{ color: T.textLight }}>· 예측 시작점으로 자동 사용</span></div>;
             }
             return <div style={{ fontSize: 11.5, color: T.warning }}>⚠ 실제 잔고 미입력 — 아래에 급여일(10일) 잔고를 입력하면 예측 시작점이 됩니다</div>;
           })()}
         </div>
         <div style={{ fontSize: 11.5, color: T.textMute, margin: `4px 0 ${S[3]}px`, lineHeight: 1.6 }}>
-          매월 말 실제 통장잔고를 입력하면, 경영보고서의 자금흐름 예측이 <strong>가장 최근 실제 잔고에서 출발</strong>하고 차트에 <strong>실제 잔고 라인</strong>이 겹쳐 표시됩니다.
+          매월 <strong>10일 급여 인출 직전</strong>(전날 마감) 잔고를 입력하면, 경영보고서의 급여일 지급여력이 <strong>가장 최근 실제 잔고에서 출발</strong>하고 차트에 <strong>실제 잔고 라인</strong>이 겹쳐 표시됩니다. 은행 입출금 조회를 올리면 자동으로 채워집니다.
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: S[3] }}>
           {(() => {
@@ -10222,7 +10275,7 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
               const val = (f.actualBalances || {})[mk];
               return (
                 <div key={mk}>
-                  <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>{i + 1}월 말 잔고</div>
+                  <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>{i + 1}월 10일</div>
                   <input inputMode="numeric" placeholder="미입력" value={fmtInput(val ?? '')} onChange={e => cur(null, mk, e.target.value)}
                     style={{ width: '100%', padding: '6px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: FONT, fontVariantNumeric: 'tabular-nums' }} />
                 </div>
@@ -10231,7 +10284,7 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
           })()}
         </div>
         <div style={{ fontSize: 11, color: T.textMute, marginTop: S[3] }}>
-          팁: 매월 말 잔고만 입력하면 자금흐름 예측이 자동으로 가장 최근 잔고에서 시작합니다. 별도로 시작점을 맞출 필요가 없습니다.
+          팁: 급여일 인출 <strong>직전</strong> 잔고여야 합니다. 10일에 급여가 나간 뒤 잔액을 넣으면 "급여를 줄 수 있었나"를 사후 결과로 되묻는 셈이 되어 판정이 항상 통과합니다. 은행 조회를 2026/01/01~오늘로 올리면 자동으로 정확히 채워집니다.
         </div>
       </div>
     </div>
@@ -10239,71 +10292,259 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
 }
 
 
+// ══════════════════════════════════════════════════════════════════════
+//  급여일 지급여력 카드 — 확정 기준(녹색) / 수주반영 기준(파랑)
+//   경영진의 질문 "10일에 급여가 나가는가"에 두 각도로 답한다.
+//   확정 = 의사결정 하한 · 수주반영 = 수주 성사 시 기대치
+// ══════════════════════════════════════════════════════════════════════
+const CAP_GREEN = '#1B7A43', CAP_BLUE = '#1D4ED8';
+function shorten(v, n) { const t = String(v || ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; }
+function PayrollCapacityCards({ cap }) {
+  const [open, setOpen] = React.useState(null);   // 펼친 트랙: 'conf' | 'pipe'
+  if (!cap || !cap.list.length) return null;
+  const nx = cap.list[0];
+
+  const Card = ({ sel, base, title, sub }) => {
+    const tr = cap[sel], v = nx[sel];
+    const bad = !v.ok, warn = tr.runway <= 1 && !bad;
+    const tone = bad ? T.danger : base;
+    const isOpen = open === sel;
+    return (
+      <div style={{
+        flex: '1 1 330px', minWidth: 300,
+        background: bad ? '#FDECEC' : `${base}0D`,
+        border: `2px solid ${tone}`, borderRadius: 12, padding: S[4],
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+          <span style={{ width: 9, height: 9, borderRadius: '50%', background: tone, flexShrink: 0 }} />
+          <span style={{ fontSize: 12, fontWeight: 800, color: tone, letterSpacing: 0.2 }}>{title}</span>
+          <span style={{ fontSize: 10.5, color: T.textMute }}>{sub}</span>
+        </div>
+        <div style={{ fontSize: 11, color: T.textMute, fontWeight: 700 }}>{nx.label} <span style={{ fontWeight: 500 }}>({nx.payOf} 급여)</span></div>
+        <div style={{ fontSize: 27, fontWeight: 800, color: tone, lineHeight: 1.2, margin: '2px 0 6px' }}>
+          {v.room >= 0 ? '+' : ''}{fmtMoney(v.room)}<span style={{ fontSize: 14, fontWeight: 700 }}>원</span>
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: bad ? T.danger : T.ink, marginBottom: 8 }}>
+          {bad ? '지급 부족 — 수금 앞당기기·자금 확보 필요' : (warn ? '지급 가능 — 다음 달부터 빠듯' : `지급 가능 · 앞으로 ${tr.runway}회 확보`)}
+        </div>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+          <tbody>
+            {[['인출 직전 잔고', v.bal, T.ink], ['급여 필요액', -nx.need, T.textMute], ['그 달 수입', v.in, T.textMute], ['운영경비', -nx.opex, T.textMute]].map(([l, n, c]) => (
+              <tr key={l}><Td style={{ padding: '2px 0', border: 'none', color: T.textMute, fontSize: 11 }}>{l}</Td>
+                <Td align="right" mono style={{ padding: '2px 0', border: 'none', color: c, fontWeight: l === '인출 직전 잔고' ? 800 : 500 }}>{n < 0 ? '−' : ''}{fmtMoney(Math.abs(n))}</Td></tr>
+            ))}
+          </tbody>
+        </table>
+        {tr.firstShort && (
+          <div style={{ fontSize: 11, color: T.danger, fontWeight: 700, marginTop: 8, paddingTop: 6, borderTop: `1px solid ${tone}33` }}>
+            ⚠ {tr.firstShort.label} {fmtMoney(Math.abs(tr.firstShort[sel].room))}원 부족 예상
+          </div>
+        )}
+        <button onClick={() => setOpen(isOpen ? null : sel)} style={{ marginTop: 10, width: '100%', padding: '6px 0', background: 'transparent', border: `1px solid ${tone}55`, borderRadius: 7, color: tone, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT }}>
+          {isOpen ? '내역 접기 ▲' : '6개월 추이·내역 보기 ▼'}
+        </button>
+      </div>
+    );
+  };
+
+  const sel = open;
+  return (
+    <div style={{ marginBottom: S[5] }}>
+      <div style={{ display: 'flex', gap: S[3], flexWrap: 'wrap' }}>
+        <Card sel="conf" base={CAP_GREEN} title="확정 기준" sub="계약된 사업의 수금만" />
+        <Card sel="pipe" base={CAP_BLUE} title="수주반영 기준" sub="수주예정 기대수금 포함" />
+      </div>
+      {sel && (() => {
+        const isPipe = sel === 'pipe';
+        const accent = isPipe ? CAP_BLUE : CAP_GREEN;
+        return (
+          <div style={{ ...card({ borderLeft: `4px solid ${accent}` }), padding: S[4], marginTop: S[3] }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: accent, marginBottom: S[3] }}>
+              {isPipe ? '수주반영 기준' : '확정 기준'} · 6개월 추이
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 720 }}>
+                <thead><tr style={{ background: T.surfaceAlt }}>
+                  <Th>급여일</Th><Th align="right">그 달 수입</Th>
+                  {isPipe && <Th align="right">그중 수주예정</Th>}
+                  <Th align="right">운영경비</Th><Th align="right">급여 필요액</Th>
+                  <Th align="right">인출 직전 잔고</Th><Th align="right">지급 후 여유</Th>
+                </tr></thead>
+                <tbody>
+                  {cap.list.map(x => {
+                    const v = x[sel];
+                    return (
+                      <tr key={x.key} style={{ borderTop: `1px solid ${T.divider}`, background: v.ok ? 'transparent' : '#FDECEC' }}>
+                        <Td style={{ fontWeight: 700 }}>{x.label}<span style={{ fontSize: 10, color: T.textMute, fontWeight: 500 }}> ({x.payOf})</span></Td>
+                        <Td align="right" mono>{fmtMoney(v.in)}</Td>
+                        {isPipe && <Td align="right" mono style={{ color: CAP_BLUE }}>{v.pipeOnly > 0 ? fmtMoney(v.pipeOnly) : '-'}</Td>}
+                        <Td align="right" mono style={{ color: T.textMute }}>−{fmtMoney(x.opex)}</Td>
+                        <Td align="right" mono style={{ color: T.textMute }}>−{fmtMoney(x.need)}</Td>
+                        <Td align="right" mono><strong>{fmtMoney(v.bal)}</strong></Td>
+                        <Td align="right" mono style={{ fontWeight: 800, color: v.ok ? accent : T.danger }}>{v.ok ? '' : '▲ '}{fmtMoney(v.room)}</Td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {/* 수입 내역 — 달별로 어느 사업에서 얼마가 들어오는지 */}
+            <div style={{ marginTop: S[4] }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, marginBottom: S[2] }}>수입 내역</div>
+              {cap.list.map(x => {
+                const conf = x.conf.notes || [], pipe = x.pipe.notes || [];
+                const showPipe = isPipe ? pipe : [];
+                if (!conf.length && !showPipe.length) return null;
+                return (
+                  <div key={x.key} style={{ marginBottom: S[3], paddingBottom: S[2], borderBottom: `1px solid ${T.divider}` }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 4 }}>
+                      {x.label} <span style={{ color: T.textMute, fontWeight: 500 }}>({x.payOf} 급여) · 합계 {fmtMoney(x[sel].in)}원</span>
+                    </div>
+                    {conf.map((n, i) => (
+                      <div key={'c' + i} style={{ fontSize: 11, color: T.text, lineHeight: 1.85, paddingLeft: 8 }}>
+                        <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 2, background: CAP_GREEN, marginRight: 6 }} />
+                        <strong>{n.id}</strong> {shorten(n.name, 30)} · {n.kind} <strong>{fmtMoney(n.amount)}원</strong>
+                      </div>
+                    ))}
+                    {showPipe.map((n, i) => (
+                      <div key={'p' + i} style={{ fontSize: 11, color: '#1E3A8A', lineHeight: 1.85, paddingLeft: 8 }}>
+                        <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 2, background: CAP_BLUE, marginRight: 6 }} />
+                        {shorten(n.name, 30)}{n.client ? ` (${shorten(n.client, 14)})` : ''} · 수주예정 {n.kind} <strong>{fmtMoney(n.amount)}원</strong>
+                        <span style={{ color: T.textMute }}> — 사업예산 {fmtMoney(n.budget)} × 수주율 {n.win}%{n.advP != null ? ` × 선급 ${n.advP}%` : ''}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 10.5, color: T.textMute, lineHeight: 1.8 }}>
+              기준 잔고 {cap.lastKey} 급여일 인출 후 <strong>{fmtMoney(cap.startCarry)}원</strong>에서 출발 · 월 운영경비 {fmtMoney(cap.opex)}원 ·
+              급여 필요액은 실제 인출 이력(임직원급여 + 작업자급여 + 4대보험) 기준. 매월 10일에 <strong>전월분</strong>을 지급합니다(개인별 가불·퇴직금은 제외).
+              {isPipe && ' 수주예정은 수주율로 가중한 기대금액이며 확정 수입이 아닙니다.'}
+              {' '}지난 실적 {cap.past.length}회 중 {cap.pastOk}회 지급 가능.
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
 function ManagementReportView({ user, projects, proposals, overheads, employees, empLedger, setEmpLedger, currentYear, policy, receivables, cashCfg, setCashCfg, upsertProject, deleteProject, fin }) {
   const [monthDetail, setMonthDetail] = React.useState(null);   // 월별 상세 모달 (클릭한 월의 row)
   // 데이터 기준월: CMS 마감월(fin.period '2026-06') → '1~6월 누계' 라벨
   const cutM = (() => { const m = String((fin || {}).period || '').match(/-(\d{2})/); return m ? Number(m[1]) : null; })();
   const basisLabel = cutM ? `${currentYear || new Date().getFullYear()}년 1~${cutM}월 누계 기준` : '연초~최근 마감월 누계 기준';
   const canEditLedger = !!setEmpLedger && user.role === 'admin';
+  const [fcModal, setFcModal] = React.useState(false);   // 자금흐름 예측 시나리오 대시보드 모달
 
   // ── 접힌 상태에서도 보여줄 급여 지급 판정 요약 ──
   //   본문(자금흐름 예측)은 접히지만, "다음 급여일에 급여를 줄 수 있나"는 항상 보여야 한다.
   //   본문 계산과 중복을 피하려 필요한 값만 가볍게 재산출한다(실측 우선, 예측은 단순 롤링).
-  const fcSummary = React.useMemo(() => {
+  // ══════════════════════════════════════════════════════════════
+  //  급여일 지급여력 — 경영보고의 최상위 지표
+  //   질문: "매월 10일에 급여가 무리 없이 나가는가"
+  //   두 트랙을 동시에 산출한다.
+  //     ① 확정 기준  : 계약된 사업의 수금만 반영 (보수적 · 의사결정 하한)
+  //     ② 수주반영   : 수주예정 사업의 기대수금까지 반영 (수주율 가중)
+  //   시작점은 마지막 확정월의 '급여일 인출 후' 잔고. 이후 월별로 굴린다.
+  // ══════════════════════════════════════════════════════════════
+  const fcCapacity = React.useMemo(() => {
     try {
       const cfg = cashCfg || {}, f = fin || {};
       const A = f.actualBalances || {};
-      const drawn = cfg.payrollDrawn || {};
-      const payAct = cfg.payrollActual || {};
-      const base = Number(cfg.payrollBase) || 0;
       const keys = Object.keys(A).filter(k => A[k] != null && A[k] !== '').sort();
       if (!keys.length) return null;
       const lastKey = keys[keys.length - 1];
-      const need = (k) => {
+      const [ly, lm] = lastKey.split('-').map(Number);
+      const payAct = cfg.payrollActual || {}, drawn = cfg.payrollDrawn || {};
+      const payBase = Number(cfg.payrollBase) || 0;
+      const needOf = (k) => {
         const v = payAct[k];
         if (v != null && v !== '' && Number(v) > 0) return Math.round(Number(v));
-        if (base > 0) return Math.round(base);
+        if (payBase > 0) return Math.round(payBase);
         return Math.round((Number(f.salaryReg) || 0) + (Number(f.salaryCon) || 0));
       };
-      // 확정 마지막 달의 '급여일 인출 후' 잔고에서 출발
-      let carry = Number(A[lastKey]) - (drawn[lastKey] != null && drawn[lastKey] !== '' ? Number(drawn[lastKey]) : need(lastKey));
-      const [ly, lm] = lastKey.split('-').map(Number);
-      // 월 순증 추정: 최근 확정 3개월의 (인출후 → 다음달 인출직전) 평균
-      const deltas = [];
-      for (let i = 1; i < keys.length; i++) {
-        const pk = keys[i - 1], ck = keys[i];
-        const pd = drawn[pk] != null && drawn[pk] !== '' ? Number(drawn[pk]) : need(pk);
-        deltas.push(Number(A[ck]) - (Number(A[pk]) - pd));
-      }
-      const recent = deltas.slice(-3);
-      const growth = recent.length ? Math.round(recent.reduce((a, b) => a + b, 0) / recent.length) : 0;
-      const up = [];
-      for (let i = 1; i <= 6; i++) {
-        const d = new Date(ly, lm - 1 + i, 1);
-        const k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-        const bal = carry + growth;
-        const nd = need(k);
-        up.push({ key: k, label: `${d.getFullYear()}년 ${d.getMonth() + 1}월 10일`, bal, need: nd, room: bal - nd, ok: bal - nd >= 0 });
-        carry = bal - nd;
-      }
-      const fs = up.find(x => !x.ok);
-      let runway = 0; for (const x of up) { if (!x.ok) break; runway++; }
-      const past = keys.map(k => {
-        const nd = need(k);
-        return { key: k, ok: Number(A[k]) - nd >= 0 };
+      const opex = Math.round((Number(f.opexCash) || 0) + (Number(f.opexPurchase) || 0));
+      const advRate = (Number(cfg.advRate) || 0) / 100;
+      const idxOf = (y, m) => (y - ly) * 12 + (m - lm);          // lastKey 를 0
+      const HZ = 6;
+      const mk = (i) => { const d = new Date(ly, lm - 1 + i, 1); return { i, y: d.getFullYear(), m: d.getMonth() + 1,
+        key: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'),
+        label: `${d.getFullYear()}년 ${d.getMonth() + 1}월 10일`,
+          payOf: (() => { const pm = new Date(d.getFullYear(), d.getMonth() - 1, 1); return `${pm.getMonth() + 1}월분`; })() }; };
+      const parseSpan = (str) => {
+        const m = String(str || '').match(/(\d{4})[.\-\/](\d{1,2}).*?(\d{4})[.\-\/](\d{1,2})/);
+        return m ? { sy: +m[1], sm: +m[2], ey: +m[3], em: +m[4] } : null;
+      };
+      const inConf = Array(HZ + 1).fill(0), inPipe = Array(HZ + 1).fill(0);
+      const noteConf = Array.from({ length: HZ + 1 }, () => []), notePipe = Array.from({ length: HZ + 1 }, () => []);
+      // ── 확정: 수동 회차(paySched) 우선, 없으면 계약기간 기반 선급·잔금 ──
+      const sched = cfg.paySched || {};
+      (projects || []).forEach(p => {
+        const rev = Number(p.revenue) || 0; if (rev <= 0) return;
+        const rows = sched[p.id];
+        const hasSched = Array.isArray(rows) && rows.some(r => r && r.month && Number(r.amount) > 0);
+        if (hasSched) {
+          rows.forEach(r => {
+            if (!r || !r.month || !(Number(r.amount) > 0)) return;
+            const mm = String(r.month).match(/(\d{4})[.\-\/](\d{1,2})/); if (!mm) return;
+            const i = idxOf(+mm[1], +mm[2]); if (i < 1 || i > HZ) return;
+            inConf[i] += Number(r.amount);
+            noteConf[i].push({ id: p.id, name: p.name, kind: r.memo || '회차', amount: Math.round(Number(r.amount)) });
+          });
+          return;
+        }
+        const sp = parseSpan(p.period); if (!sp) return;
+        const si = idxOf(sp.sy, sp.sm), ei = idxOf(sp.ey, sp.em) + 1;
+        const adv = Math.round(rev * advRate), rem = rev - adv;
+        if (si >= 1 && si <= HZ && adv > 0) { inConf[si] += adv; noteConf[si].push({ id: p.id, name: p.name, kind: `선급 ${Math.round(advRate * 100)}%`, amount: adv }); }
+        if (ei >= 1 && ei <= HZ && rem > 0) { inConf[ei] += rem; noteConf[ei].push({ id: p.id, name: p.name, kind: '잔금', amount: rem }); }
       });
-      const pastOk = past.filter(x => x.ok).length;
-      const tone = !fs ? T.success : (runway <= 1 ? T.danger : T.warning);
-      const nx = up[0];
-      const headline = fs
-        ? `${fs.label} 급여일 ${fmtMoney(Math.abs(fs.room))}원 부족 예상`
-        : `앞으로 ${runway}회 급여일 모두 지급 가능`;
-      const detail = `다음 급여일 ${nx.label} — 인출 직전 예상 잔고 ${fmtMoney(nx.bal)}원, 필요액 ${fmtMoney(nx.need)}원 (여유 ${fmtMoney(nx.room)}원). `
-        + `기준 잔고 ${lastKey} ${fmtMoney(Number(A[lastKey]))}원(10일 인출 직전) · 최근 3개월 평균 순증 ${fmtMoney(growth)}원 적용. `
-        + `지난 실적 ${past.length}회 중 ${pastOk}회 지급 가능.`;
-      return { headline, detail, tone, ok: !fs, runway, next: nx };
+      // ── 수주예정: 제안 × 수주율 × 선급률 ──
+      const pipeCfg = cfg.pipeline || {};
+      (proposals || []).forEach(pr => {
+        if (pr.status === '수주') return;
+        const budget = Number(pr.budget) || 0; if (budget <= 0) return;
+        const pc = pipeCfg[pr.id] || {};
+        if (pc.on === false) return;
+        const win = (pr.winRate != null && pr.winRate !== '' ? Number(pr.winRate) : 50) / 100;
+        const expct = budget * win;
+        const advP = (pc.rate != null && pc.rate !== '' ? Number(pc.rate) : (Number(cfg.advRate) || 0)) / 100;
+        let si = 1;
+        const mm = String(pc.month || '').match(/(\d{4})[.\-\/](\d{1,2})/);
+        if (mm) si = idxOf(+mm[1], +mm[2]);
+        else { const sp = parseSpan(pr.period); if (sp) si = idxOf(sp.sy, sp.sm); }
+        if (si < 1) si = 1;
+        const adv = Math.round(expct * advP), rem = Math.round(expct - adv);
+        if (si <= HZ && adv > 0) { inPipe[si] += adv; notePipe[si].push({ id: pr.id, name: pr.name, client: pr.client, budget, win: Math.round(win * 100), advP: Math.round(advP * 100), kind: '선급', amount: adv }); }
+        const ei = si + 6;
+        if (ei <= HZ && rem > 0) { inPipe[ei] += rem; notePipe[ei].push({ id: pr.id, name: pr.name, client: pr.client, budget, win: Math.round(win * 100), advP: Math.round(advP * 100), kind: '잔금', amount: rem }); }
+      });
+      // ── 월별 롤링 ──
+      const startCarry = Number(A[lastKey]) - (drawn[lastKey] != null && drawn[lastKey] !== '' ? Number(drawn[lastKey]) : needOf(lastKey));
+      let cc = startCarry, cp = startCarry;
+      const list = [];
+      for (let i = 1; i <= HZ; i++) {
+        const mo = mk(i), need = needOf(mo.key);
+        const balC = cc + inConf[i] - opex;                  // 급여 인출 직전
+        const balP = cp + inConf[i] + inPipe[i] - opex;
+        list.push({ ...mo, need, opex,
+          conf: { in: Math.round(inConf[i]), bal: Math.round(balC), room: Math.round(balC - need), ok: balC - need >= 0, notes: noteConf[i] },
+          pipe: { in: Math.round(inConf[i] + inPipe[i]), pipeOnly: Math.round(inPipe[i]), bal: Math.round(balP), room: Math.round(balP - need), ok: balP - need >= 0, notes: notePipe[i] } });
+        cc = balC - need; cp = balP - need;
+      }
+      const track = (sel) => {
+        const fs = list.find(x => !x[sel].ok);
+        let runway = 0; for (const x of list) { if (!x[sel].ok) break; runway++; }
+        return { firstShort: fs || null, runway, next: list[0] };
+      };
+      const past = keys.map(k => ({ key: k, ok: Number(A[k]) - needOf(k) >= 0 }));
+      return { list, lastKey, startCarry: Math.round(startCarry), opex,
+               conf: track('conf'), pipe: track('pipe'),
+               past, pastOk: past.filter(x => x.ok).length };
     } catch (e) { return null; }
-  }, [cashCfg, fin]);
+  }, [cashCfg, fin, projects, proposals]);
   const [ledgerForm, setLedgerForm] = React.useState(null); // {name, empId, card, newOrder}
   const removeLedger = (row) => {
     if (!window.confirm(`[${row.name}] 항목을 직원별 원장에서 삭제할까요?\n(사업 참여 데이터는 유지되며, 신규수주·카드 기록만 제거됩니다)`)) return;
@@ -10639,26 +10880,25 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         </div>
       </div>
 
-      {/* ★ 핵심: 자금흐름 예측 시나리오 — 접이식. 접혀 있어도 급여 판정은 헤더에 노출된다. */}
-      <details className="no-print" open={cashCfg && cashCfg.fcOpen === true} style={{ marginBottom: S[5] }}>
-        <summary style={{ listStyle: 'none', cursor: 'pointer', padding: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: S[2] }}>
-            <span style={{ padding: '4px 12px', borderRadius: 8, background: T.brand, color: '#fff', fontSize: 13, fontWeight: 800 }}>핵심</span>
-            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>자금흐름 예측 시나리오 (2026.01 ~ 2027.04)</h2>
-            <span style={{ fontSize: 12, color: T.textMute, fontWeight: 600 }}>▼ 펼치기</span>
-          </div>
-          {fcSummary && (
-            <div style={{
-              background: fcSummary.ok ? 'rgba(27,122,67,0.07)' : (fcSummary.runway <= 1 ? '#FDECEC' : '#FFF4E5'),
-              border: `2px solid ${fcSummary.tone}`, borderRadius: 10, padding: `${S[3]}px ${S[4]}px`, marginBottom: S[2],
-            }}>
-              <div style={{ fontSize: 15, fontWeight: 800, color: fcSummary.tone, lineHeight: 1.45 }}>
-                {fcSummary.headline}
-              </div>
-              <div style={{ fontSize: 11.5, color: T.text, marginTop: 4, lineHeight: 1.75 }}>{fcSummary.detail}</div>
+      {/* ★ 핵심: 급여일 지급여력 — 경영보고의 최상위 지표. 상세 대시보드는 모달로 분리. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: `0 0 ${S[3]}px` }}>
+        <span style={{ padding: '4px 12px', borderRadius: 8, background: T.brand, color: '#fff', fontSize: 13, fontWeight: 800 }}>핵심</span>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>급여일 지급여력</h2>
+        <span style={{ fontSize: 12, color: T.textMute }}>매월 10일 기준</span>
+        <div style={{ flex: 1 }} />
+        <Button variant="outline" size="sm" icon={BarChart3} onClick={() => setFcModal(true)}>자금흐름 예측 시나리오</Button>
+      </div>
+      {fcCapacity && <PayrollCapacityCards cap={fcCapacity} />}
+
+      {fcModal && (
+        <div onClick={() => setFcModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1600, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '24px 12px', overflowY: 'auto' }}>
+          <div onClick={e => e.stopPropagation()} style={{ ...card(), padding: S[5], width: 1320, maxWidth: '100%', marginBottom: 40 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: S[4] }}>
+              <span style={{ padding: '4px 12px', borderRadius: 8, background: T.brand, color: '#fff', fontSize: 13, fontWeight: 800 }}>핵심</span>
+              <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800, color: T.ink }}>자금흐름 예측 시나리오 (2026.01 ~ 2027.04)</h2>
+              <div style={{ flex: 1 }} />
+              <Button variant="ghost" size="sm" onClick={() => setFcModal(false)}>닫기 ✕</Button>
             </div>
-          )}
-        </summary>
       {(() => {
         const cfg = cashCfg || {};
         const up = (k, v) => setCashCfg && setCashCfg(prev => ({ ...prev, [k]: Number(v) || 0 }));
@@ -10943,8 +11183,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           if (i >= 0 && i < FC_MONTHS && amt > 0) extraExpArr[i] += amt;
         });
         const exp = months.map((mo, i) => laborOf(mo, i) + opexOf(i) + taxOf(mo) + extraExpArr[i]);
-        // 예측 시작점: 가장 최근 입력된 '월말 실제 통장잔고'를 시작점으로 사용 (없으면 수동 balance → CMS 통장잔고)
-        //   'N월 말 잔고'는 N월 종료 시점 → N+1월부터 수입·지출을 누적한다.
+        // 예측 시작점: 가장 최근 입력된 '급여일(10일) 실제 통장잔고'를 시작점으로 사용 (없으면 수동 balance → CMS 통장잔고)
+        //   'N월 10일 잔고'는 급여 인출 직전 시점. 이월할 때는 그 달 급여일 인출액을 차감한다.
         const actualBalMapInit = (finData.actualBalances) || {};
         const actualMonths = Object.keys(actualBalMapInit).filter(k => actualBalMapInit[k] != null && actualBalMapInit[k] !== '').sort();
         const lastActualKey = actualMonths.length ? actualMonths[actualMonths.length - 1] : null;
@@ -11354,7 +11594,9 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 );
               })()}
               <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 8, lineHeight: 1.7 }}>
-                지출정리 파일에서 확인된 반복 항목 예시 — 임차료 2,420,000 · 렌탈 2,486,889 · 대출이자 약 2,490,000 · 컨테이너 231,000 · 시큐리티 132,000 (월).
+                1~8월 주계좌 원장에서 3개월 이상 반복 확인된 항목이 등록돼 있습니다.
+                급여·4대보험·부가가치세·카드대금·가불급여는 각각 별도 경로로 계산되므로 여기 넣지 마세요 — 넣으면 이중계상됩니다.
+                할부·렌탈처럼 만기가 있는 항목은 종료월을 넣으면 그 달 이후 예측에서 자동으로 빠집니다.
                 금액이 바뀌는 항목은 기존 항목을 지우고 새 금액으로 다시 등록하세요.
               </div>
             </details>
@@ -11402,7 +11644,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                 <strong style={{ color: T.warning }}>3. 지출</strong> — ① <strong>정규직 인건비</strong>: 매월 고정(CMS 급여 실적) ② <strong>계약직 인건비</strong>: 각 사업의 계약직 인건비를 계약기간에 배분 — 사업이 끝나는 달부터 그만큼 자동 감소(월별 수동 보정이 있으면 그 값 우선) ③ <strong>고정 운영경비</strong>: 임차·보험·세금과공과 등 매월 동일 ④ <strong>프로젝트성 경비</strong>: 외주·매입 + 사업 법인카드(여비·차량·운반·인쇄), 그달의 <strong>활성 사업 비율로 자동 증감</strong> + 조정 슬라이더 배율 적용 ⑤ <strong>세금</strong>: 부가세·법인세 추정액은 <strong>기본 제외</strong>(실질 지출 파악 왜곡 방지) — 정밀도 옵션에서 켜면 부가세 1·4·7·10월, 법인세 3월에 반영됩니다. ⑥ <strong>예정 지출</strong>(직접 등록): 세금 납부 확정액·장비 구입·보증금 등 미래 확정 지출을 월별로 등록하면 그 달 지출에 가산됩니다.<br />
                 <strong style={{ color: T.success }}>4. 수주 반영 시나리오(초록 점선)</strong> — 미수주 제안의 <strong>예산 × 수주율(%)</strong>을 기대수입으로 가산. 계약기간 시작월에 선급, +6개월에 잔금으로 배치하며, 아래 「수주 파이프라인 개별 설정」에서 제안별 포함/제외·계약월·선급률을 조정할 수 있습니다.<br />
                 <strong>5. 낙관·보수 밴드(연한 점선)</strong> — 낙관 = 수주율 +20%p, 보수 = 수주율 −20%p에 프로젝트성 경비 +10%를 가정한 상·하한 범위입니다. 실제 잔고는 대개 이 밴드 안에서 움직입니다.<br />
-                <strong>6. 자동 보정</strong> — 매월 말 실제 잔고를 입력하면, 최근 3개월의 (실제−예측) 평균 편차를 미래 예측에 가산해 체계적 오차를 줄입니다.<br />
+                <strong>6. 자동 보정</strong> — 매월 10일 급여 인출 직전 실제 잔고를 입력하면, 최근 3개월의 (실제−예측) 평균 편차를 미래 예측에 가산해 체계적 오차를 줄입니다. 보정은 미래 구간에만 적용됩니다.<br />
                 <span style={{ color: T.textMute }}>※ 안전선(빨간 점선) 아래로 예측 잔고가 내려가는 달이 있으면 위험 신호 배너로 알려드립니다. 정확도를 높이려면: 수금관리에 입금 예정 등록, 사업별 계약기간·선급률 입력, 매월 실제 잔고 기록 — 이 세 가지가 핵심입니다.</span>
               </div>
             </details>
@@ -11815,7 +12057,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             })()}
             {lastActualKey && (
               <div style={{ background: T.surfaceAlt, borderRadius: 8, padding: '10px 14px', margin: `${S[3]}px 0`, fontSize: 12, lineHeight: 1.7 }}>
-                <strong style={{ color: T.brand }}>📍 예측 기준점</strong> — {lastActualKey.replace('-', '.')} 말 <strong>실제 통장잔고 {fmtMoney(lastActualVal)}원</strong>에서 출발해, 그 다음 달부터 수입·지출을 반영해 미래 잔고를 예측합니다. 실제 잔고를 입력한 달(회색 '실제 잔고' 표시)은 예측이 아니라 확정값이며, 매월 말 실제 잔고를 갱신할수록 예측 시작점이 최신화되어 정확해집니다.
+                <strong style={{ color: T.brand }}>📍 예측 기준점</strong> — {lastActualKey.replace('-', '.')} 10일 급여 인출 직전 <strong>실제 통장잔고 {fmtMoney(lastActualVal)}원</strong>에서 출발(그 달 급여일 인출액 차감 후 이월)해, 다음 달부터 수입·지출을 반영해 미래 잔고를 예측합니다. 실제 잔고를 입력한 달(회색 '실제 잔고' 표시)은 예측이 아니라 확정값이며, 매월 말 실제 잔고를 갱신할수록 예측 시작점이 최신화되어 정확해집니다.
               </div>
             )}
             {/* 월별 수입 구성 시각화 (스택 막대) */}
@@ -11969,7 +12211,9 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           </div>
         );
       })()}
-      </details>
+          </div>
+        </div>
+      )}
 
       <details className="no-print" style={{ marginTop: S[6] }}>
         <summary style={{ fontSize: 15, fontWeight: 800, color: T.ink, cursor: 'pointer', padding: `${S[3]}px 0`, borderTop: `2px solid ${T.border}` }}>📊 상세 경영분석 펼치기 <span style={{ fontSize: 12, fontWeight: 600, color: T.textMute }}>(경영요약·매출·조직손익·인건비·생산성·순기여·원가·수익성·위험·제언)</span></summary>
