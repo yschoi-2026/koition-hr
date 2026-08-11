@@ -5,6 +5,42 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v211 → v212] ★ 단일 엔진 통합 — 반복된 불일치의 근본 원인 제거
+//  문제: 예측 계산이 두 곳에 있었다. 지급여력 카드용 fcCapacity(159줄)와
+//        자금흐름 예측 시나리오 엔진(466줄)이 같은 것을 각자 계산했다.
+//        한쪽만 고치면 숫자가 어긋나고, 이번 세션에서 그 불일치가 5번 발생했다:
+//          incomeOff 필터 누락 · 세금 토글 키 불일치 · opex 구성 차이 ·
+//          급여 산정 방식 차이 · 자동보정 유무.
+//  해결: 엔진을 하나로 만들었다.
+//   64) fcCapacity 완전 제거.
+//   65) 엔진이 계산 결과를 publishEngine() 으로 컴포넌트 스코프에 발행(rows·bias·schedGap·past).
+//       카드는 engineOut 을 '표시만' 한다 — 자체 계산이 없으므로 어긋날 수 없다.
+//   66) 엔진이 상시 계산되도록 모달을 항상 마운트하고 display 만 토글.
+//       (모달 열 때만 계산하면 카드가 옛 값을 쓴다)
+//   67) months 에 payOf(전월분 라벨) 추가 — 카드·표·내역이 같은 소스를 쓴다.
+//  이후로는 예측 로직을 한 곳만 고치면 두 화면에 동시에 반영된다.
+//
+// [v210 → v211] 세금 토글 키 통일
+// 63) v210 에서 카드에 세금을 넣으며 새 키(taxInForecast)를 만들었는데, 예측 엔진에는 이미
+//     cfg.taxInclude 토글이 있고 기본 제외였다. 키가 달라 카드만 세금을 반영해 또 어긋났다.
+//     → 카드도 cfg.taxInclude 를 쓰도록 통일. 기본 제외이므로 두 화면 모두 세금 미반영이 기본.
+//     이미 납부한 세금은 실제 잔고(actualBalances)에 이미 빠져 있어 이중계상 위험이 있고,
+//     추정 부가세·법인세는 오차가 커 지급 판단을 흐린다.
+//
+// [v209 → v210] 지급여력 카드와 예측 시나리오의 계산 기준 정합
+// 61) 카드가 지출을 opexCash+opexPurchase 정액만으로 잡아 시나리오와 숫자가 어긋났다.
+//     빠져 있던 것: 부가세(1·4·7·10월 vatQ)·법인세(3월 corpTax)·기타지출(extraExpense)·
+//     고정비 캘린더 만기 반영·프로젝트성 경비.
+//     → 카드도 월별로 opexAt/taxAt/extraAt 를 계산하고, 카드 표와 추이표에 '세금·기타' 열을 추가.
+// 62) 남는 구조적 차이(급여 산정 방식·자동보정·진행률 연동)는 없앨 수 없으므로 카드 하단에 명시.
+//     카드 = 급여 실측 인출액 기준(지급 판단용), 시나리오 = 사업별 배분 + 보정(추세 분석용).
+//
+// [v208 → v209] 지급여력 카드가 예측 제외를 무시하던 문제
+// 60) [버그] fcCapacity 의 확정수입 산출에 incomeOff·ETC·완료 사업 필터가 없었다.
+//     예측 제외로 표시한 사업의 회차가 그대로 계상되어, 카드와 모달 예측이 서로 달랐다.
+//     실측: 2026-193(예측 제외) 기성 63,440,000 이 9월 수입에 계속 포함.
+//     → incomeOff[p.id] · isEtcProject(p) · status==='completed' 세 조건으로 제외.
+//
 // [v207 → v208] 제안 수정 시 수금 회차까지 비례 조정
 // 59) v207 에서 제안 수정 → 사업 동기화는 했지만, 회차(paySched)를 가진 사업은 매출만 바뀌고
 //     회차 금액이 그대로여서 자금예측 수입내역이 옛 금액으로 남았다(회차 보유 6건 전부 해당).
@@ -10381,49 +10417,61 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
 // ══════════════════════════════════════════════════════════════════════
 const CAP_GREEN = '#1B7A43', CAP_BLUE = '#1D4ED8';
 function shorten(v, n) { const t = String(v || ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; }
-function PayrollCapacityCards({ cap }) {
-  const [open, setOpen] = React.useState(null);   // 펼친 트랙: 'conf' | 'pipe'
-  if (!cap || !cap.list.length) return null;
-  const nx = cap.list[0];
+function PayrollCapacityCards({ eng }) {
+  const [open, setOpen] = React.useState(null);   // 'conf' | 'pipe'
+  if (!eng || !eng.rows || !eng.rows.length) return null;
+  // 앞으로 다가올 급여일만 판정 대상 (확정월 제외)
+  const up = eng.rows.filter(r => !r.confirmed);
+  if (!up.length) return null;
+  const mk = (r) => ({
+    conf: { in: r.inConf, bal: r.bal, room: r.bal - r.need, ok: r.bal - r.need >= 0, notes: r.notesConf },
+    pipe: { in: r.inConf + r.inPipe, pipeOnly: r.inPipe, bal: r.balS, room: r.balS - r.need, ok: r.balS - r.need >= 0, notes: r.notesPipe },
+  });
+  const list = up.map(r => ({ ...r, ...mk(r) }));
+  const nx = list[0];
+  const track = (sel) => {
+    const fs = list.find(x => x[sel].ok === false);
+    let runway = 0; for (const x of list) { if (!x[sel].ok) break; runway++; }
+    return { firstShort: fs || null, runway };
+  };
+  const pastOk = (eng.past || []).filter(x => x.ok).length;
 
   const Card = ({ sel, base, title, sub }) => {
-    const tr = cap[sel], v = nx[sel];
+    const tr = track(sel), v = nx[sel];
     const bad = !v.ok, warn = tr.runway <= 1 && !bad;
     const tone = bad ? T.danger : base;
     const isOpen = open === sel;
     return (
-      <div style={{
-        flex: '1 1 330px', minWidth: 300,
-        background: bad ? '#FDECEC' : `${base}0D`,
-        border: `2px solid ${tone}`, borderRadius: 12, padding: S[4],
-      }}>
+      <div style={{ flex: '1 1 330px', minWidth: 300, background: bad ? '#FDECEC' : `${base}0D`, border: `2px solid ${tone}`, borderRadius: 12, padding: S[4] }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
           <span style={{ width: 9, height: 9, borderRadius: '50%', background: tone, flexShrink: 0 }} />
-          <span style={{ fontSize: 12, fontWeight: 800, color: tone, letterSpacing: 0.2 }}>{title}</span>
+          <span style={{ fontSize: 12, fontWeight: 800, color: tone }}>{title}</span>
           <span style={{ fontSize: 10.5, color: T.textMute }}>{sub}</span>
         </div>
-        <div style={{ fontSize: 11, color: T.textMute, fontWeight: 700 }}>{nx.label} <span style={{ fontWeight: 500 }}>({nx.payOf} 급여)</span></div>
+        <div style={{ fontSize: 11, color: T.textMute, fontWeight: 700 }}>{nx.payFull} <span style={{ fontWeight: 500 }}>({nx.payOf} 급여)</span></div>
         <div style={{ fontSize: 27, fontWeight: 800, color: tone, lineHeight: 1.2, margin: '2px 0 6px' }}>
           {v.room >= 0 ? '+' : ''}{fmtMoney(v.room)}<span style={{ fontSize: 14, fontWeight: 700 }}>원</span>
         </div>
         <div style={{ fontSize: 12, fontWeight: 700, color: bad ? T.danger : T.ink, marginBottom: 8 }}>
-          {bad ? '지급 부족 — 수금 앞당기기·자금 확보 필요' : (warn ? '지급 가능 — 다음 달부터 빠듯' : `지급 가능 · 앞으로 ${tr.runway}회 확보`)}
+          {bad ? '지급 부족 — 수금 앞당기기·자금 확보 필요' : (warn ? '지급 가능 — 다음 급여일부터 빠듯' : `지급 가능 · 앞으로 ${tr.runway}회 확보`)}
         </div>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
           <tbody>
-            {[['인출 직전 잔고', v.bal, T.ink], ['급여 필요액', -nx.need, T.textMute], ['그 달 수입', v.in, T.textMute], ['운영경비', -nx.opex, T.textMute]].map(([l, n, c]) => (
-              <tr key={l}><Td style={{ padding: '2px 0', border: 'none', color: T.textMute, fontSize: 11 }}>{l}</Td>
-                <Td align="right" mono style={{ padding: '2px 0', border: 'none', color: c, fontWeight: l === '인출 직전 잔고' ? 800 : 500 }}>{n < 0 ? '−' : ''}{fmtMoney(Math.abs(n))}</Td></tr>
+            {[['인출 직전 잔고', v.bal], ['급여 필요액', -nx.need], ['그 달 수입', v.in], ['운영경비·기타', -nx.outX]].map(([l, n]) => (
+              <tr key={l}>
+                <Td style={{ padding: '2px 0', border: 'none', color: T.textMute, fontSize: 11 }}>{l}</Td>
+                <Td align="right" mono style={{ padding: '2px 0', border: 'none', fontWeight: l === '인출 직전 잔고' ? 800 : 500, color: l === '인출 직전 잔고' ? T.ink : T.textMute }}>{n < 0 ? '−' : ''}{fmtMoney(Math.abs(n))}</Td>
+              </tr>
             ))}
           </tbody>
         </table>
         {tr.firstShort && (
           <div style={{ fontSize: 11, color: T.danger, fontWeight: 700, marginTop: 8, paddingTop: 6, borderTop: `1px solid ${tone}33` }}>
-            ⚠ {tr.firstShort.label} {fmtMoney(Math.abs(tr.firstShort[sel].room))}원 부족 예상
+            ⚠ {tr.firstShort.payFull} {fmtMoney(Math.abs(tr.firstShort[sel].room))}원 부족 예상
           </div>
         )}
         <button onClick={() => setOpen(isOpen ? null : sel)} style={{ marginTop: 10, width: '100%', padding: '6px 0', background: 'transparent', border: `1px solid ${tone}55`, borderRadius: 7, color: tone, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT }}>
-          {isOpen ? '내역 접기 ▲' : '6개월 추이·내역 보기 ▼'}
+          {isOpen ? '내역 접기 ▲' : '추이·내역 보기 ▼'}
         </button>
       </div>
     );
@@ -10439,28 +10487,30 @@ function PayrollCapacityCards({ cap }) {
       {sel && (() => {
         const isPipe = sel === 'pipe';
         const accent = isPipe ? CAP_BLUE : CAP_GREEN;
+        const warns = (eng.schedGap || []).filter(g => g.level === 'warn');
+        const infos = (eng.schedGap || []).filter(g => g.level === 'info');
         return (
           <div style={{ ...card({ borderLeft: `4px solid ${accent}` }), padding: S[4], marginTop: S[3] }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: accent, marginBottom: S[3] }}>
-              {isPipe ? '수주반영 기준' : '확정 기준'} · 6개월 추이
+              {isPipe ? '수주반영 기준' : '확정 기준'} · 앞으로 {list.length}회 급여일
             </div>
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 720 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 760 }}>
                 <thead><tr style={{ background: T.surfaceAlt }}>
                   <Th>급여일</Th><Th align="right">그 달 수입</Th>
                   {isPipe && <Th align="right">그중 수주예정</Th>}
-                  <Th align="right">운영경비</Th><Th align="right">급여 필요액</Th>
+                  <Th align="right">운영경비·기타</Th><Th align="right">급여 필요액</Th>
                   <Th align="right">인출 직전 잔고</Th><Th align="right">지급 후 여유</Th>
                 </tr></thead>
                 <tbody>
-                  {cap.list.map(x => {
+                  {list.map(x => {
                     const v = x[sel];
                     return (
                       <tr key={x.key} style={{ borderTop: `1px solid ${T.divider}`, background: v.ok ? 'transparent' : '#FDECEC' }}>
-                        <Td style={{ fontWeight: 700 }}>{x.label}<span style={{ fontSize: 10, color: T.textMute, fontWeight: 500 }}> ({x.payOf})</span></Td>
+                        <Td style={{ fontWeight: 700 }}>{x.payFull}<span style={{ fontSize: 10, color: T.textMute, fontWeight: 500 }}> ({x.payOf})</span></Td>
                         <Td align="right" mono>{fmtMoney(v.in)}</Td>
                         {isPipe && <Td align="right" mono style={{ color: CAP_BLUE }}>{v.pipeOnly > 0 ? fmtMoney(v.pipeOnly) : '-'}</Td>}
-                        <Td align="right" mono style={{ color: T.textMute }}>−{fmtMoney(x.opex)}</Td>
+                        <Td align="right" mono style={{ color: T.textMute }}>−{fmtMoney(x.outX)}</Td>
                         <Td align="right" mono style={{ color: T.textMute }}>−{fmtMoney(x.need)}</Td>
                         <Td align="right" mono><strong>{fmtMoney(v.bal)}</strong></Td>
                         <Td align="right" mono style={{ fontWeight: 800, color: v.ok ? accent : T.danger }}>{v.ok ? '' : '▲ '}{fmtMoney(v.room)}</Td>
@@ -10470,70 +10520,58 @@ function PayrollCapacityCards({ cap }) {
                 </tbody>
               </table>
             </div>
-            {/* 수입 내역 — 달별로 어느 사업에서 얼마가 들어오는지 */}
             <div style={{ marginTop: S[4] }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, marginBottom: S[2] }}>수입 내역</div>
-              {cap.list.map(x => {
-                const conf = x.conf.notes || [], pipe = x.pipe.notes || [];
-                const showPipe = isPipe ? pipe : [];
-                if (!conf.length && !showPipe.length) return null;
+              {list.map(x => {
+                const cN = x.notesConf || [], pN = isPipe ? (x.notesPipe || []) : [];
+                if (!cN.length && !pN.length) return null;
                 return (
                   <div key={x.key} style={{ marginBottom: S[3], paddingBottom: S[2], borderBottom: `1px solid ${T.divider}` }}>
                     <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 4 }}>
-                      {x.label} <span style={{ color: T.textMute, fontWeight: 500 }}>({x.payOf} 급여) · 합계 {fmtMoney(x[sel].in)}원</span>
+                      {x.payFull} <span style={{ color: T.textMute, fontWeight: 500 }}>({x.payOf} 급여) · 합계 {fmtMoney(x[sel].in)}원</span>
                     </div>
-                    {conf.map((n, i) => (
+                    {cN.map((t, i) => (
                       <div key={'c' + i} style={{ fontSize: 11, color: T.text, lineHeight: 1.85, paddingLeft: 8 }}>
-                        <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 2, background: CAP_GREEN, marginRight: 6 }} />
-                        <strong>{n.id}</strong> {shorten(n.name, 30)} · {n.kind} <strong>{fmtMoney(n.amount)}원</strong>
+                        <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 2, background: CAP_GREEN, marginRight: 6 }} />{t}
                       </div>
                     ))}
-                    {showPipe.map((n, i) => (
+                    {pN.map((t, i) => (
                       <div key={'p' + i} style={{ fontSize: 11, color: '#1E3A8A', lineHeight: 1.85, paddingLeft: 8 }}>
-                        <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 2, background: CAP_BLUE, marginRight: 6 }} />
-                        {shorten(n.name, 30)}{n.client ? ` (${shorten(n.client, 14)})` : ''} · 수주예정 {n.kind} <strong>{fmtMoney(n.amount)}원</strong>
-                        <span style={{ color: T.textMute }}> — 사업예산 {fmtMoney(n.budget)} × 수주율 {n.win}%{n.advP != null ? ` × 선급 ${n.advP}%` : ''}</span>
+                        <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 2, background: CAP_BLUE, marginRight: 6 }} />{t}
+                        <span style={{ color: T.textMute }}> — 확정 수입 아님</span>
                       </div>
                     ))}
                   </div>
                 );
               })}
             </div>
-            {cap.schedGap && cap.schedGap.length > 0 && (() => {
-              const warns = cap.schedGap.filter(g => g.level === 'warn');
-              const infos = cap.schedGap.filter(g => g.level === 'info');
-              return (
-                <div style={{ background: warns.length ? '#FFF4E5' : T.surfaceAlt, border: `1px solid ${warns.length ? T.warning : T.border}`, borderRadius: 8, padding: S[3], marginBottom: S[3], fontSize: 11.5, lineHeight: 1.8 }}>
-                  {warns.length > 0 && (
-                    <>
-                      <strong style={{ color: T.warning }}>⚠ 회차 합계가 계약금액을 초과한 사업 {warns.length}건</strong> — 회차를 직접 입력한 사업은 매출을 고쳐도 회차가 자동으로 바뀌지 않습니다. 수입이 과대 계상됩니다.
-                      {warns.map(g => (
-                        <div key={g.id} style={{ color: T.text, paddingLeft: 8 }}>
-                          <strong>{g.id}</strong> {shorten(g.name, 26)} · 계약 {fmtMoney(g.rev)} vs 회차합 {fmtMoney(g.tot)}
-                          <strong style={{ color: T.danger }}> (+{fmtMoney(g.diff)})</strong>
-                        </div>
-                      ))}
-                    </>
-                  )}
-                  {infos.length > 0 && (
-                    <div style={{ marginTop: warns.length ? S[2] : 0, color: T.textMute }}>
-                      회차가 계약금액보다 적은 사업 {infos.length}건 — 이전 연도에 이미 수령했거나 회차를 일부만 등록한 경우입니다.
-                      {infos.map(g => (
-                        <div key={g.id} style={{ paddingLeft: 8 }}>
-                          {g.id} {shorten(g.name, 24)} · 계약 {fmtMoney(g.rev)} · 등록 회차 {fmtMoney(g.tot)} (미등록 {fmtMoney(-g.diff)})
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div style={{ color: T.textMute, marginTop: 4 }}>자금흐름 예측 시나리오 → 사업별 수금 설정 → 「회차 직접 편집」에서 확인·수정할 수 있습니다.</div>
-                </div>
-              );
-            })()}
+            {(warns.length > 0 || infos.length > 0) && (
+              <div style={{ background: warns.length ? '#FFF4E5' : T.surfaceAlt, border: `1px solid ${warns.length ? T.warning : T.border}`, borderRadius: 8, padding: S[3], marginBottom: S[3], fontSize: 11.5, lineHeight: 1.8 }}>
+                {warns.length > 0 && (
+                  <>
+                    <strong style={{ color: T.warning }}>⚠ 회차 합계가 계약금액을 초과한 사업 {warns.length}건</strong> — 수입이 과대 계상됩니다.
+                    {warns.map(g => (
+                      <div key={g.id} style={{ color: T.text, paddingLeft: 8 }}>
+                        <strong>{g.id}</strong> {shorten(g.name, 26)} · 계약 {fmtMoney(g.rev)} vs 회차합 {fmtMoney(g.tot)} <strong style={{ color: T.danger }}>(+{fmtMoney(g.diff)})</strong>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {infos.length > 0 && (
+                  <div style={{ marginTop: warns.length ? S[2] : 0, color: T.textMute }}>
+                    회차가 계약금액보다 적은 사업 {infos.length}건 — 이전 연도 수령 또는 일부만 등록.
+                    {infos.map(g => <div key={g.id} style={{ paddingLeft: 8 }}>{g.id} {shorten(g.name, 24)} · 계약 {fmtMoney(g.rev)} · 등록 {fmtMoney(g.tot)}</div>)}
+                  </div>
+                )}
+              </div>
+            )}
             <div style={{ fontSize: 10.5, color: T.textMute, lineHeight: 1.8 }}>
-              기준 잔고 {cap.lastKey} 급여일 인출 후 <strong>{fmtMoney(cap.startCarry)}원</strong>에서 출발 · 월 운영경비 {fmtMoney(cap.opex)}원 ·
-              급여 필요액은 실제 인출 이력(임직원급여 + 작업자급여 + 4대보험) 기준. 매월 10일에 <strong>전월분</strong>을 지급합니다(개인별 가불·퇴직금은 제외).
-              {isPipe && ' 수주예정은 수주율로 가중한 기대금액이며 확정 수입이 아닙니다.'}
-              {' '}지난 실적 {cap.past.length}회 중 {cap.pastOk}회 지급 가능.
+              <strong>「자금흐름 예측 시나리오」와 같은 엔진으로 계산합니다</strong> — 이 카드는 그 결과를 표시만 하므로 두 화면 숫자가 항상 일치합니다.
+              기준 잔고 {eng.lastKey} 급여일 인출 직전 <strong>{fmtMoney(eng.startCarry)}원</strong>에서 출발 ·
+              급여 필요액은 실제 인출 이력(임직원급여 + 작업자급여 + 4대보험) 기준, 매월 10일에 <strong>전월분</strong> 지급 ·
+              운영경비·기타 = 고정비 캘린더(만기 반영) + 프로젝트성 경비 + 기타 지출{eng.taxOn ? ' + 세금 추정' : ' (세금 추정 제외)'} ·
+              {eng.bias ? ` 자동보정 ${fmtMoney(eng.bias)}원 적용 ·` : ''}
+              {' '}지난 실적 {(eng.past || []).length}회 중 {pastOk}회 지급 가능.
             </div>
           </div>
         );
@@ -10549,6 +10587,20 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   const basisLabel = cutM ? `${currentYear || new Date().getFullYear()}년 1~${cutM}월 누계 기준` : '연초~최근 마감월 누계 기준';
   const canEditLedger = !!setEmpLedger && user.role === 'admin';
   const [fcModal, setFcModal] = React.useState(false);   // 자금흐름 예측 시나리오 대시보드 모달
+  // ══════════════════════════════════════════════════════════════════
+  //  단일 엔진 원칙
+  //   예측 계산은 '자금흐름 예측 시나리오' 엔진 한 곳에서만 한다.
+  //   지급여력 카드는 그 결과(engineOut)를 읽어 표시만 한다.
+  //   예전에는 카드용 엔진(fcCapacity)을 따로 두어, 한쪽만 고치면 숫자가 어긋났다
+  //   (incomeOff 누락·세금 키 불일치·opex 구성 차이 등이 모두 이 구조 탓).
+  // ══════════════════════════════════════════════════════════════════
+  const engineRef = React.useRef(null);
+  const [engineOut, setEngineOut] = React.useState(null);
+  const publishEngine = React.useCallback((out) => {
+    const prev = engineRef.current;
+    const sig = out ? JSON.stringify({ r: out.rows.map(r => [r.key, r.bal, r.need, r.inConf, r.outX]), g: out.schedGap }) : '';
+    if (prev !== sig) { engineRef.current = sig; setEngineOut(out); }
+  }, []);
 
   // ── 접힌 상태에서도 보여줄 급여 지급 판정 요약 ──
   //   본문(자금흐름 예측)은 접히지만, "다음 급여일에 급여를 줄 수 있나"는 항상 보여야 한다.
@@ -10561,116 +10613,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   //     ② 수주반영   : 수주예정 사업의 기대수금까지 반영 (수주율 가중)
   //   시작점은 마지막 확정월의 '급여일 인출 후' 잔고. 이후 월별로 굴린다.
   // ══════════════════════════════════════════════════════════════
-  const fcCapacity = React.useMemo(() => {
-    try {
-      const cfg = cashCfg || {}, f = fin || {};
-      const A = f.actualBalances || {};
-      const keys = Object.keys(A).filter(k => A[k] != null && A[k] !== '').sort();
-      if (!keys.length) return null;
-      const lastKey = keys[keys.length - 1];
-      const [ly, lm] = lastKey.split('-').map(Number);
-      const payAct = cfg.payrollActual || {}, drawn = cfg.payrollDrawn || {};
-      const payBase = Number(cfg.payrollBase) || 0;
-      const needOf = (k) => {
-        const v = payAct[k];
-        if (v != null && v !== '' && Number(v) > 0) return Math.round(Number(v));
-        if (payBase > 0) return Math.round(payBase);
-        return Math.round((Number(f.salaryReg) || 0) + (Number(f.salaryCon) || 0));
-      };
-      const opex = Math.round((Number(f.opexCash) || 0) + (Number(f.opexPurchase) || 0));
-      const advRate = (Number(cfg.advRate) || 0) / 100;
-      const idxOf = (y, m) => (y - ly) * 12 + (m - lm);          // lastKey 를 0
-      const HZ = 6;
-      const mk = (i) => { const d = new Date(ly, lm - 1 + i, 1); return { i, y: d.getFullYear(), m: d.getMonth() + 1,
-        key: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'),
-        label: `${d.getFullYear()}년 ${d.getMonth() + 1}월 10일`,
-          payOf: (() => { const pm = new Date(d.getFullYear(), d.getMonth() - 1, 1); return `${pm.getMonth() + 1}월분`; })() }; };
-      const parseSpan = (str) => {
-        const m = String(str || '').match(/(\d{4})[.\-\/](\d{1,2}).*?(\d{4})[.\-\/](\d{1,2})/);
-        return m ? { sy: +m[1], sm: +m[2], ey: +m[3], em: +m[4] } : null;
-      };
-      const inConf = Array(HZ + 1).fill(0), inPipe = Array(HZ + 1).fill(0);
-      const noteConf = Array.from({ length: HZ + 1 }, () => []), notePipe = Array.from({ length: HZ + 1 }, () => []);
-      // ── 확정: 수동 회차(paySched) 우선, 없으면 계약기간 기반 선급·잔금 ──
-      const sched = cfg.paySched || {};
-      (projects || []).forEach(p => {
-        const rev = Number(p.revenue) || 0; if (rev <= 0) return;
-        const rows = sched[p.id];
-        const hasSched = Array.isArray(rows) && rows.some(r => r && r.month && Number(r.amount) > 0);
-        if (hasSched) {
-          rows.forEach(r => {
-            if (!r || !r.month || !(Number(r.amount) > 0)) return;
-            const mm = String(r.month).match(/(\d{4})[.\-\/](\d{1,2})/); if (!mm) return;
-            const i = idxOf(+mm[1], +mm[2]); if (i < 1 || i > HZ) return;
-            inConf[i] += Number(r.amount);
-            noteConf[i].push({ id: p.id, name: p.name, kind: r.memo || '회차', amount: Math.round(Number(r.amount)) });
-          });
-          return;
-        }
-        const sp = parseSpan(p.period); if (!sp) return;
-        const si = idxOf(sp.sy, sp.sm), ei = idxOf(sp.ey, sp.em) + 1;
-        const adv = Math.round(rev * advRate), rem = rev - adv;
-        if (si >= 1 && si <= HZ && adv > 0) { inConf[si] += adv; noteConf[si].push({ id: p.id, name: p.name, kind: `선급 ${Math.round(advRate * 100)}%`, amount: adv }); }
-        if (ei >= 1 && ei <= HZ && rem > 0) { inConf[ei] += rem; noteConf[ei].push({ id: p.id, name: p.name, kind: '잔금', amount: rem }); }
-      });
-      // ── 수주예정: 제안 × 수주율 × 선급률 ──
-      const pipeCfg = cfg.pipeline || {};
-      (proposals || []).forEach(pr => {
-        if (pr.status === '수주') return;
-        const budget = Number(pr.budget) || 0; if (budget <= 0) return;
-        const pc = pipeCfg[pr.id] || {};
-        if (pc.on === false) return;
-        const win = (pr.winRate != null && pr.winRate !== '' ? Number(pr.winRate) : 50) / 100;
-        const expct = budget * win;
-        const advP = (pc.rate != null && pc.rate !== '' ? Number(pc.rate) : (Number(cfg.advRate) || 0)) / 100;
-        let si = 1;
-        const mm = String(pc.month || '').match(/(\d{4})[.\-\/](\d{1,2})/);
-        if (mm) si = idxOf(+mm[1], +mm[2]);
-        else { const sp = parseSpan(pr.period); if (sp) si = idxOf(sp.sy, sp.sm); }
-        if (si < 1) si = 1;
-        const adv = Math.round(expct * advP), rem = Math.round(expct - adv);
-        if (si <= HZ && adv > 0) { inPipe[si] += adv; notePipe[si].push({ id: pr.id, name: pr.name, client: pr.client, budget, win: Math.round(win * 100), advP: Math.round(advP * 100), kind: '선급', amount: adv }); }
-        const ei = si + 6;
-        if (ei <= HZ && rem > 0) { inPipe[ei] += rem; notePipe[ei].push({ id: pr.id, name: pr.name, client: pr.client, budget, win: Math.round(win * 100), advP: Math.round(advP * 100), kind: '잔금', amount: rem }); }
-      });
-      // ── 월별 롤링 ──
-      const startCarry = Number(A[lastKey]) - (drawn[lastKey] != null && drawn[lastKey] !== '' ? Number(drawn[lastKey]) : needOf(lastKey));
-      let cc = startCarry, cp = startCarry;
-      const list = [];
-      for (let i = 1; i <= HZ; i++) {
-        const mo = mk(i), need = needOf(mo.key);
-        const balC = cc + inConf[i] - opex;                  // 급여 인출 직전
-        const balP = cp + inConf[i] + inPipe[i] - opex;
-        list.push({ ...mo, need, opex,
-          conf: { in: Math.round(inConf[i]), bal: Math.round(balC), room: Math.round(balC - need), ok: balC - need >= 0, notes: noteConf[i] },
-          pipe: { in: Math.round(inConf[i] + inPipe[i]), pipeOnly: Math.round(inPipe[i]), bal: Math.round(balP), room: Math.round(balP - need), ok: balP - need >= 0, notes: notePipe[i] } });
-        cc = balC - need; cp = balP - need;
-      }
-      const track = (sel) => {
-        const fs = list.find(x => !x[sel].ok);
-        let runway = 0; for (const x of list) { if (!x[sel].ok) break; runway++; }
-        return { firstShort: fs || null, runway, next: list[0] };
-      };
-      // ★ 회차(paySched)가 있는 사업은 매출을 고쳐도 회차 금액이 자동 재분배되지 않는다(의도된 설계).
-      //   그래서 매출과 회차 합계가 어긋나면 수입 내역이 옛 값으로 남는다 → 카드에 경고로 노출한다.
-      const schedGap = [];
-      Object.keys(sched).forEach(pid => {
-        const pj = (projects || []).find(x => x.id === pid); if (!pj) return;
-        const rows = (sched[pid] || []).filter(r => r && r.month && Number(r.amount) > 0);
-        if (!rows.length) return;
-        const tot = rows.reduce((a, r) => a + Number(r.amount), 0);
-        const rev = Number(pj.revenue) || 0;
-        // 회차합 > 매출 = 확실한 오류(과다 등록) → 경고.
-        // 회차합 < 매출 = 이전 연도에 이미 수령했거나 회차를 일부만 등록한 경우 → 정보 표시만.
-        if (tot > rev) schedGap.push({ id: pid, name: pj.name, rev, tot, diff: tot - rev, level: 'warn' });
-        else if (tot < rev) schedGap.push({ id: pid, name: pj.name, rev, tot, diff: tot - rev, level: 'info' });
-      });
-      const past = keys.map(k => ({ key: k, ok: Number(A[k]) - needOf(k) >= 0 }));
-      return { list, lastKey, startCarry: Math.round(startCarry), opex, schedGap,
-               conf: track('conf'), pipe: track('pipe'),
-               past, pastOk: past.filter(x => x.ok).length };
-    } catch (e) { return null; }
-  }, [cashCfg, fin, projects, proposals]);
+  // fcCapacity 제거(v212) — 카드는 단일 엔진 결과(engineOut)를 쓴다.
   const [ledgerForm, setLedgerForm] = React.useState(null); // {name, empId, card, newOrder}
   const removeLedger = (row) => {
     if (!window.confirm(`[${row.name}] 항목을 직원별 원장에서 삭제할까요?\n(사업 참여 데이터는 유지되며, 신규수주·카드 기록만 제거됩니다)`)) return;
@@ -11014,10 +10957,12 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         <div style={{ flex: 1 }} />
         <Button variant="outline" size="sm" icon={BarChart3} onClick={() => setFcModal(true)}>자금흐름 예측 시나리오</Button>
       </div>
-      {fcCapacity && <PayrollCapacityCards cap={fcCapacity} />}
+      {engineOut ? <PayrollCapacityCards eng={engineOut} /> : <div style={{ ...card(), padding: S[4], marginBottom: S[5], fontSize: 12, color: T.textMute }}>지급여력 계산 중…</div>}
 
-      {fcModal && (
-        <div onClick={() => setFcModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1600, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '24px 12px', overflowY: 'auto' }}>
+      {/* ★ 엔진이 상시 계산되도록 항상 마운트하고 표시만 토글한다.
+          모달을 열 때만 계산하면 카드가 옛 값을 쓰게 되어 두 화면이 어긋난다. */}
+      {(
+        <div onClick={() => setFcModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1600, display: fcModal ? 'flex' : 'none', alignItems: 'flex-start', justifyContent: 'center', padding: '24px 12px', overflowY: 'auto' }}>
           <div onClick={e => e.stopPropagation()} style={{ ...card(), padding: S[5], width: 1320, maxWidth: '100%', marginBottom: 40 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: S[4] }}>
               <span style={{ padding: '4px 12px', borderRadius: 8, background: T.brand, color: '#fff', fontSize: 13, fontWeight: 800 }}>핵심</span>
@@ -11084,8 +11029,10 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         //   payLabel: 그 달 급여일(그래프 X축)  ·  payFull: 연도 포함 전체 표기
         const months = Array.from({ length: FC_MONTHS }, (_, i) => {
           const d = new Date(y0, m0 + i, 1); const mm = d.getMonth() + 1, yy = d.getFullYear();
+          // payOf: 그 급여일에 지급하는 대상월(전월분). 4/10 → '3월분'
+          const pm = new Date(yy, mm - 2, 1);
           return { y: yy, m: mm, key: yy + '-' + String(mm).padStart(2, '0'), label: mm + '월',
-                   payLabel: mm + '/10', payFull: `${yy}년 ${mm}월 10일` };
+                   payLabel: mm + '/10', payFull: `${yy}년 ${mm}월 10일`, payOf: `${pm.getMonth() + 1}월분` };
         });
         const idxOf = (yy, mm) => (yy - y0) * 12 + (mm - 1 - m0);
         const parsePeriod = (p) => { const m = String(p || '').match(/(\d{4})[.\-\/](\d{1,2})\s*~\s*(\d{4})[.\-\/](\d{1,2})/); return m ? { sy: +m[1], sm: +m[2], ey: +m[3], em: +m[4] } : null; };
@@ -11458,6 +11405,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                    sd: Math.round(sd), naiveMae: Math.round(naiveMae), skill };
         })();
         const minRow = rows.reduce((a, r) => r.bal < a.bal ? r : a, rows[0]);
+        // ★ 단일 엔진: 계산 결과를 컴포넌트 스코프로 발행한다. 지급여력 카드가 이 값을 읽는다.
+        //   회차 합계와 계약금액이 어긋난 사업도 함께 실어 보낸다.
         const inp = (label, k, step) => (
           <div key={k}>
             <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>{label}</div>
@@ -11469,6 +11418,34 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         //   (기존 산식은 확정월 bal 이 실제값으로 치환된 뒤 차이를 재서 항상 0이었다.)
         const biasSamples = accuracy.errs.map(e => e.err);
         const bias = (cfg.autoCorrect !== false && biasSamples.length >= 2) ? Math.round(biasSamples.slice(-3).reduce((a, v) => a + v, 0) / Math.min(3, biasSamples.length)) : 0;
+        const schedGapOut = (() => {
+          const out = [];
+          Object.keys(paySched || {}).forEach(pid => {
+            const pj = (projects || []).find(x => x.id === pid); if (!pj) return;
+            const rs2 = (paySched[pid] || []).filter(r => r && r.month && Number(r.amount) > 0);
+            if (!rs2.length) return;
+            const tot = rs2.reduce((a, r) => a + Number(r.amount), 0), rv = Number(pj.revenue) || 0;
+            if (tot > rv) out.push({ id: pid, name: pj.name, rev: rv, tot, diff: tot - rv, level: 'warn' });
+            else if (tot < rv) out.push({ id: pid, name: pj.name, rev: rv, tot, diff: tot - rv, level: 'info' });
+          });
+          return out;
+        })();
+        publishEngine({
+          rows: rows.map((r, i) => ({
+            key: r.key, y: r.y, m: r.m, payLabel: r.payLabel, payFull: r.payFull, payOf: r.payOf,
+            confirmed: !!r.confirmed,
+            bal: Math.round(r.bal), balS: Math.round(r.balS),
+            inConf: Math.round(inc[i] || 0), inPipe: Math.round(incPipe[i] || 0),
+            need: payrollAt(i), opex: Math.round(opexOf(i)), tax: Math.round(taxOf(r)),
+            extra: Math.round(extraExpArr[i] || 0),
+            outX: Math.round((exp[i] || 0) - laborOf(r, i)),
+            notesConf: (r.allNotes || []).slice(), notesPipe: (r.pipeNotes || []).slice(),
+          })),
+          lastKey: lastActualKey || '', startCarry: Math.round(startBal), bias: Math.round(bias),
+          taxOn, safety, schedGap: schedGapOut,
+          past: Object.keys(actualBal).filter(k => actualBal[k] != null && actualBal[k] !== '').sort()
+                  .map(k => ({ key: k, ok: Number(actualBal[k]) - (payActualRaw[k] != null && Number(payActualRaw[k]) > 0 ? Number(payActualRaw[k]) : (payBaseRaw || 0)) >= 0 })),
+        });
         const chartData = rows.map((r, chartData_i) => {
           const mk = r.y + '-' + String(r.m).padStart(2, '0');
           const av = actualBal[mk];
