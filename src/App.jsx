@@ -5,6 +5,13 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v207 → v208] 제안 수정 시 수금 회차까지 비례 조정
+// 59) v207 에서 제안 수정 → 사업 동기화는 했지만, 회차(paySched)를 가진 사업은 매출만 바뀌고
+//     회차 금액이 그대로여서 자금예측 수입내역이 옛 금액으로 남았다(회차 보유 6건 전부 해당).
+//     → 계약금액이 바뀌면 회차를 같은 비율로 조정. 구조(선급/기성/잔금·월)는 사용자가 입력한
+//        실제 계약조건이므로 유지하고 금액만 비례 배분하며, 마지막 회차가 반올림 잔차를 흡수해
+//        회차 합계 = 계약금액을 항상 만족시킨다.
+//
 // [v206 → v207] 제안 수정 → 사업 미반영 · 회차-매출 불일치 경고
 // 57) [버그] 수주 파이프라인에서 제안을 수정해도 연결된 사업(wonProjectId)에 반영되지 않았다.
 //     save() 가 upsertProposal 만 호출해 proposals 만 갱신 → 사업목록·수익성·자금예측은 옛 값 유지.
@@ -9068,7 +9075,7 @@ function OverheadView({ projects, overheads, currentYear, yearFilter, policy, se
 }
 
 // 수주 파이프라인 (사업제안현황 연동)
-function ProjectPipeline({ proposals, projects, yearFilter, canEdit, deleteProposal, winProposal, updateProposal, upsertProposal, upsertProject }) {
+function ProjectPipeline({ proposals, projects, yearFilter, canEdit, deleteProposal, winProposal, updateProposal, upsertProposal, upsertProject, setCashCfg }) {
   const [edit, setEdit] = React.useState(null); // 인력 편집
   const [form, setForm] = React.useState(null); // 관심사업 등록/편집
   const [typeFilter, setTypeFilter] = React.useState('전체'); // 사업 유형 토글: 전체/경쟁입찰/수의계약/유지보수
@@ -9097,8 +9104,28 @@ function ProjectPipeline({ proposals, projects, yearFilter, canEdit, deletePropo
       const linked = (projects || []).find(x => x.id === next.wonProjectId);
       if (linked) {
         const patch = { ...linked, name: next.name, client: next.client || linked.client, period: next.period || linked.period };
-        if (budget > 0 && budget !== Number(linked.revenue)) patch.revenue = budget;
+        const oldRev = Number(linked.revenue) || 0;
+        if (budget > 0 && budget !== oldRev) patch.revenue = budget;
         upsertProject(patch);
+        // ★ 계약금액이 바뀌면 수금 회차도 같은 비율로 조정한다.
+        //   회차를 그대로 두면 자금예측의 수입내역이 옛 금액으로 남는다.
+        //   구조(선급/기성/잔금·월)는 사용자가 넣은 실제 계약조건이므로 유지하고 금액만 비례 조정,
+        //   마지막 회차에서 반올림 잔차를 흡수해 합계가 계약금액과 정확히 맞게 한다.
+        if (budget > 0 && oldRev > 0 && budget !== oldRev && setCashCfg) {
+          setCashCfg(prev => {
+            const rows = ((prev.paySched || {})[next.wonProjectId] || []).filter(r => r && r.month && Number(r.amount) > 0);
+            if (rows.length === 0) return prev;
+            const ratio = budget / oldRev;
+            let acc = 0;
+            const scaled = rows.map((r, i) => {
+              let amt;
+              if (i === rows.length - 1) amt = budget - acc;
+              else { amt = Math.round(Number(r.amount) * ratio); acc += amt; }
+              return { ...r, amount: amt };
+            });
+            return { ...prev, paySched: { ...(prev.paySched || {}), [next.wonProjectId]: scaled } };
+          });
+        }
       }
     }
     setForm(null);
@@ -13504,7 +13531,7 @@ function ProjectProfitView({ user, employees, projects, proposals, overheads, up
       </div>
 
       {view === 'pipeline' ? (
-        <ProjectPipeline proposals={proposals || []} projects={projects || []} yearFilter={yearFilter} canEdit={canEdit} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertProposal={upsertProposal} upsertProject={upsertProject} />
+        <ProjectPipeline proposals={proposals || []} projects={projects || []} yearFilter={yearFilter} canEdit={canEdit} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertProposal={upsertProposal} upsertProject={upsertProject} setCashCfg={setCashCfg} />
       ) : view === 'overhead' ? (
         <OverheadView projects={shown} overheads={overheads || []} currentYear={currentYear} yearFilter={yearFilter}
           policy={policy} setPolicy={setPolicy} canEdit={canEdit}
