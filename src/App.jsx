@@ -5,6 +5,22 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v213 → v214] 차트 X축 연도 중복 표기 수정
+// 71) 예측창이 16개월(2026.01~2027.04)이라 X축에 1/10~4/10 이 두 번 나와 어느 해인지 알 수 없었다.
+//     → 1월 라벨에만 연도 두 자리를 붙인다(27.1/10). 나머지는 그대로 M/10.
+//     차트·카드·표가 같은 months.payLabel 을 쓰므로 세 곳에 동시 반영된다.
+//
+// [v212 → v213] 시나리오 내부 불일치 정리
+// 68) 사업별 선급률 — 편집 UI 의 placeholder 와 미리보기가 cfg.advRate 를 직접 읽어,
+//     엔진이 쓰는 effAdvRate(cfg.advRate 없으면 수금 실적 학습값 → 없으면 40%)와 달랐다.
+//     → 화면도 effAdvRate / advOf(pid) 를 쓰도록 통일.
+// 69) 고정 지출 캘린더 — 차감 기준을 recurAt(0)(예측창 첫 달)으로 잡아, 그 사이 시작·종료된
+//     항목이 있으면 잔여 정액이 어긋났다. → 기준을 '마지막 실제잔고 월'로 변경.
+// 70) 문구 정정 — '12개월 자금 잔고 추이' 는 실제로 16개월(2026.01~2027.04)이었다.
+//     제목에 실제 기간·개월수·급여일 기준을 표시. '12개월 후 예상 잔고 rows[11]' 고정 참조도
+//     예측 종료월 기준으로 교체(확정월 8개 때문에 rows[11]은 12개월 후가 아니었다).
+//     '1. 시작점' 설명도 급여일 인출 직전 잔고 + 인출액 차감 이월 방식으로 정정.
+//
 // [v211 → v212] ★ 단일 엔진 통합 — 반복된 불일치의 근본 원인 제거
 //  문제: 예측 계산이 두 곳에 있었다. 지급여력 카드용 fcCapacity(159줄)와
 //        자금흐름 예측 시나리오 엔진(466줄)이 같은 것을 각자 계산했다.
@@ -11032,7 +11048,9 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           // payOf: 그 급여일에 지급하는 대상월(전월분). 4/10 → '3월분'
           const pm = new Date(yy, mm - 2, 1);
           return { y: yy, m: mm, key: yy + '-' + String(mm).padStart(2, '0'), label: mm + '월',
-                   payLabel: mm + '/10', payFull: `${yy}년 ${mm}월 10일`, payOf: `${pm.getMonth() + 1}월분` };
+                   // 1월은 연도를 붙여 구분한다(예측창이 해를 넘기면 1/10 이 두 번 나온다)
+                   payLabel: (mm === 1 ? `${String(yy).slice(2)}.1/10` : mm + '/10'),
+                   payFull: `${yy}년 ${mm}월 10일`, payOf: `${pm.getMonth() + 1}월분` };
         });
         const idxOf = (yy, mm) => (yy - y0) * 12 + (mm - 1 - m0);
         const parsePeriod = (p) => { const m = String(p || '').match(/(\d{4})[.\-\/](\d{1,2})\s*~\s*(\d{4})[.\-\/](\d{1,2})/); return m ? { sy: +m[1], sm: +m[2], ey: +m[3], em: +m[4] } : null; };
@@ -11125,7 +11143,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           if (start == null && p.period) { const pm = parsePeriod(p.period); if (pm) start = idxOf(pm.sy, pm.sm); }
           if (start == null) { const bm = String(p.bidDate || '').match(/(\d{4})[.\-\/](\d{1,2})/); start = bm ? idxOf(+bm[1], +bm[2]) + 1 : 2; }
           if (start < 1) start = 1;
-          const advP = ((pc.rate != null && pc.rate !== '') ? Number(pc.rate) : (Number(cfg.advRate) || 0)) / 100;
+          const advP = ((pc.rate != null && pc.rate !== '') ? Number(pc.rate) : effAdvRate) / 100;   // 엔진 기본 선급률과 통일
           if (start < FC_MONTHS && advP > 0) { const a = expBudget * advP; incS[start] += a; incPipe[start] += a; pipeNote[start].push(`${p.name} 수주예정 선급 ${fmtEok(a)}(수주율 ${Math.round(winW*100)}%)`); }
           const end = start + 6;
           if (end < FC_MONTHS) { const rem = expBudget * (1 - advP); incS[end] += rem; incPipe[end] += rem; pipeNote[end].push(`${p.name} 수주예정 잔금 ${fmtEok(rem)}(수주율 ${Math.round(winW * 100)}%)`); }
@@ -11238,7 +11256,18 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const recurAt = (i) => Math.round(recurList.reduce((a, r) => a + (recurActiveAt(r, i) ? (Number(r.amount) || 0) : 0), 0));
         // 정액(opexCash)은 '지금까지의 실적 평균'이다. 따라서 정액에서 빼야 할 것은
         // '지금 이미 나가고 있는 항목'뿐이다. 미래에 시작하는 신규 항목을 빼면 시작 전 달의 경비가 잘못 줄어든다.
-        const recurMonthlyTotal = recurAt(0);
+        // ★ 기준 시점은 '마지막 실제잔고 월'(예측이 시작되는 지점)이다.
+        //   recurAt(0) 은 예측창 첫 달이라, 그 사이 시작/종료된 항목이 있으면 차감액이 어긋난다.
+        //   startAfterIdx 는 아직 정의 전이므로 actualBalances 에서 직접 구한다.
+        const recurBaseIdx = (() => {
+          const ks = Object.keys((finData.actualBalances) || {}).filter(k => {
+            const v = finData.actualBalances[k]; return v != null && v !== '';
+          }).sort();
+          if (!ks.length) return 0;
+          const mm = ks[ks.length - 1].match(/(\d{4})-(\d{2})/);
+          return mm ? Math.max(0, idxOf(+mm[1], +mm[2])) : 0;
+        })();
+        const recurMonthlyTotal = recurAt(recurBaseIdx);
         const recurRegisteredTotal = recurList.reduce((a, r) => a + (Number(r.amount) || 0), 0);
         const fixedBase = Math.max(0, fixedOpexUse - recurMonthlyTotal);   // 진행 중 반복항목을 뺀 잔여 정액
         const recurOverflow = Math.max(0, recurMonthlyTotal - fixedOpexUse);   // 정액을 초과한 등록액(경고용)
@@ -11289,7 +11318,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           if (start == null && p.period) { const pm = parsePeriod(p.period); if (pm) start = idxOf(pm.sy, pm.sm); }
           if (start == null) { const bm = String(p.bidDate || '').match(/(\d{4})[.\-\/](\d{1,2})/); start = bm ? idxOf(+bm[1], +bm[2]) + 1 : 2; }
           if (start < 1) start = 1;
-          const advP = ((pc.rate != null && pc.rate !== '') ? Number(pc.rate) : (Number(cfg.advRate) || 0)) / 100;
+          const advP = ((pc.rate != null && pc.rate !== '') ? Number(pc.rate) : effAdvRate) / 100;   // 엔진 기본 선급률과 통일
           const wOpt = Math.min(100, baseW + 20) / 100, wCons = Math.max(0, baseW - 20) / 100;
           if (start < FC_MONTHS && advP > 0) { incOpt[start] += p.budget * wOpt * advP; incCons[start] += p.budget * wCons * advP; }
           const end = start + 6; if (end < FC_MONTHS) { incOpt[end] += p.budget * wOpt * (1 - advP); incCons[end] += p.budget * wCons * (1 - advP); }
@@ -11742,7 +11771,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             <details className="no-print" style={{ marginBottom: S[3], background: T.surfaceAlt, borderRadius: 8, padding: `${S[2]}px ${S[3]}px` }}>
               <summary style={{ fontSize: 12, fontWeight: 700, color: T.brand, cursor: 'pointer' }}>📖 이 예측은 어떻게 계산되나요? (계산법·흐름 설명)</summary>
               <div style={{ fontSize: 11.5, color: T.ink, lineHeight: 1.8, marginTop: S[2] }}>
-                <strong style={{ color: T.brand }}>1. 시작점</strong> — 법인통장 잔고(CMS 자금현황표 또는 직접 입력)에서 출발해, 매월 <strong>잔고 = 전월 잔고 + 그달 수입 − 그달 지출</strong>로 12개월을 이어 계산합니다.<br />
+                <strong style={{ color: T.brand }}>1. 시작점</strong> — 가장 최근 <strong>급여일(10일) 인출 직전 실제 잔고</strong>에서 출발합니다. 확정월은 실제 잔고를 그대로 쓰고, 다음 달로 넘길 때 그 달 급여일 인출액을 차감합니다. 이후 매월 <strong>잔고 = 전월 이월 + 그달 수입 − 그달 지출</strong>로 {FC_MONTHS}개월을 이어 계산합니다.<br />
                 <strong style={{ color: T.success }}>2. 수입(파란 실선에 반영)</strong> — ① <strong>수금관리 등록분</strong>(미입금 예정일 기준, 가장 확정적) ② <strong>진행 사업의 선급·잔금</strong>: 계약기간 시작월에 매출×선급률, 종료 익월에 잔금(이미 수금관리에 있는 사업은 중복 제외) ③ <strong>기타 예정 수입</strong>(직접 등록분). 선급률은 사업별 입력값 → 없으면 수금 실적에서 학습한 중앙값 → 없으면 기본값 순.<br />
                 <strong style={{ color: T.warning }}>3. 지출</strong> — ① <strong>정규직 인건비</strong>: 매월 고정(CMS 급여 실적) ② <strong>계약직 인건비</strong>: 각 사업의 계약직 인건비를 계약기간에 배분 — 사업이 끝나는 달부터 그만큼 자동 감소(월별 수동 보정이 있으면 그 값 우선) ③ <strong>고정 운영경비</strong>: 임차·보험·세금과공과 등 매월 동일 ④ <strong>프로젝트성 경비</strong>: 외주·매입 + 사업 법인카드(여비·차량·운반·인쇄), 그달의 <strong>활성 사업 비율로 자동 증감</strong> + 조정 슬라이더 배율 적용 ⑤ <strong>세금</strong>: 부가세·법인세 추정액은 <strong>기본 제외</strong>(실질 지출 파악 왜곡 방지) — 정밀도 옵션에서 켜면 부가세 1·4·7·10월, 법인세 3월에 반영됩니다. ⑥ <strong>예정 지출</strong>(직접 등록): 세금 납부 확정액·장비 구입·보증금 등 미래 확정 지출을 월별로 등록하면 그 달 지출에 가산됩니다.<br />
                 <strong style={{ color: T.success }}>4. 수주 반영 시나리오(초록 점선)</strong> — 미수주 제안의 <strong>예산 × 수주율(%)</strong>을 기대수입으로 가산. 계약기간 시작월에 선급, +6개월에 잔금으로 배치하며, 아래 「수주 파이프라인 개별 설정」에서 제안별 포함/제외·계약월·선급률을 조정할 수 있습니다.<br />
@@ -11783,7 +11812,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                       </div>}
                       <div style={{ width: 90 }}>
                         <div style={{ fontSize: 10, color: T.textMute, marginBottom: 2 }}>선급률(%)</div>
-                        <input type="number" min="0" max="100" step="5" placeholder={String(cfg.advRate)} value={(cfg.advRates || {})[p.id] ?? ''}
+                        <input type="number" min="0" max="100" step="5" placeholder={String(effAdvRate)} value={(cfg.advRates || {})[p.id] ?? ''}
                           onChange={ev => setCashCfg(prev => ({ ...prev, advRates: { ...(prev.advRates || {}), [p.id]: ev.target.value === '' ? '' : Number(ev.target.value) } }))}
                           title={`비우면 기본 ${cfg.advRate}% 적용`}
                           style={{ width: '100%', padding: '5px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, textAlign: 'right', boxSizing: 'border-box' }} />
@@ -11800,7 +11829,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
                       else if (sched2.length > 0) line = <span style={{ color: '#7C5CBF', fontWeight: 700 }}>수동 회차 {sched2.filter(e => Number(e.amount) > 0).length}건 · 합계 {fmtMoney(sched2.reduce((a, e) => a + (Number(e.amount) || 0), 0))}원 (자동 선급·잔금 대체)</span>;
                       else if (!pr2) line = <span style={{ color: T.warning }}>기간 미입력 — 예측에 반영 안 됨</span>;
                       else {
-                        const adv2 = ((cfg.advRates || {})[p.id] != null && (cfg.advRates || {})[p.id] !== '' ? Number((cfg.advRates || {})[p.id]) : (Number(cfg.advRate) || 0)) / 100;
+                        const adv2 = advOf(p.id);   // ★ 엔진과 같은 함수를 쓴다 (cfg.advRate 직접 참조는 학습값 폴백을 놓친다)
                         const advAmt = Math.round(p.revenue * adv2), remAmt = Math.round(p.revenue * (1 - adv2));
                         const eiY = pr2.em === 12 ? pr2.ey + 1 : pr2.ey, eiM = pr2.em === 12 ? 1 : pr2.em + 1;
                         line = <>선급 <strong>{fmtMoney(advAmt)}</strong> ({pr2.sy}.{pr2.sm}) + 잔금 <strong>{fmtMoney(remAmt)}</strong> ({eiY}.{eiM})</>;
@@ -11932,7 +11961,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               </div>
             ) : (
               <div style={{ background: 'rgba(27,122,67,0.07)', border: `1px solid ${T.success}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12.5 }}>
-                <strong style={{ color: T.success }}>✅ 안정</strong> — 12개월 내 안전선({fmtMoney(safety)}원) 미달 없음. 최저점 {minRow.y}년 {minRow.label} {fmtMoney(minRow.bal)}원 · 12개월 후 예상 잔고 <strong>{fmtMoney(rows[11].bal)}원</strong> — 결산 후 투자·상여 재원 검토 가능.
+                <strong style={{ color: T.success }}>✅ 안정</strong> — 12개월 내 안전선({fmtMoney(safety)}원) 미달 없음. 최저점 {minRow.y}년 {minRow.label} {fmtMoney(minRow.bal)}원 · 예측 종료({rows[rows.length - 1].y}년 {rows[rows.length - 1].m}월) 예상 잔고 <strong>{fmtMoney(rows[rows.length - 1].bal)}원</strong> — 결산 후 투자·상여 재원 검토 가능.
               </div>
             )}
             {/* 차트 — IR/자금 트렌드 스타일 */}
@@ -11945,7 +11974,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               return (
                 <div className="fc-full" style={{ height: 360, background: 'linear-gradient(180deg,#FBFCFE 0%,#EEF3FA 100%)', borderRadius: 14, padding: `${S[3]}px ${S[2]}px ${S[2]}px`, border: `1px solid ${T.border}`, boxShadow: 'inset 0 1px 0 #fff, 0 4px 16px rgba(21,35,63,0.08)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: `0 ${S[3]}px`, marginBottom: 2 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, letterSpacing: '-0.01em' }}>12개월 자금 잔고 추이 <span style={{ fontSize: 10.5, fontWeight: 600, color: T.textMute }}>(단위: 백만원)</span></span>
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, letterSpacing: '-0.01em' }}>자금 잔고 추이 <span style={{ fontSize: 10.5, fontWeight: 600, color: T.textMute }}>{rows.length ? `${rows[0].y}.${String(rows[0].m).padStart(2, '0')} ~ ${rows[rows.length - 1].y}.${String(rows[rows.length - 1].m).padStart(2, '0')} · ${rows.length}개월` : ''} · 급여일(10일) 기준 · 단위 백만원</span></span>
                     <span style={{ fontSize: 11, fontWeight: 700, color: belowSafe ? T.danger : T.success }}>최저 {minPt.name} {minPt.예측잔고.toLocaleString()}M {belowSafe ? '⚠ 안전선 이하' : '✓ 안전'}</span>
                   </div>
                   <ResponsiveContainer width="100%" height="90%" minWidth={0}>
