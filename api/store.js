@@ -93,7 +93,7 @@ function stripForEvaluator(valStr) {
     if (Array.isArray(d.projects)) {
       d.projects = d.projects.map(p => { if (!p) return p; const { revenue, laborCost, workerLabor, mgrLabor, overhead, otherCost, planCost, monthly, ...rest } = p; return rest; });
     }
-    // 재무 관련만 제거. scores·selfScores·comments·submissions·peerEvals·policy.grades 는 유지(평가결과 조회용).
+    // 재무 관련만 제거. scores·scoresBy·selfScores·comments·submissions·peerEvals·policy.grades 는 유지(평가결과 조회용).
     delete d.fin; delete d.cashCfg; delete d.loans; delete d.receivables; delete d.overheads; delete d.empLedger;
     return JSON.stringify(d);
   } catch (e) { return null; }
@@ -198,6 +198,8 @@ export default async function handler(req, res) {
                 const merged = {
                   ...base,
                   selfScores: mergeByKey(base.selfScores, incoming.selfScores, null),
+                  // ★ scoresBy[평가자][대상자] — 공동 평가에서 평가자끼리 서로 덮어쓰지 않게 평가자 키 단위로 병합
+                  scoresBy: mergeByKey(base.scoresBy, incoming.scoresBy, null),
                   comments: mergeByKey(base.comments, incoming.comments, null),
                   submissions: mergeByKey(base.submissions, incoming.submissions, null),
                   peerEvals: mergeByKey(base.peerEvals, incoming.peerEvals, null),
@@ -222,6 +224,8 @@ export default async function handler(req, res) {
             const merged = {
               ...base,
               selfScores: mergeByKey(base.selfScores, inc.selfScores, only),
+              // ★ 평가자는 자기 사번 키(scoresBy[내사번])만 쓸 수 있다. 남의 평가를 지우거나 위조할 수 없다.
+              scoresBy: mergeByKey(base.scoresBy, inc.scoresBy, (role === 'admin' || role === 'manager') ? null : (meKey || null)),
               comments: mergeByKey(base.comments, inc.comments, only),
               submissions: mergeByKey(base.submissions, inc.submissions, only),
               peerEvals: mergeByKey(base.peerEvals, inc.peerEvals, null),
