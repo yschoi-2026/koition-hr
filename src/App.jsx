@@ -5,6 +5,17 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v218 → v219] 평가 입력 권한을 '평가자 지정' 기준으로
+// 80) 평가 입력 대상이 evalTarget(평가 대상 여부)만 보고 걸러져, deptScope 가 같은 부서면
+//     평가자로 지정되지 않은 사람도 동료를 평가할 수 있었다.
+//     → e.evaluator / e.evaluators 에 내 사번이 있는 직원만 대상. 자기 자신은 제외.
+//        대표이사(policy.finalEvaluators)·admin 은 전 직원 대상(확정 점수 조정).
+// 81) 평가할 대상이 0명이면 「평가 입력」 탭 자체를 숨긴다 → 그 직원은 「내 평가」만 사용.
+// 82) 대표이사·admin 은 전 직원을 볼 수 있지만 기본은 '내 담당'만 표시한다.
+//     최영숙 이사는 admin 이라 19명 전원이 떠서 자기 담당 9명을 찾기 어려웠다.
+//     [내 담당 N명] / [전사 N명(확정 점수 조정)] 토글 제공.
+//     이미 선택돼 있던 탭이 숨겨지면 대시보드로 이동.
+//
 // [v217 → v218] scoresBy props 누락 수정
 // 79) [버그] v217 에서 EvaluationView 의 props 목록에 scoresBy·applyEvaluatorAvg 를 추가하는
 //     치환이 실패했는데 그대로 배포됐다 → 평가 입력 탭에서 'scoresBy is not defined' 런타임 오류.
@@ -4153,7 +4164,23 @@ function App() {
   //   ※ 서버(api/store.js)의 PUT은 manager를 admin과 동일하게 취급한다. 즉 편집 제한은 화면 레벨에만 있다.
   const EXEC_IDS = ['K-140401', 'K-140402'];
   const isExec = user.role === 'admin' || EXEC_IDS.includes(user.empId);
-  const visibleMenus = allMenus.filter(m => m.roles.includes(user.role) || (isExec && ['report', 'loans', 'receivables', 'cms'].includes(m.id)));
+  // ★ 「평가 입력」 탭은 실제로 평가할 대상이 있는 사람에게만 보인다.
+  //   role 이 evaluator 여도 담당자가 지정돼 있지 않으면 탭을 숨긴다 → 그 직원은 「내 평가」만 사용.
+  const myEvalTargets = React.useMemo(() => {
+    const FIN = (policy && policy.finalEvaluators) || ['K-140401', 'K-140402'];
+    if (user.role === 'admin' || FIN.includes(user.empId)) return employees.filter(e => e.evalTarget && e.id !== user.empId).length;
+    return employees.filter(e => e.evalTarget && e.id !== user.empId
+      && [e.evaluator, ...((e.evaluators) || [])].filter(Boolean).includes(user.empId)).length;
+  }, [employees, policy, user]);
+  const visibleMenus = allMenus.filter(m => {
+    const allowed = m.roles.includes(user.role) || (isExec && ['report', 'loans', 'receivables', 'cms'].includes(m.id));
+    if (!allowed) return false;
+    if (m.id === 'evaluation' && myEvalTargets === 0) return false;   // 평가할 대상 없으면 숨김
+    return true;
+  });
+  React.useEffect(() => {
+    if (!visibleMenus.some(m => m.id === tab)) setTab('dashboard');
+  }, [visibleMenus.length, tab]);   // eslint-disable-line react-hooks/exhaustive-deps
   const visibleEmployees = employees.filter(e => {
     if (user.role === 'admin' || EXEC_IDS.includes(user.empId)) return true;  // 임원=전사 조회
     if (user.role === 'manager' || user.role === 'evaluator') return String(e.dept || '').includes(user.deptScope || '') || e.dept === user.deptScope;
@@ -14912,9 +14939,26 @@ function PromotionEvalCard({ emp, policy, totalScore }) {
 function EvaluationView({ user, employees, scores, scoresBy, updateScore, applyEvaluatorAvg, selfScores, comments, updateComment, policy, selectedEmp, setSelectedEmp, results, currentYear, submissions, copySelfToEvaluator, finalizeEval, projects, proposals, peerEvals }) {
   const [kpiCalcOpen, setKpiCalcOpen] = useState(false);
   const [contribCalcOpen, setContribCalcOpen] = useState(false);
-  const targets = employees.filter(e => e.evalTarget);
+  // ★ 평가 입력은 '내가 평가자로 지정된 직원'만 대상으로 한다.
+  //   예전에는 evalTarget(평가 대상 여부)만 보고 같은 부서 전원이 떴다 → 평가자가 아닌 사람도
+  //   같은 부서 동료를 평가할 수 있었다. evaluator/evaluators 지정과 최종 평가자(대표이사)만 허용.
+  const FINAL_EV = (policy && policy.finalEvaluators) || ['K-140401', 'K-140402'];
+  const isFinalEv = user.role === 'admin' || FINAL_EV.includes(user.empId);
+  const isMine = (e) => [e.evaluator, ...((e.evaluators) || [])].filter(Boolean).includes(user.empId);
+  const assignedToMe = (e) => {
+    if (!e.evalTarget) return false;
+    if (e.id === user.empId) return false;                       // 자기 자신은 평가 못 함
+    if (isFinalEv) return true;                                  // 대표이사·admin = 전 직원
+    return isMine(e);
+  };
+  const all = employees.filter(assignedToMe);
+  const mineCount = all.filter(isMine).length;
+  // 대표이사·admin 은 전사를 보지만, 기본은 '내 담당'만 — 담당이 없으면 전사로 시작
+  const [scopeMine, setScopeMine] = useState(mineCount > 0);
+  const targets = (isFinalEv && scopeMine) ? all.filter(isMine) : all;
   const current = (selectedEmp && targets.find(e => e.id === selectedEmp)) ? employees.find(e => e.id === selectedEmp) : targets[0];
-  if (!current) return <EmptyState icon={Users} title="평가 대상이 없습니다" desc="권한 범위 내 평가 대상자가 없습니다" />;
+  if (!current) return <EmptyState icon={Users} title="평가할 대상이 없습니다"
+    desc="내가 평가자로 지정된 직원이 없습니다. 「내 평가」에서 본인 자기평가만 진행하시면 됩니다." />;
   const empScores = scores[current.id] || {};
   const empSelf = selfScores[current.id] || {};
   const empComments = comments[current.id] || {};
@@ -14926,8 +14970,18 @@ function EvaluationView({ user, employees, scores, scoresBy, updateScore, applyE
       <PageHeader 
         eyebrow="Evaluation"
         title="평가 입력"
-        subtitle={`${user.role === 'admin' ? '전사' : user.deptScope} 평가 대상자 ${targets.length}명에 대해 역량·업적 평가를 입력합니다`}
+        subtitle={isFinalEv ? `전사 ${targets.length}명 — 평가자 점수를 확인하고 확정 점수를 조정합니다` : `내가 평가자로 지정된 ${targets.length}명에 대해 역량·업적 평가를 입력합니다`}
       />
+      {isFinalEv && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: S[2], marginBottom: S[3], flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, color: T.textMute, fontWeight: 600 }}>보기 범위</span>
+          <Button size="sm" variant={scopeMine ? 'primary' : 'outline'} onClick={() => setScopeMine(true)}>내 담당 {mineCount}명</Button>
+          <Button size="sm" variant={!scopeMine ? 'primary' : 'outline'} onClick={() => setScopeMine(false)}>전사 {all.length}명 (확정 점수 조정)</Button>
+          <span style={{ fontSize: 11, color: T.textMute }}>
+            {scopeMine ? '내가 평가자로 지정된 직원만 표시합니다.' : '전 직원을 표시합니다 — 평가자 점수를 보고 확정 점수를 조정하는 화면입니다.'}
+          </span>
+        </div>
+      )}
       {/* ══ 평가자별 점수 비교 — 공동 평가 대상은 여러 명이 각자 입력한다 ══
           대표이사(finalEvaluators)·admin 은 확정 점수를 직접 조정하고, 근거로 각 평가자 점수를 본다. */}
       {(() => {
