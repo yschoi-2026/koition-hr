@@ -5,6 +5,12 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v217 → v218] scoresBy props 누락 수정
+// 79) [버그] v217 에서 EvaluationView 의 props 목록에 scoresBy·applyEvaluatorAvg 를 추가하는
+//     치환이 실패했는데 그대로 배포됐다 → 평가 입력 탭에서 'scoresBy is not defined' 런타임 오류.
+//     정의부와 사용부 양쪽에 추가. scoresBy 가 undefined·{} 인 경우에도 렌더되는지 확인.
+//     ※ 전 컴포넌트 props 전달을 전수 검사했고, 나머지 30개 View/Panel/Modal 은 정상.
+//
 // [v216 → v217] 공동 평가 + 대표이사 최종 조정
 // 75) scores[대상자] 한 칸을 여러 평가자가 공유해 서로 덮어쓰던 구조를 분리.
 //     scoresBy[평가자][대상자][항목] = 각자 입력한 원본 · scores[대상자] = 확정 점수.
@@ -4234,7 +4240,7 @@ function App() {
               if (target) setAdminResetTarget(target);
               else showToast(`${emp.name}님의 계정을 찾을 수 없습니다`);
             }} />}
-            {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} updateScore={updateScore} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} finalizeEval={finalizeEval} projects={projects} proposals={proposals} peerEvals={peerEvals} />}
+            {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} scoresBy={scoresBy} updateScore={updateScore} applyEvaluatorAvg={applyEvaluatorAvg} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} finalizeEval={finalizeEval} projects={projects} proposals={proposals} peerEvals={peerEvals} />}
             {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertProposal={upsertProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} cashCfg={cashCfg} setCashCfg={setCashCfg} />}
             {tab === 'cms' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <AccountingCmsView fin={fin} setFin={setFin} projects={projects} cashCfg={cashCfg} canEdit={user.role === 'admin'} />}
             {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} receivables={receivables} cashCfg={cashCfg} setCashCfg={setCashCfg} upsertProject={upsertProject} deleteProject={deleteProject} fin={fin} />}
@@ -14903,7 +14909,7 @@ function PromotionEvalCard({ emp, policy, totalScore }) {
 // ============================================================
 // 평가 입력
 // ============================================================
-function EvaluationView({ user, employees, scores, updateScore, selfScores, comments, updateComment, policy, selectedEmp, setSelectedEmp, results, currentYear, submissions, copySelfToEvaluator, finalizeEval, projects, proposals, peerEvals }) {
+function EvaluationView({ user, employees, scores, scoresBy, updateScore, applyEvaluatorAvg, selfScores, comments, updateComment, policy, selectedEmp, setSelectedEmp, results, currentYear, submissions, copySelfToEvaluator, finalizeEval, projects, proposals, peerEvals }) {
   const [kpiCalcOpen, setKpiCalcOpen] = useState(false);
   const [contribCalcOpen, setContribCalcOpen] = useState(false);
   const targets = employees.filter(e => e.evalTarget);
