@@ -5,6 +5,34 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v216 → v217] 공동 평가 + 대표이사 최종 조정
+// 75) scores[대상자] 한 칸을 여러 평가자가 공유해 서로 덮어쓰던 구조를 분리.
+//     scoresBy[평가자][대상자][항목] = 각자 입력한 원본 · scores[대상자] = 확정 점수.
+//     부서장 평가는 최영숙 이사·정일영·최재교 대표이사가 동시에 하므로 분리가 필수였다.
+// 76) 확정 점수는 대표이사(policy.finalEvaluators)·admin 만 직접 수정한다.
+// 77) 「평가자별 입력 점수」 표 추가 — 평가자별 8항목·평균과 확정 점수를 나란히 표시.
+//     [평가자 평균을 확정 점수로] 버튼으로 일괄 반영 가능.
+// 78) 서버도 scoresBy 를 평가자 키 단위로 병합 — 남의 평가를 지우거나 위조할 수 없다.
+//
+// [v215 → v216] 기기 간 동기화 정책 정리
+//  증상: (1) 노트북에서 cys 비밀번호로 로그인 실패 (2) 모바일에서 예전 데이터 표시
+//  원인: 계정·데이터 모두 '로컬 타임스탬프가 크면 로컬 우선' 이었다. 기기가 여러 대면
+//        A기기에서 바꾼 비밀번호가 B기기 접속만으로 옛 값으로 되돌아가고(persistUsers 재전송),
+//        데이터도 각 기기가 자기 캐시를 계속 표시했다(console.warn 만 찍혀 아무도 몰랐다).
+// 73) (A) 계정은 서버가 유일한 정본 — 로컬을 서버로 되돌려 쓰는 경로 제거.
+//     비밀번호는 기기 간 병합할 수 있는 값이 아니므로 서버를 무조건 따른다.
+// 74) (B) 데이터는 편집 유실 방지를 위해 로컬 유지하되, 상단에 충돌 배너를 띄운다.
+//     '서버 데이터 받기(이 기기 변경분 폐기)' / '이 기기 데이터를 서버에 저장' / '나중에' 선택 제공.
+//
+// [v214 → v215] ★ 치명적 — 렌더 중 setState 로 앱이 멈추던 문제
+// 72) v212 에서 단일 엔진을 만들며 publishEngine(setEngineOut)을 렌더 도중 호출했다.
+//     React 에서 렌더 중 setState 는 즉시 재렌더를 유발하고, 그 재렌더가 다시 setState 를
+//     호출해 무한 루프가 된다 → 로그인 후 경영보고서에서 브라우저가 멈춘다(PC·모바일 공통).
+//     SSR 테스트(renderToStaticMarkup)는 1패스만 돌고 렌더 중 setState 를 무시해 잡지 못했다.
+//     → EnginePublisher 컴포넌트를 두어 useEffect(렌더 완료 후)에서 발행하도록 변경.
+//     검증: jsdom + react-dom/client + act() 로 실제 커밋 사이클 확인 —
+//           렌더 2회로 수렴, 무한 루프 없음, 카드 정상 표시.
+//
 // [v213 → v214] 차트 X축 연도 중복 표기 수정
 // 71) 예측창이 16개월(2026.01~2027.04)이라 X축에 1/10~4/10 이 두 번 나와 어느 해인지 알 수 없었다.
 //     → 1월 라벨에만 연도 두 자리를 붙인다(27.1/10). 나머지는 그대로 M/10.
@@ -3229,7 +3257,8 @@ function App() {
   const [tab, setTab] = useState('dashboard');
   const [employees, setEmployees] = useState(INITIAL_EMPLOYEES);
   const [policy, setPolicy] = useState(INITIAL_POLICY);
-  const [scores, setScores] = useState({});
+  const [scores, setScores] = useState({});          // 확정 점수 (대표이사 최종 조정)
+  const [scoresBy, setScoresBy] = useState({});      // 평가자별 원본 점수 scoresBy[평가자][대상자][항목]
   const [selfScores, setSelfScores] = useState({});
   const [comments, setComments] = useState({});
   const [submissions, setSubmissions] = useState({});
@@ -3311,17 +3340,19 @@ function App() {
             }
           } catch (e) {}
         }
-        // ② 서버에서 최신 계정 받아 비교 — 서버가 로컬보다 최신일 때만 캐시 갱신 (비번 변경 유실 방지)
+        // ② 계정은 '서버가 유일한 정본'이다. (A)
+        //   예전에는 로컬 타임스탬프가 더 크면 로컬 계정을 서버로 되돌려 썼는데,
+        //   기기가 여러 대면 A기기에서 바꾼 비밀번호가 B기기 접속만으로 옛 값으로 되돌아간다.
+        //   비밀번호는 기기 간 병합할 수 있는 값이 아니므로 서버를 무조건 따른다.
         const sv = await serverGet('users');
         const svN = normUsers(sv);
         if (svN && svN.list.length && svN.list[0].passwordHash) {
-          const localTs = Date.parse(localStorage.getItem('koition_hr_users_ts') || 0) || 0;
-          if (svN.ts >= localTs) {   // 서버가 최신(또는 동급) → 로컬 갱신
-            try { localStorage.setItem('koition_hr_users', JSON.stringify(svN.list)); if (svN.ts) localStorage.setItem('koition_hr_users_ts', new Date(svN.ts).toISOString()); } catch (e) {}
-          } else {
-            // 로컬이 더 최신(다른 데서 서버가 뒤처짐) → 로컬을 서버로 재전송
-            persistUsers(JSON.parse(localStorage.getItem('koition_hr_users')));
-          }
+          try {
+            localStorage.setItem('koition_hr_users', JSON.stringify(svN.list));
+            localStorage.setItem('koition_hr_users_ts', new Date(svN.ts || Date.now()).toISOString());
+          } catch (e) {}
+          setUsers(svN.list);
+          setUsersInitialized(true);
         }
         const stored = localStorage.getItem('koition_hr_users');
         if (stored) {
@@ -3482,6 +3513,8 @@ function App() {
   };
 
   const dataLoadedRef = useRef(false);   // 자동 저장 가드: 초기 로드 완료 전에는 저장 안 함(기존 데이터 보호)
+  // (B) 기기 간 데이터 충돌 알림 — 로컬이 서버보다 최신일 때 사용자에게 선택지를 준다.
+  const [syncConflict, setSyncConflict] = useState(null);   // {localAt, remoteAt}
   const heavyLoadedRef = useRef(false);
   const empRefetchedRef = useRef(false);   // 직원 로그인 후 필터링 데이터 재요청 1회 가드
   const lastSavedRef = useRef(null);        // 직전 서버 저장 페이로드(타임스탬프 제외) — 중복 저장 방지
@@ -3515,6 +3548,7 @@ function App() {
   // 중량(경영·재무·전사평가) — admin/manager만
   const applyHeavyData = (data) => {
     if (data.scores) setScores(data.scores);
+    if (data.scoresBy) setScoresBy(data.scoresBy);
     if (data.overheads) setOverheads(data.overheads);
     if (data.empLedger) setEmpLedger(data.empLedger);
     if (data.loans) setLoans(data.loans);
@@ -3537,14 +3571,19 @@ function App() {
           try {
             const remoteStr = typeof remote === 'string' ? remote : JSON.stringify(remote);
             const localStr = localStorage.getItem('koition_hr_v6');
-            let useRemote = true;
+            let useRemote = true, rT = 0, lT = -1;
             try {
-              const rT = Date.parse((JSON.parse(remoteStr) || {}).updatedAt || 0) || 0;
-              const lT = localStr ? (Date.parse((JSON.parse(localStr) || {}).updatedAt || 0) || 0) : -1;
+              rT = Date.parse((JSON.parse(remoteStr) || {}).updatedAt || 0) || 0;
+              lT = localStr ? (Date.parse((JSON.parse(localStr) || {}).updatedAt || 0) || 0) : -1;
               useRemote = rT >= lT;   // ★ 서버가 로컬보다 오래된 데이터면 덮어쓰지 않음 (편집 유실 방지)
             } catch (e) {}
             if (useRemote) localStorage.setItem('koition_hr_v6', remoteStr);
-            else console.warn('[동기화] 서버 데이터가 로컬보다 오래됨 — 로컬 유지, 최신본을 서버로 재전송');
+            else {
+              // (B) 로컬이 더 최신이면 유지하되, 사용자가 알 수 있게 화면에 알린다.
+              //   예전에는 console.warn 만 찍혀서 다른 기기에서 옛 데이터를 보고 있는 줄 몰랐다.
+              setSyncConflict({ localAt: lT ? new Date(lT).toISOString() : '', remoteAt: rT ? new Date(rT).toISOString() : '' });
+              console.warn('[동기화] 서버 데이터가 로컬보다 오래됨 — 로컬 유지');
+            }
           } catch (e) {}
         }
       } catch (e) {}
@@ -3668,7 +3707,7 @@ function App() {
   };
   const handleSave = () => {
     try {
-      const payload = JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, fin, history, updatedAt: new Date().toISOString() });
+      const payload = JSON.stringify({ employees, policy, scores, scoresBy, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, fin, history, updatedAt: new Date().toISOString() });
       localStorage.setItem('koition_hr_v6', payload);
       serverPut('main', payload);
       showToast('데이터가 저장되었습니다 (서버 포함)');
@@ -3683,7 +3722,7 @@ function App() {
         let payload;
         if (heavyLoaded) {
           // admin/manager: 전체 저장 (중량 데이터를 정상 보유한 상태)
-          payload = JSON.stringify({ employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, fin, history, updatedAt: new Date().toISOString() });
+          payload = JSON.stringify({ employees, policy, scores, scoresBy, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, fin, history, updatedAt: new Date().toISOString() });
         } else {
           // 직원·평가자: 기존 저장본을 읽어 본인이 편집 가능한 경량 필드만 덮어씀 (중량 데이터 원본 보존)
           let base = {};
@@ -3809,6 +3848,7 @@ function App() {
           setPolicy(migrated);
         }
         if (data.scores) setScores(data.scores);
+    if (data.scoresBy) setScoresBy(data.scoresBy);
         if (data.selfScores) setSelfScores(data.selfScores);
         if (data.comments) setComments(data.comments);
         if (data.submissions) setSubmissions(data.submissions);
@@ -3834,9 +3874,34 @@ function App() {
     reader.readAsText(file);
   };
 
+  // ══════════════════════════════════════════════════════════════════
+  //  평가자별 점수 분리 저장 (공동 평가 지원)
+  //   scoresBy[평가자사번][대상자사번][항목] = 점수   ← 각자 입력한 원본
+  //   scores[대상자][항목]                       = 확정 점수 (대표이사 최종 조정 결과)
+  //   부서장은 최영숙·정일영·최재교가 동시에 평가하므로 한 칸을 공유하면 서로 덮어쓴다.
+  // ══════════════════════════════════════════════════════════════════
+  const FINAL_EVALUATORS = (policy && policy.finalEvaluators) || ['K-140401', 'K-140402'];
+  const isFinalEvaluator = (u) => !!u && (u.role === 'admin' || FINAL_EVALUATORS.includes(u.empId));
   const updateScore = (id, field, value) => {
     const v = value === '' ? null : Math.max(0, Math.min(100, Number(value)));
-    setScores(prev => ({ ...prev, [id]: { ...(prev[id] || {}), [field]: v } }));
+    const me = (user && user.empId) || '';
+    // 내가 입력한 값은 항상 scoresBy 에 남긴다 (누가 몇 점 줬는지 추적)
+    if (me) setScoresBy(prev => ({ ...prev, [me]: { ...((prev[me]) || {}), [id]: { ...(((prev[me]) || {})[id] || {}), [field]: v } } }));
+    // 확정 점수(scores)는 대표이사·admin 만 직접 수정한다.
+    if (isFinalEvaluator(user)) setScores(prev => ({ ...prev, [id]: { ...(prev[id] || {}), [field]: v } }));
+  };
+  // 대표이사가 「평가자 평균 반영」을 누를 때 사용
+  const applyEvaluatorAvg = (id) => {
+    const per = Object.keys(scoresBy || {}).map(k => (scoresBy[k] || {})[id]).filter(Boolean);
+    if (!per.length) { showToast('입력된 평가자 점수가 없습니다.'); return; }
+    const keys = Array.from(new Set(per.flatMap(o => Object.keys(o))));
+    const avg = {};
+    keys.forEach(k => {
+      const vals = per.map(o => o[k]).filter(v => v != null && v !== '' && !isNaN(Number(v))).map(Number);
+      if (vals.length) avg[k] = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+    });
+    setScores(prev => ({ ...prev, [id]: { ...(prev[id] || {}), ...avg } }));
+    showToast(`평가자 ${per.length}명 평균을 확정 점수에 반영했습니다.`);
   };
   const updateSelfScore = (id, field, value) => {
     const v = value === '' ? null : Math.max(0, Math.min(100, Number(value)));
@@ -4096,6 +4161,31 @@ function App() {
         <Header user={user} onLogout={() => { setAuth(null, null); try { localStorage.removeItem('koition_hr_v6'); } catch (e) {} setUser(null); setTab('dashboard'); }} 
           handleSave={handleSave} handleExport={handleExport} handleImport={handleImport}
           onChangePassword={() => setPasswordModalOpen(true)} />
+        {/* (B) 기기 간 데이터 충돌 알림 — 로컬이 서버보다 최신이면 유지하되 사용자에게 알린다 */}
+        {syncConflict && (
+          <div style={{ background: '#FFF4E5', borderBottom: `2px solid ${T.warning}`, padding: `10px 16px`, fontSize: 12.5, lineHeight: 1.75 }}>
+            <strong style={{ color: T.warning }}>⚠ 이 기기의 데이터가 서버보다 최신입니다</strong> — 서버 최신본으로 덮어쓰지 않고 이 기기 데이터를 표시하고 있습니다.
+            <div style={{ color: T.textMute, fontSize: 11.5, marginTop: 2 }}>
+              이 기기 {syncConflict.localAt ? syncConflict.localAt.replace('T', ' ').slice(0, 16) : '-'} · 서버 {syncConflict.remoteAt ? syncConflict.remoteAt.replace('T', ' ').slice(0, 16) : '-'}
+              {' '}— 다른 기기(PC 등)에서 최근에 저장했다면 <strong>서버 데이터 받기</strong>를 누르세요. 이 기기에서 방금 편집했다면 <strong>[저장]</strong>으로 서버에 올리세요.
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+              <Button size="sm" variant="primary" onClick={async () => {
+                try {
+                  const r = await serverGet('main');
+                  if (r != null) {
+                    const str = typeof r === 'string' ? r : JSON.stringify(r);
+                    localStorage.setItem('koition_hr_v6', str);
+                    setSyncConflict(null);
+                    location.reload();
+                  }
+                } catch (e) { alert('서버 데이터를 받지 못했습니다.'); }
+              }}>서버 데이터 받기 (이 기기 변경분 폐기)</Button>
+              <Button size="sm" variant="outline" onClick={() => { handleSave(); setSyncConflict(null); }}>이 기기 데이터를 서버에 저장</Button>
+              <Button size="sm" variant="ghost" onClick={() => setSyncConflict(null)}>나중에</Button>
+            </div>
+          </div>
+        )}
         {isMobile && (
           <button onClick={() => setNavOpen(o => !o)} aria-label="메뉴"
             style={{ position: 'fixed', bottom: 18, right: 18, zIndex: 1200, width: 52, height: 52, borderRadius: 26, border: 'none', background: T.brand, color: '#fff', fontSize: 22, boxShadow: '0 4px 14px rgba(0,0,0,0.25)', cursor: 'pointer' }}>
@@ -10433,6 +10523,17 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
 // ══════════════════════════════════════════════════════════════════════
 const CAP_GREEN = '#1B7A43', CAP_BLUE = '#1D4ED8';
 function shorten(v, n) { const t = String(v || ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; }
+// 엔진 계산 결과를 렌더가 끝난 뒤(effect) 부모로 올려보내는 전용 컴포넌트.
+//   렌더 도중 setState 를 호출하면 무한 재렌더로 화면이 멈춘다.
+function EnginePublisher({ out, publish }) {
+  const sig = React.useMemo(() => {
+    try { return out ? JSON.stringify(out.rows.map(r => [r.key, r.bal, r.balS, r.need, r.inConf, r.outX])) + '|' + JSON.stringify(out.schedGap) + '|' + out.bias : ''; }
+    catch (e) { return ''; }
+  }, [out]);
+  React.useEffect(() => { if (out) publish(out); }, [sig]);   // eslint-disable-line react-hooks/exhaustive-deps   // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
+
 function PayrollCapacityCards({ eng }) {
   const [open, setOpen] = React.useState(null);   // 'conf' | 'pipe'
   if (!eng || !eng.rows || !eng.rows.length) return null;
@@ -10610,13 +10711,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
   //   예전에는 카드용 엔진(fcCapacity)을 따로 두어, 한쪽만 고치면 숫자가 어긋났다
   //   (incomeOff 누락·세금 키 불일치·opex 구성 차이 등이 모두 이 구조 탓).
   // ══════════════════════════════════════════════════════════════════
-  const engineRef = React.useRef(null);
   const [engineOut, setEngineOut] = React.useState(null);
-  const publishEngine = React.useCallback((out) => {
-    const prev = engineRef.current;
-    const sig = out ? JSON.stringify({ r: out.rows.map(r => [r.key, r.bal, r.need, r.inConf, r.outX]), g: out.schedGap }) : '';
-    if (prev !== sig) { engineRef.current = sig; setEngineOut(out); }
-  }, []);
+  const publishEngine = React.useCallback((out) => { setEngineOut(out); }, []);
 
   // ── 접힌 상태에서도 보여줄 급여 지급 판정 요약 ──
   //   본문(자금흐름 예측)은 접히지만, "다음 급여일에 급여를 줄 수 있나"는 항상 보여야 한다.
@@ -11459,7 +11555,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           });
           return out;
         })();
-        publishEngine({
+        const engineOutData = {
           rows: rows.map((r, i) => ({
             key: r.key, y: r.y, m: r.m, payLabel: r.payLabel, payFull: r.payFull, payOf: r.payOf,
             confirmed: !!r.confirmed,
@@ -11474,7 +11570,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           taxOn, safety, schedGap: schedGapOut,
           past: Object.keys(actualBal).filter(k => actualBal[k] != null && actualBal[k] !== '').sort()
                   .map(k => ({ key: k, ok: Number(actualBal[k]) - (payActualRaw[k] != null && Number(payActualRaw[k]) > 0 ? Number(payActualRaw[k]) : (payBaseRaw || 0)) >= 0 })),
-        });
+        };
         const chartData = rows.map((r, chartData_i) => {
           const mk = r.y + '-' + String(r.m).padStart(2, '0');
           const av = actualBal[mk];
@@ -11500,6 +11596,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const hasActual = Object.keys(actualBal).some(k => actualBal[k] != null && actualBal[k] !== '');
         return (
           <div style={{ ...card({ borderLeft: `4px solid ${T.brand}` }), padding: S[5], marginTop: S[3] }}>
+            <EnginePublisher out={engineOutData} publish={publishEngine} />
             {/* ══ 경영자용 ①: 급여 지급 가능 여부 — 이 화면에서 가장 먼저 봐야 하는 한 줄 ══ */}
             {payrollCheck.upcoming.length > 0 && (() => {
               const pc = payrollCheck, fs = pc.firstShort;
@@ -14825,6 +14922,69 @@ function EvaluationView({ user, employees, scores, updateScore, selfScores, comm
         title="평가 입력"
         subtitle={`${user.role === 'admin' ? '전사' : user.deptScope} 평가 대상자 ${targets.length}명에 대해 역량·업적 평가를 입력합니다`}
       />
+      {/* ══ 평가자별 점수 비교 — 공동 평가 대상은 여러 명이 각자 입력한다 ══
+          대표이사(finalEvaluators)·admin 은 확정 점수를 직접 조정하고, 근거로 각 평가자 점수를 본다. */}
+      {(() => {
+        const FIN = (policy && policy.finalEvaluators) || ['K-140401', 'K-140402'];
+        const isFinal = user.role === 'admin' || FIN.includes(user.empId);
+        const sb = scoresBy || {};
+        const raters = Object.keys(sb).filter(k => sb[k] && sb[k][current.id] && Object.keys(sb[k][current.id]).length);
+        const joint = (current.evaluators || []).length > 1;
+        const nameOf = (id) => (employees.find(e => e.id === id) || {}).name || id;
+        if (!joint && !raters.length) return null;
+        const FIELDS = [['perf_kpi', 'KPI'], ['perf_profit', '수익'], ['perf_delivery', '납기'], ['perf_customer', '고객'],
+                        ['comp_expert', '전문성'], ['comp_problem', '문제해결'], ['comp_collab', '협업'], ['comp_learn', '학습']];
+        return (
+          <div style={{ ...card({ borderLeft: `4px solid ${joint ? T.warning : T.brand}` }), padding: S[4], marginBottom: S[4] }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: S[2], marginBottom: S[2], flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>평가자별 입력 점수</span>
+              {joint && <Badge color={T.warning} variant="outline" size="sm">공동 평가 · {(current.evaluators || []).map(nameOf).join(' + ')}</Badge>}
+              <span style={{ fontSize: 11, color: T.textMute }}>{current.name} · 입력 완료 {raters.length}명</span>
+              <div style={{ flex: 1 }} />
+              {isFinal && raters.length > 0 && (
+                <Button size="sm" variant="primary" onClick={() => applyEvaluatorAvg && applyEvaluatorAvg(current.id)}>평가자 평균을 확정 점수로</Button>
+              )}
+            </div>
+            {raters.length === 0 ? (
+              <div style={{ fontSize: 12, color: T.textMute }}>아직 입력된 평가자 점수가 없습니다.</div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ borderCollapse: 'collapse', fontSize: 11.5, minWidth: 560 }}>
+                  <thead><tr style={{ background: T.surfaceAlt }}>
+                    <Th style={{ fontSize: 10 }}>평가자</Th>
+                    {FIELDS.map(([k, l]) => <Th key={k} align="right" style={{ fontSize: 10 }}>{l}</Th>)}
+                    <Th align="right" style={{ fontSize: 10 }}>평균</Th>
+                  </tr></thead>
+                  <tbody>
+                    {raters.map(rid => {
+                      const o = sb[rid][current.id] || {};
+                      const vals = FIELDS.map(([k]) => o[k]).filter(v => v != null && v !== '').map(Number);
+                      const avg = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+                      return (
+                        <tr key={rid} style={{ borderTop: `1px solid ${T.divider}` }}>
+                          <Td style={{ fontWeight: 700 }}>{nameOf(rid)}{rid === user.empId ? <span style={{ color: T.brand, fontSize: 10 }}> (나)</span> : null}</Td>
+                          {FIELDS.map(([k]) => <Td key={k} align="right" mono>{o[k] != null && o[k] !== '' ? o[k] : '-'}</Td>)}
+                          <Td align="right" mono><strong>{avg != null ? avg : '-'}</strong></Td>
+                        </tr>
+                      );
+                    })}
+                    <tr style={{ borderTop: `2px solid ${T.border}`, background: 'rgba(27,122,67,0.06)' }}>
+                      <Td style={{ fontWeight: 800, color: T.success }}>확정 점수</Td>
+                      {FIELDS.map(([k]) => <Td key={k} align="right" mono style={{ fontWeight: 700 }}>{empScores[k] != null && empScores[k] !== '' ? empScores[k] : '-'}</Td>)}
+                      <Td align="right" mono><strong>{(() => { const v = FIELDS.map(([k]) => empScores[k]).filter(x => x != null && x !== '').map(Number); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : '-'; })()}</strong></Td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div style={{ fontSize: 10.5, color: T.textMute, marginTop: 6, lineHeight: 1.7 }}>
+              아래 입력칸은 <strong>내가 주는 점수</strong>입니다. {isFinal
+                ? '대표이사·경영지원 권한이므로 입력값이 확정 점수에도 함께 반영됩니다.'
+                : '확정 점수는 대표이사가 이 표를 보고 최종 조정합니다.'}
+            </div>
+          </div>
+        );
+      })()}
       
       <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: S[5] }}>
         <div style={{ ...card(), padding: 0, height: 'fit-content', position: 'sticky', top: 96 }}>
