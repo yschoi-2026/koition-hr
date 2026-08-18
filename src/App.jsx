@@ -5,6 +5,17 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v219 → v220] ★ React #310 — 훅 개수 불일치로 앱이 죽던 문제
+//  증상: 로그인 후 'Minified React error #310' (Rendered more hooks than during the previous render)
+//  원인: v219 에서 App 컴포넌트에 useMemo(myEvalTargets)·useEffect(탭 보정)를 추가했는데,
+//        그 위치가 '로그인 전 return <LoginView/>' 뒤였다.
+//        → 로그인 전에는 훅 2개가 실행되지 않고, 로그인 후에는 실행되어 훅 개수가 달라진다.
+//        React 는 훅을 호출 순서로 식별하므로 개수가 바뀌면 #310 으로 죽는다.
+// 83) 두 훅을 제거하고 순수 계산으로 대체.
+//     myEvalTargets → 즉시실행 함수(IIFE) · 탭 보정 → activeTab 파생값(setState 없음).
+//     렌더 분기 17곳을 tab → activeTab 으로 교체.
+//     검증: jsdom 에서 실제 로그인(입력→버튼 클릭)까지 수행 — 로그인 전/후 모두 오류 없음.
+//
 // [v218 → v219] 평가 입력 권한을 '평가자 지정' 기준으로
 // 80) 평가 입력 대상이 evalTarget(평가 대상 여부)만 보고 걸러져, deptScope 가 같은 부서면
 //     평가자로 지정되지 않은 사람도 동료를 평가할 수 있었다.
@@ -4166,21 +4177,23 @@ function App() {
   const isExec = user.role === 'admin' || EXEC_IDS.includes(user.empId);
   // ★ 「평가 입력」 탭은 실제로 평가할 대상이 있는 사람에게만 보인다.
   //   role 이 evaluator 여도 담당자가 지정돼 있지 않으면 탭을 숨긴다 → 그 직원은 「내 평가」만 사용.
-  const myEvalTargets = React.useMemo(() => {
+  //  ★ 훅을 쓰지 않는다. 이 위치는 로그인 전 조기 return(L~4136) 뒤이므로
+  //    여기에 useMemo/useEffect 를 두면 로그인 전후로 훅 개수가 달라져 React #310 이 난다.
+  //    순수 계산으로 처리하고, 탭 보정은 렌더 중 setState 없이 파생값으로 해결한다.
+  const myEvalTargets = (() => {
     const FIN = (policy && policy.finalEvaluators) || ['K-140401', 'K-140402'];
     if (user.role === 'admin' || FIN.includes(user.empId)) return employees.filter(e => e.evalTarget && e.id !== user.empId).length;
     return employees.filter(e => e.evalTarget && e.id !== user.empId
       && [e.evaluator, ...((e.evaluators) || [])].filter(Boolean).includes(user.empId)).length;
-  }, [employees, policy, user]);
+  })();
   const visibleMenus = allMenus.filter(m => {
     const allowed = m.roles.includes(user.role) || (isExec && ['report', 'loans', 'receivables', 'cms'].includes(m.id));
     if (!allowed) return false;
     if (m.id === 'evaluation' && myEvalTargets === 0) return false;   // 평가할 대상 없으면 숨김
     return true;
   });
-  React.useEffect(() => {
-    if (!visibleMenus.some(m => m.id === tab)) setTab('dashboard');
-  }, [visibleMenus.length, tab]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // 선택된 탭이 숨겨졌으면 대시보드로 대체 (setState 없이 파생값으로 처리)
+  const activeTab = visibleMenus.some(m => m.id === tab) ? tab : 'dashboard';
   const visibleEmployees = employees.filter(e => {
     if (user.role === 'admin' || EXEC_IDS.includes(user.empId)) return true;  // 임원=전사 조회
     if (user.role === 'manager' || user.role === 'evaluator') return String(e.dept || '').includes(user.deptScope || '') || e.dept === user.deptScope;
@@ -4260,27 +4273,27 @@ function App() {
                 <Button variant="primary" size="sm" icon={Download} onClick={handleExport}>지금 백업(JSON 내보내기)</Button>
               </div>
             )}
-            {tab === 'dashboard' && <DashboardView user={user} stats={stats} employees={visibleEmployees} results={results} policy={policy} setTab={setTab} submissions={submissions} proposals={proposals} setTab2={setTab} />}
-            {tab === 'self' && <SelfEvalView user={user} employees={employees} selfScores={selfScores} updateSelfScore={updateSelfScore} comments={comments} updateComment={updateComment} policy={policy} submissions={submissions} submitSelfEval={submitSelfEval} projects={projects} proposals={proposals} peerEvals={peerEvals} updatePeerEval={updatePeerEval} allEmployees={employees} />}
-            {tab === 'employees' && <EmployeesView user={user} users={users} employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} deleteEmployee={deleteEmployee} history={history} results={results} currentYear={currentYear} policy={policy} onResetPassword={(emp) => {
+            {activeTab === 'dashboard' && <DashboardView user={user} stats={stats} employees={visibleEmployees} results={results} policy={policy} setTab={setTab} submissions={submissions} proposals={proposals} setTab2={setTab} />}
+            {activeTab === 'self' && <SelfEvalView user={user} employees={employees} selfScores={selfScores} updateSelfScore={updateSelfScore} comments={comments} updateComment={updateComment} policy={policy} submissions={submissions} submitSelfEval={submitSelfEval} projects={projects} proposals={proposals} peerEvals={peerEvals} updatePeerEval={updatePeerEval} allEmployees={employees} />}
+            {activeTab === 'employees' && <EmployeesView user={user} users={users} employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} deleteEmployee={deleteEmployee} history={history} results={results} currentYear={currentYear} policy={policy} onResetPassword={(emp) => {
               const target = users.find(u => u.empId === emp.id || (u.empId === null && emp.id === 'K-admin'));
               if (target) setAdminResetTarget(target);
               else showToast(`${emp.name}님의 계정을 찾을 수 없습니다`);
             }} />}
-            {tab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} scoresBy={scoresBy} updateScore={updateScore} applyEvaluatorAvg={applyEvaluatorAvg} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} finalizeEval={finalizeEval} projects={projects} proposals={proposals} peerEvals={peerEvals} />}
-            {tab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertProposal={upsertProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} cashCfg={cashCfg} setCashCfg={setCashCfg} />}
-            {tab === 'cms' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <AccountingCmsView fin={fin} setFin={setFin} projects={projects} cashCfg={cashCfg} canEdit={user.role === 'admin'} />}
-            {tab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} receivables={receivables} cashCfg={cashCfg} setCashCfg={setCashCfg} upsertProject={upsertProject} deleteProject={deleteProject} fin={fin} />}
-            {tab === 'loans' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <LoansView loans={loans} setLoans={setLoans} employees={employees} />}
-            {tab === 'receivables' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ReceivablesView receivables={receivables} setReceivables={setReceivables} projects={projects} />}
-            {tab === 'monthclose' && <MonthCloseView projects={projects} employees={employees} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} />}
-            {tab === 'results' && <ResultsView user={user} employees={visibleEmployees} results={results} comments={comments} scores={scores} selfScores={selfScores} policy={policy} currentYear={currentYear} history={history} navigateToHistory={navigateToHistory} closeYearSnapshot={closeYearSnapshot} />}
-            {tab === 'salary' && <SalaryView employees={employees} results={results} stats={stats} />}
-            {tab === 'analytics' && <AnalyticsView employees={visibleEmployees} results={results} policy={policy} stats={stats} />}
-            {tab === 'history' && <HistoryView history={history} employees={employees} results={results} currentYear={currentYear} highlight={historyHighlight} />}
-            {tab === 'notify' && <NotifyView employees={employees} results={results} currentYear={currentYear} />}
-            {tab === 'policy' && <PolicyView policy={policy} setPolicy={setPolicy} />}
-            {tab === 'guide' && <GuideView user={user} manualContent={manualContent} onSaveManual={handleSaveManual} onResetManual={handleResetManual} />}
+            {activeTab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} scoresBy={scoresBy} updateScore={updateScore} applyEvaluatorAvg={applyEvaluatorAvg} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} finalizeEval={finalizeEval} projects={projects} proposals={proposals} peerEvals={peerEvals} />}
+            {activeTab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertProposal={upsertProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} cashCfg={cashCfg} setCashCfg={setCashCfg} />}
+            {activeTab === 'cms' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <AccountingCmsView fin={fin} setFin={setFin} projects={projects} cashCfg={cashCfg} canEdit={user.role === 'admin'} />}
+            {activeTab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} receivables={receivables} cashCfg={cashCfg} setCashCfg={setCashCfg} upsertProject={upsertProject} deleteProject={deleteProject} fin={fin} />}
+            {activeTab === 'loans' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <LoansView loans={loans} setLoans={setLoans} employees={employees} />}
+            {activeTab === 'receivables' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ReceivablesView receivables={receivables} setReceivables={setReceivables} projects={projects} />}
+            {activeTab === 'monthclose' && <MonthCloseView projects={projects} employees={employees} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} />}
+            {activeTab === 'results' && <ResultsView user={user} employees={visibleEmployees} results={results} comments={comments} scores={scores} selfScores={selfScores} policy={policy} currentYear={currentYear} history={history} navigateToHistory={navigateToHistory} closeYearSnapshot={closeYearSnapshot} />}
+            {activeTab === 'salary' && <SalaryView employees={employees} results={results} stats={stats} />}
+            {activeTab === 'analytics' && <AnalyticsView employees={visibleEmployees} results={results} policy={policy} stats={stats} />}
+            {activeTab === 'history' && <HistoryView history={history} employees={employees} results={results} currentYear={currentYear} highlight={historyHighlight} />}
+            {activeTab === 'notify' && <NotifyView employees={employees} results={results} currentYear={currentYear} />}
+            {activeTab === 'policy' && <PolicyView policy={policy} setPolicy={setPolicy} />}
+            {activeTab === 'guide' && <GuideView user={user} manualContent={manualContent} onSaveManual={handleSaveManual} onResetManual={handleResetManual} />}
             </div>
           </main>
         </div>
