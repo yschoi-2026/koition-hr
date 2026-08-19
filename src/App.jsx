@@ -5,6 +5,15 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v221 → v222] 평가 결과 과다 열람 차단
+// 87) visibleEmployees 가 deptScope(부서)로만 걸러져, 평가자로 지정되지 않은 사람도
+//     같은 부서 동료의 평가 결과를 전부 열람할 수 있었다.
+//     실측: 최경민·최순용·이흥주(사업관리부 5명 열람, 담당 0명) · 오윤경(3명, 0명) ·
+//           원동현(2명, 0명) · 오창민(2명, 0명) · 김장호·이종민(2명, 0명).
+//     → 열람 범위 = 본인 + '내가 평가자(evaluator/evaluators)로 지정된 직원'.
+//        admin·임원(EXEC_IDS)은 전사 유지.
+// 88) 담당이 0명이면 「평가 결과」 탭도 숨긴다. 본인 결과는 「내 평가」에서 확인.
+//
 // [v220 → v221] 「내 평가」 탭이 admin 에게 안 보이던 문제
 // 84) allMenus 의 'self'(내 평가) roles 에 admin 이 없었다. 최영숙 이사는 admin 이라
 //     평가 대상(evalTarget=true)인데도 자기평가 탭이 보이지 않았다. → admin 추가.
@@ -4199,6 +4208,7 @@ function App() {
     const allowed = m.roles.includes(user.role) || (isExec && ['report', 'loans', 'receivables', 'cms'].includes(m.id));
     if (!allowed) return false;
     if (m.id === 'evaluation' && myEvalTargets === 0) return false;   // 평가할 대상 없으면 숨김
+    if (m.id === 'results' && myEvalTargets === 0) return false;      // 담당 없으면 결과 열람도 없음
     // 「내 평가」는 본인이 평가 대상(evalTarget)일 때만 — 대표이사·자문 등 제외 대상은 숨김
     if (m.id === 'self') {
       const me = employees.find(e => e.id === user.empId);
@@ -4208,10 +4218,15 @@ function App() {
   });
   // 선택된 탭이 숨겨졌으면 대시보드로 대체 (setState 없이 파생값으로 처리)
   const activeTab = visibleMenus.some(m => m.id === tab) ? tab : 'dashboard';
+  // ★ 열람 범위 = 본인 + '내가 평가자로 지정된 직원'.
+  //   예전에는 deptScope(부서)로 걸러서, 평가자로 지정되지 않은 사람도 같은 부서 동료의
+  //   평가 결과를 전부 볼 수 있었다(최경민·최순용·이흥주·오윤경·원동현 등 = 담당 0명인데 부서 전원 열람).
+  //   평가 결과는 민감 정보이므로 담당 관계가 있는 경우만 허용한다.
   const visibleEmployees = employees.filter(e => {
-    if (user.role === 'admin' || EXEC_IDS.includes(user.empId)) return true;  // 임원=전사 조회
-    if (user.role === 'manager' || user.role === 'evaluator') return String(e.dept || '').includes(user.deptScope || '') || e.dept === user.deptScope;
-    return e.id === user.empId;
+    if (user.role === 'admin' || EXEC_IDS.includes(user.empId)) return true;  // 임원·경영지원=전사 조회
+    if (e.id === user.empId) return true;                                     // 본인은 항상
+    const raters = [e.evaluator, ...((e.evaluators) || [])].filter(Boolean);
+    return raters.includes(user.empId);                                       // 내가 평가자인 직원만
   });
 
   return (
