@@ -5,6 +5,15 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v220 → v221] 「내 평가」 탭이 admin 에게 안 보이던 문제
+// 84) allMenus 의 'self'(내 평가) roles 에 admin 이 없었다. 최영숙 이사는 admin 이라
+//     평가 대상(evalTarget=true)인데도 자기평가 탭이 보이지 않았다. → admin 추가.
+// 85) 반대로 평가 대상이 아닌 사람(대표이사·자문·휴직)에게는 「내 평가」를 숨긴다.
+//     employees 에서 본인의 evalTarget 이 false 면 탭 제거.
+// 86) 평가 입력 화면에 '평가자 지정 미반영' 경고 추가 —
+//     대상자는 보이는데 내 담당이 0명이면 데이터에 evaluator 지정이 없다는 뜻이므로
+//     [저장] 누락·기기 간 캐시 문제를 화면에서 바로 알 수 있게 했다.
+//
 // [v219 → v220] ★ React #310 — 훅 개수 불일치로 앱이 죽던 문제
 //  증상: 로그인 후 'Minified React error #310' (Rendered more hooks than during the previous render)
 //  원인: v219 에서 App 컴포넌트에 useMemo(myEvalTargets)·useEffect(탭 보정)를 추가했는데,
@@ -4149,7 +4158,7 @@ function App() {
 
   const allMenus = [
     { id: 'dashboard', label: '대시보드', icon: BarChart3, roles: ['admin', 'manager', 'evaluator', 'employee'] },
-    { id: 'self', label: '내 평가', icon: UserCheck, roles: ['employee', 'evaluator', 'manager'] },
+    { id: 'self', label: '내 평가', icon: UserCheck, roles: ['employee', 'evaluator', 'manager', 'admin'] },   // ★ admin 도 평가 대상이면 자기평가 필요 (최영숙 이사)
     { id: 'employees', label: '직원 관리', icon: Users, roles: ['admin'] },
     { id: 'evaluation', label: '평가 입력', icon: FileText, roles: ['admin', 'manager', 'evaluator'] },
     { id: 'projects', label: '프로젝트 수익성', icon: Briefcase, roles: ['admin', 'manager'] },
@@ -4190,6 +4199,11 @@ function App() {
     const allowed = m.roles.includes(user.role) || (isExec && ['report', 'loans', 'receivables', 'cms'].includes(m.id));
     if (!allowed) return false;
     if (m.id === 'evaluation' && myEvalTargets === 0) return false;   // 평가할 대상 없으면 숨김
+    // 「내 평가」는 본인이 평가 대상(evalTarget)일 때만 — 대표이사·자문 등 제외 대상은 숨김
+    if (m.id === 'self') {
+      const me = employees.find(e => e.id === user.empId);
+      if (me && me.evalTarget === false) return false;
+    }
     return true;
   });
   // 선택된 탭이 숨겨졌으면 대시보드로 대체 (setState 없이 파생값으로 처리)
@@ -14985,6 +14999,16 @@ function EvaluationView({ user, employees, scores, scoresBy, updateScore, applyE
         title="평가 입력"
         subtitle={isFinalEv ? `전사 ${targets.length}명 — 평가자 점수를 확인하고 확정 점수를 조정합니다` : `내가 평가자로 지정된 ${targets.length}명에 대해 역량·업적 평가를 입력합니다`}
       />
+      {isFinalEv && mineCount === 0 && all.length > 0 && (
+        <div style={{ background: '#FFF4E5', border: `1px solid ${T.warning}`, borderRadius: 8, padding: S[3], marginBottom: S[3], fontSize: 12, lineHeight: 1.8 }}>
+          <strong style={{ color: T.warning }}>⚠ 평가자 지정이 반영되지 않았습니다</strong> — 평가 대상 {all.length}명은 보이는데,
+          내가 평가자로 지정된 직원이 0명입니다. 직원 데이터에 <code>evaluator</code> 지정이 없는 상태입니다.
+          <div style={{ color: T.textMute, marginTop: 4 }}>
+            불러온 백업 파일을 <strong>[저장]</strong>까지 눌렀는지 확인하세요. 다른 기기에서 접속했다면 상단 동기화 배너에서
+            「서버 데이터 받기」를 먼저 실행해야 합니다.
+          </div>
+        </div>
+      )}
       {isFinalEv && (
         <div style={{ display: 'flex', alignItems: 'center', gap: S[2], marginBottom: S[3], flexWrap: 'wrap' }}>
           <span style={{ fontSize: 12, color: T.textMute, fontWeight: 600 }}>보기 범위</span>
