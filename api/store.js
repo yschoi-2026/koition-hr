@@ -104,6 +104,10 @@ function stripForEvaluator(valStr) {
 function mergeByKey(baseObj, incObj, onlyKey) {
   const base = baseObj && typeof baseObj === 'object' ? baseObj : {};
   if (!incObj || typeof incObj !== 'object') return base;
+  // ★ 빈 객체({})는 '지워라'가 아니라 '보낼 게 없다'로 본다.
+  //   구버전 앱이 scores:{} 를 보내 기존 평가 점수를 통째로 날린 사례가 있었다.
+  //   삭제는 관리자 화면의 명시적 삭제 기능으로만 이뤄져야 한다.
+  if (Object.keys(incObj).length === 0) return base;
   const out = { ...base };
   Object.keys(incObj).forEach(k => {
     if (onlyKey && k !== onlyKey) return;   // 남의 항목은 무시
@@ -119,6 +123,43 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
       const key = String(req.query.key || 'main');
+      // ── 백업 목록 조회 (admin 전용) : GET ?backups=1 ──
+      if (String(req.query.backups || '') === '1') {
+        const rr = await resolveRole(req, baseUrl, token).catch(() => ({ role: null, verified: false }));
+        if (!rr || !rr.verified || rr.role !== 'admin') return res.status(403).json({ error: 'admin only' });
+        const out = [];
+        for (let i = 0; i < 10; i++) {
+          try {
+            const m = await redisGetRaw(baseUrl, token, 'main:bakmeta:' + i);
+            if (m && m.result != null) { const o = JSON.parse(m.result); out.push({ slot: i, ...o }); }
+          } catch (e) { /* skip */ }
+        }
+        out.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+        return res.status(200).json({ ok: true, backups: out });
+      }
+      // ── 백업 복구 (admin 전용) : GET ?restore=슬롯번호 ──
+      if (req.query.restore != null && String(req.query.restore) !== '') {
+        const rr = await resolveRole(req, baseUrl, token).catch(() => ({ role: null, verified: false }));
+        if (!rr || !rr.verified || rr.role !== 'admin') return res.status(403).json({ error: 'admin only' });
+        const slot = Number(req.query.restore);
+        if (!(slot >= 0 && slot < 10)) return res.status(400).json({ error: 'invalid slot' });
+        const b = await redisGetRaw(baseUrl, token, 'main:bak:' + slot);
+        if (!b || b.result == null) return res.status(404).json({ error: 'backup not found' });
+        // 복구 전 현재 상태도 백업에 남긴다 (복구를 되돌릴 수 있게)
+        try {
+          const cur = await redisGetRaw(baseUrl, token, 'main');
+          if (cur && cur.result != null) {
+            const iRaw = await redisGetRaw(baseUrl, token, 'main:bak:idx');
+            const i2 = (iRaw && iRaw.result != null ? Number(iRaw.result) : 0) || 0;
+            const sl2 = i2 % 10;
+            await fetch(`${baseUrl}/set/${encodeURIComponent('main:bak:' + sl2)}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: String(cur.result) });
+            await fetch(`${baseUrl}/set/${encodeURIComponent('main:bakmeta:' + sl2)}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ at: new Date().toISOString(), by: 'restore-prev', size: String(cur.result).length }) });
+            await fetch(`${baseUrl}/set/${encodeURIComponent('main:bak:idx')}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: String(i2 + 1) });
+          }
+        } catch (e) { /* ignore */ }
+        await fetch(`${baseUrl}/set/${encodeURIComponent('main')}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: String(b.result) });
+        return res.status(200).json({ ok: true, restored: slot });
+      }
       const data = await redisGetRaw(baseUrl, token, key);
       if (data && data.error) return res.status(500).json({ error: data.error });
       const val = data ? (data.result ?? null) : null;
@@ -156,6 +197,7 @@ export default async function handler(req, res) {
       const key = String((body && body.key) || 'main');
       const value = body && body.value != null ? body.value : '';
       let payload = typeof value === 'string' ? value : JSON.stringify(value);
+      let rrUser = String((req.headers && (req.headers['x-user'] || req.headers['X-User'])) || 'unknown');
 
       if (key === 'main') {
         let rr = { role: null, verified: false, user: null };
@@ -178,11 +220,32 @@ export default async function handler(req, res) {
           }
         } catch (e) { hasHeavy = false; }
         const isAdmin = role === 'admin' || role === 'manager' || hasHeavy || looksFull;
+        // ★ 관리자 전체저장이라도 평가 데이터(scores/scoresBy/selfScores/comments/submissions)가
+        //   비어 있으면 서버 원본을 지우지 않는다. 평가 기간에는 다른 세션이 계속 입력 중이므로
+        //   빈 값으로 덮이면 그 입력이 통째로 사라진다(이종민 사례).
+        if (isAdmin) {
+          try {
+            const inc2 = typeof value === 'string' ? JSON.parse(value) : (value || {});
+            const cur2 = await redisGetRaw(baseUrl, token, 'main');
+            const base2 = cur2 && cur2.result != null ? JSON.parse(cur2.result) : null;
+            if (base2 && inc2 && typeof inc2 === 'object') {
+              let touched = false;
+              ['scores', 'scoresBy', 'selfScores', 'comments', 'submissions', 'peerEvals'].forEach(k => {
+                const bv = base2[k], iv = inc2[k];
+                const bn = bv && typeof bv === 'object' ? Object.keys(bv).length : 0;
+                const inN = iv && typeof iv === 'object' ? Object.keys(iv).length : 0;
+                if (bn > 0 && inN === 0) { inc2[k] = bv; touched = true; }      // 빈 값이면 원본 유지
+                else if (bn > 0 && inN > 0) { inc2[k] = mergeByKey(bv, iv, null); touched = true; }  // 키 단위 병합
+              });
+              if (touched) payload = JSON.stringify(inc2);   // value 는 const 이므로 payload 만 갱신
+            }
+          } catch (e) { /* 실패 시 원래 흐름 유지 */ }
+        }
         // ★ 관리자 저장이라도, 매출·재무·급여가 통째로 빈 '필터본'이면 서버 원본을 덮지 않는다.
         //   (필터본을 받은 관리자 세션의 자동저장이 원본을 훼손하는 것을 서버에서도 차단 — 이중 방어)
         if (isAdmin) {
           let incoming = {};
-          try { incoming = typeof value === 'string' ? JSON.parse(value) : (value || {}); } catch (e) { incoming = {}; }
+          try { incoming = JSON.parse(payload); } catch (e) { incoming = {}; }
           const inHasProjects = Array.isArray(incoming.projects) && incoming.projects.length > 0;
           const inRevenue = inHasProjects && incoming.projects.some(p => p && Number(p.revenue) > 0);
           const inFin = incoming.fin && typeof incoming.fin === 'object' && Object.keys(incoming.fin).length > 0;
@@ -219,13 +282,17 @@ export default async function handler(req, res) {
             const curRaw = await redisGetRaw(baseUrl, token, 'main');
             const base = curRaw && curRaw.result != null ? JSON.parse(curRaw.result) : {};
             let inc = {};
-            try { inc = typeof value === 'string' ? JSON.parse(value) : (value || {}); } catch (e) { inc = {}; }
+            try { inc = JSON.parse(payload); } catch (e) { inc = {}; }
             const only = (role === 'admin' || role === 'manager') ? null : (meKey || null);
             const merged = {
               ...base,
               selfScores: mergeByKey(base.selfScores, inc.selfScores, only),
               // ★ 평가자는 자기 사번 키(scoresBy[내사번])만 쓸 수 있다. 남의 평가를 지우거나 위조할 수 없다.
               scoresBy: mergeByKey(base.scoresBy, inc.scoresBy, (role === 'admin' || role === 'manager') ? null : (meKey || null)),
+              // ★ scores(확정 점수)도 대상자 키 단위로 병합한다.
+              //   v217 이전 앱은 평가자도 scores 에 직접 저장했다. 병합 대상에서 빠져 있으면
+              //   그 기록이 남아 있어도 다른 세션의 저장에 밀려 사라질 수 있다.
+              scores: mergeByKey(base.scores, inc.scores, null),
               comments: mergeByKey(base.comments, inc.comments, only),
               submissions: mergeByKey(base.submissions, inc.submissions, only),
               peerEvals: mergeByKey(base.peerEvals, inc.peerEvals, null),
@@ -238,6 +305,38 @@ export default async function handler(req, res) {
         }
       }
 
+      // ══════════════════════════════════════════════════════════════
+      //  저장 직전 자동 백업 (main 키 한정)
+      //   덮어쓰기 전 상태를 main:bak:0~9 에 남긴다(10세대 순환).
+      //   평가 시즌처럼 여러 명이 동시에 입력하는 상황에서 사고가 나면
+      //   되돌릴 수단이 없었다(2026.08 평가 점수 유실 사례).
+      //   ?restore=N 으로 복구, ?backups=1 로 목록 조회.
+      // ══════════════════════════════════════════════════════════════
+      if (key === 'main') {
+        try {
+          const prev = await redisGetRaw(baseUrl, token, 'main');
+          const prevStr = prev && prev.result != null ? String(prev.result) : '';
+          if (prevStr && prevStr !== payload) {
+            const idxRaw = await redisGetRaw(baseUrl, token, 'main:bak:idx');
+            const idx = idxRaw && idxRaw.result != null ? (Number(idxRaw.result) || 0) : 0;
+            const slot = idx % 10;
+            let sum = {};
+            try {
+              const o = JSON.parse(prevStr);
+              const cnt = (v) => (v && typeof v === 'object') ? Object.keys(v).length : 0;
+              let byCnt = 0;
+              if (o.scoresBy && typeof o.scoresBy === 'object') Object.keys(o.scoresBy).forEach(k => { byCnt += cnt(o.scoresBy[k]); });
+              sum = { scores: cnt(o.scores), scoresBy: cnt(o.scoresBy), scoresByItems: byCnt,
+                      selfScores: cnt(o.selfScores), submissions: cnt(o.submissions), comments: cnt(o.comments),
+                      projects: Array.isArray(o.projects) ? o.projects.length : 0 };
+            } catch (e) { sum = {}; }
+            const meta = JSON.stringify({ at: new Date().toISOString(), by: (rrUser || 'unknown'), size: prevStr.length, summary: sum });
+            await fetch(`${baseUrl}/set/${encodeURIComponent('main:bak:' + slot)}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: prevStr });
+            await fetch(`${baseUrl}/set/${encodeURIComponent('main:bakmeta:' + slot)}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: meta });
+            await fetch(`${baseUrl}/set/${encodeURIComponent('main:bak:idx')}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: String(idx + 1) });
+          }
+        } catch (e) { /* 백업 실패가 저장을 막지 않도록 무시 */ }
+      }
       const r = await fetch(`${baseUrl}/set/${encodeURIComponent(key)}`, {
         method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: payload,
       });
