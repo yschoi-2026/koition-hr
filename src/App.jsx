@@ -5,6 +5,19 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v222 → v223] ★ 평가 데이터 유실 — 이종민 사례
+//  증상: 어제 저장한 평가 점수가 오늘 사라짐 (K-231001 이종민)
+//  원인 2가지
+//   (1) v217 이전 앱은 평가자도 scores[대상자] 에 직접 저장했다. v217 부터 화면이
+//       scoresBy[평가자][대상자] 를 읽으므로, 이전 입력이 '사라진 것처럼' 보였다.
+//       → 데이터는 서버에 남아 있었고 읽는 위치만 달랐다.
+//   (2) 서버 mergeByKey 가 빈 객체({})를 '지워라'로 해석했다. 구버전 세션이 scores:{} 를
+//       보내면 기존 점수가 통째로 삭제됐다. 관리자 전체저장 경로도 동일.
+// 89) [앱] 최초 로드 시 1회, scoresBy 에 내 기록이 없고 scores 에 값이 있으면 내 입력으로 승계.
+// 90) [서버] mergeByKey 가 빈 객체를 받으면 base 를 유지한다(삭제는 명시적 기능으로만).
+// 91) [서버] 관리자 전체저장도 평가 데이터가 비어 오면 서버 원본을 유지하고, 값이 있으면 키 단위 병합.
+//     value 가 const 여서 재할당이 무시되던 버그도 함께 수정(payload 기준으로 통일).
+//
 // [v221 → v222] 평가 결과 과다 열람 차단
 // 87) visibleEmployees 가 deptScope(부서)로만 걸러져, 평가자로 지정되지 않은 사람도
 //     같은 부서 동료의 평가 결과를 전부 열람할 수 있었다.
@@ -3936,6 +3949,27 @@ function App() {
     // 확정 점수(scores)는 대표이사·admin 만 직접 수정한다.
     if (isFinalEvaluator(user)) setScores(prev => ({ ...prev, [id]: { ...(prev[id] || {}), [field]: v } }));
   };
+  // ★ v217 이전에는 평가자도 scores[대상자] 에 직접 입력했다.
+  //   v217 부터 scoresBy[평가자][대상자] 로 바뀌면서, 이전에 저장한 점수가 화면에서 사라져 보였다.
+  //   (데이터는 서버에 그대로 있고 읽는 위치만 달라진 것)
+  //   → 최초 로드 시 1회, scoresBy 에 내 기록이 없고 scores 에 값이 있으면 그것을 내 입력으로 승계한다.
+  const migratedRef = useRef(false);
+  useEffect(() => {
+    if (migratedRef.current) return;
+    if (!user || !user.empId) return;
+    if (!scores || !Object.keys(scores).length) return;
+    const me = user.empId;
+    const mineNow = (scoresBy && scoresBy[me]) || {};
+    const add = {};
+    Object.keys(scores).forEach(tid => {
+      if (mineNow[tid]) return;                       // 이미 내 기록이 있으면 건드리지 않음
+      const o = scores[tid];
+      if (o && Object.keys(o).some(k => o[k] != null && o[k] !== '')) add[tid] = { ...o };
+    });
+    if (!Object.keys(add).length) { migratedRef.current = true; return; }
+    migratedRef.current = true;
+    setScoresBy(prev => ({ ...prev, [me]: { ...add, ...((prev && prev[me]) || {}) } }));
+  }, [user, scores, scoresBy]);
   // 대표이사가 「평가자 평균 반영」을 누를 때 사용
   const applyEvaluatorAvg = (id) => {
     const per = Object.keys(scoresBy || {}).map(k => (scoresBy[k] || {})[id]).filter(Boolean);
