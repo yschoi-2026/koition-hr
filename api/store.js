@@ -198,6 +198,8 @@ export default async function handler(req, res) {
       const value = body && body.value != null ? body.value : '';
       let payload = typeof value === 'string' ? value : JSON.stringify(value);
       let rrUser = String((req.headers && (req.headers['x-user'] || req.headers['X-User'])) || 'unknown');
+      let basePrev = null;      // 앞 단계에서 읽은 main 원본 재사용 (중복 GET 방지)
+      let bakSkip = false;      // 이미 병합 경로에서 저장한 경우 백업 생략
 
       if (key === 'main') {
         let rr = { role: null, verified: false, user: null };
@@ -226,7 +228,7 @@ export default async function handler(req, res) {
         if (isAdmin) {
           try {
             const inc2 = typeof value === 'string' ? JSON.parse(value) : (value || {});
-            const cur2 = await redisGetRaw(baseUrl, token, 'main');
+            const cur2 = await redisGetRaw(baseUrl, token, 'main'); basePrev = cur2;
             const base2 = cur2 && cur2.result != null ? JSON.parse(cur2.result) : null;
             if (base2 && inc2 && typeof inc2 === 'object') {
               let touched = false;
@@ -253,7 +255,7 @@ export default async function handler(req, res) {
           if (inHasProjects && !inRevenue && !inFin && !inSalary) {
             // 들어온 게 필터본. 서버 원본이 더 온전하면(매출·재무 보유) 평가 필드만 병합.
             try {
-              const curRaw = await redisGetRaw(baseUrl, token, 'main');
+              const curRaw = await redisGetRaw(baseUrl, token, 'main'); basePrev = curRaw;
               const base = curRaw && curRaw.result != null ? JSON.parse(curRaw.result) : null;
               const baseRevenue = base && Array.isArray(base.projects) && base.projects.some(p => p && Number(p.revenue) > 0);
               const baseFin = base && base.fin && Object.keys(base.fin).length > 0;
@@ -271,6 +273,7 @@ export default async function handler(req, res) {
                 payload = JSON.stringify(merged);
                 const r0 = await fetch(`${baseUrl}/set/${encodeURIComponent(key)}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: payload });
                 const d0 = await r0.json().catch(() => ({}));
+                bakSkip = true;
                 return res.status(200).json({ ok: true, guarded: true, result: d0 && d0.result });
               }
             } catch (e) { /* 원본 읽기 실패 시 아래 기본 저장으로 진행 */ }
@@ -279,7 +282,7 @@ export default async function handler(req, res) {
         if (!isAdmin) {
           // 직원·평가자·미인증: 서버 원본을 읽어 평가 필드만 병합 (재무·급여·프로젝트 원본 보존)
           try {
-            const curRaw = await redisGetRaw(baseUrl, token, 'main');
+            const curRaw = await redisGetRaw(baseUrl, token, 'main'); basePrev = curRaw;
             const base = curRaw && curRaw.result != null ? JSON.parse(curRaw.result) : {};
             let inc = {};
             try { inc = JSON.parse(payload); } catch (e) { inc = {}; }
@@ -312,9 +315,16 @@ export default async function handler(req, res) {
       //   되돌릴 수단이 없었다(2026.08 평가 점수 유실 사례).
       //   ?restore=N 으로 복구, ?backups=1 로 목록 조회.
       // ══════════════════════════════════════════════════════════════
-      if (key === 'main') {
+      // ★ 백업은 Redis 호출을 늘리므로(무료 플랜 한도) 최소 간격을 둔다.
+      //   매 저장마다 백업하면 PUT 1회당 커맨드가 3~4 → 8~9 로 늘어 한도 초과가 난다.
+      //   BAK_MIN_GAP_MS(기본 10분) 이내면 건너뛴다. 직전 상태는 이미 이전 백업에 있다.
+      const BAK_MIN_GAP_MS = 3 * 60 * 1000;   // 3분 (평가 시즌 기준: 하루 최대 480회 백업 = 커맨드 여유 충분)
+      if (key === 'main' && !bakSkip) {
         try {
-          const prev = await redisGetRaw(baseUrl, token, 'main');
+          const lastRaw = await redisGetRaw(baseUrl, token, 'main:bak:last');
+          const lastAt = lastRaw && lastRaw.result != null ? Number(lastRaw.result) || 0 : 0;
+          if (Date.now() - lastAt < BAK_MIN_GAP_MS) throw new Error('skip-backup');
+          const prev = basePrev !== null ? basePrev : (await redisGetRaw(baseUrl, token, 'main'));
           const prevStr = prev && prev.result != null ? String(prev.result) : '';
           if (prevStr && prevStr !== payload) {
             const idxRaw = await redisGetRaw(baseUrl, token, 'main:bak:idx');
@@ -334,8 +344,9 @@ export default async function handler(req, res) {
             await fetch(`${baseUrl}/set/${encodeURIComponent('main:bak:' + slot)}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: prevStr });
             await fetch(`${baseUrl}/set/${encodeURIComponent('main:bakmeta:' + slot)}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: meta });
             await fetch(`${baseUrl}/set/${encodeURIComponent('main:bak:idx')}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: String(idx + 1) });
+            await fetch(`${baseUrl}/set/${encodeURIComponent('main:bak:last')}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: String(Date.now()) });
           }
-        } catch (e) { /* 백업 실패가 저장을 막지 않도록 무시 */ }
+        } catch (e) { /* 백업 실패·건너뜀이 저장을 막지 않도록 무시 */ }
       }
       const r = await fetch(`${baseUrl}/set/${encodeURIComponent(key)}`, {
         method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: payload,
