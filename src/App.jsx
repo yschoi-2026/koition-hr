@@ -5,6 +5,16 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v223 → v224] 서버 저장 실패 원인별 안내
+// 92) serverPut 이 true/false 만 반환해, 화면이 모든 실패를 '사용량 한도 초과 가능성'으로
+//     안내했다. 실제로는 토큰 만료·필터본 차단이 더 흔해 원인을 오판하게 만들었다.
+//     → { ok, reason, status } 반환. reason: no-token | filtered | http | network | exception.
+// 93) syncFailText() 로 사유별 문구 분기:
+//     no-token/401/403 → 재로그인 안내(+버튼) · 429 → 한도 초과 · 5xx → 서버 오류 ·
+//     network → 인터넷 연결 · filtered → 데이터 불완전(관리자 문의).
+// 94) 배너에 "로그아웃하지 마세요 — 로그아웃하면 사라집니다" 경고 추가.
+//     로그인 시 localStorage 를 먼저 지우는 경로가 있어 실제 유실로 이어질 수 있다.
+//
 // [v222 → v223] ★ 평가 데이터 유실 — 이종민 사례
 //  증상: 어제 저장한 평가 점수가 오늘 사라짐 (K-231001 이종민)
 //  원인 2가지
@@ -3153,19 +3163,40 @@ function _looksLikeFilteredWipe(valStr) {
     return !anyRevenue && !anyFin && !anySalary;
   } catch (e) { return false; }
 }
+// 저장 결과를 사유와 함께 돌려준다.
+//   예전에는 true/false 만 반환해, 화면이 모든 실패를 '사용량 한도 초과'로 안내했다.
+//   실제로는 토큰 만료·필터본 차단이 더 흔해 원인을 오판하게 만들었다.
+//   { ok, reason, status } — reason: 'no-token' | 'filtered' | 'http' | 'network' | 'exception'
+// 실패 사유를 사람이 읽는 문구로
+function syncFailText(r) {
+  const reason = r && r.reason, st = r && r.status;
+  if (reason === 'no-token') return '로그인이 만료되었습니다. 로그아웃 후 다시 로그인해 주세요.';
+  if (reason === 'filtered') return '데이터가 불완전해(매출·재무 비어 있음) 원본 보호를 위해 저장을 막았습니다. 관리자에게 알려 주세요.';
+  if (reason === 'http') {
+    if (st === 401 || st === 403) return '권한이 없거나 로그인이 만료되었습니다. 다시 로그인해 주세요.';
+    if (st === 429) return '서버 사용량 한도를 초과했습니다. 잠시 후 자동으로 재시도됩니다.';
+    if (st >= 500) return `서버 오류입니다 (코드 ${st}). 잠시 후 자동으로 재시도됩니다.`;
+    return `서버가 저장을 거부했습니다 (코드 ${st}).`;
+  }
+  if (reason === 'network') return '네트워크에 연결되지 않았습니다. 인터넷 연결을 확인해 주세요.';
+  return '알 수 없는 오류입니다. 관리자에게 알려 주세요.';
+}
 function serverPut(key, value) {
   try {
     const ah = _getAuthHeaders();
-    if (key === 'main' && !ah['x-token']) { console.warn('[서버저장 보류] 인증 토큰 없음 — 로그인 후 저장됩니다'); return Promise.resolve(false); }
+    if (key === 'main' && !ah['x-token']) {
+      console.warn('[서버저장 보류] 인증 토큰 없음 — 로그인 후 저장됩니다');
+      return Promise.resolve({ ok: false, reason: 'no-token' });
+    }
     // ★ 관리자 세션에서 필터본(매출·재무 없는)이 서버 원본을 덮는 것을 원천 차단
     if (key === 'main' && _authRole && (_authRole === 'admin' || _authRole === 'manager') && _looksLikeFilteredWipe(value)) {
       console.warn('[서버저장 차단] 매출·재무가 비어있는 데이터 — 원본 보호를 위해 서버 저장을 막았습니다. 백업 불러오기로 온전한 데이터를 복원하세요.');
-      return Promise.resolve(false);
+      return Promise.resolve({ ok: false, reason: 'filtered' });
     }
     return fetch(SERVER_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-app-key': APP_KEY, ...ah }, body: JSON.stringify({ key, value }) })
-      .then(r => { if (!r.ok) console.warn('[서버저장 실패]', key, r.status); return r.ok; })
-      .catch((e) => { console.warn('[서버저장 실패]', key, e && e.message); return false; });
-  } catch (e) { return Promise.resolve(false); }
+      .then(r => { if (!r.ok) console.warn('[서버저장 실패]', key, r.status); return r.ok ? { ok: true } : { ok: false, reason: 'http', status: r.status }; })
+      .catch((e) => { console.warn('[서버저장 실패]', key, e && e.message); return { ok: false, reason: 'network', message: e && e.message }; });
+  } catch (e) { return Promise.resolve({ ok: false, reason: 'exception', message: e && e.message }); }
 }
 // 계정 저장: 브라우저 + 서버 동시 기록 (비밀번호 변경이 모든 PC에 반영)
 function persistUsers(users) {
@@ -3312,7 +3343,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [users, setUsers] = useState([]);  // 해시된 비밀번호 포함 사용자 배열
   const [usersInitialized, setUsersInitialized] = useState(false);
-  const [serverSyncOk, setServerSyncOk] = useState(true);   // 서버 저장 실패 감지 → 상단 경고
+  const [syncFail, setSyncFail] = useState(null);   // 서버 저장 실패 사유 {reason,status} — null 이면 정상
   const [tab, setTab] = useState('dashboard');
   const [employees, setEmployees] = useState(INITIAL_EMPLOYEES);
   const [policy, setPolicy] = useState(INITIAL_POLICY);
@@ -3745,7 +3776,7 @@ function App() {
       msg = `[서버 동기화 진단]\n\n· 서버 저장 시각: ${rT}  (사업 ${rProj}건)\n· 이 PC 저장 시각: ${lT}  (사업 ${lProj}건)\n\n`;
       if (!remote) {
         msg += '⚠ 서버에서 데이터를 받지 못했습니다. 서버 연결·사용량 한도를 확인하세요. 이 PC 데이터를 서버로 올리려면 [서버로 올리기]를 누르세요.';
-        if (confirm(msg + '\n\n지금 이 PC 데이터를 서버로 올릴까요?')) { const ok = await serverPut('main', localStr); alert(ok ? '서버 업로드 성공' : '서버 업로드 실패 — 사용량 한도 가능성'); }
+        if (confirm(msg + '\n\n지금 이 PC 데이터를 서버로 올릴까요?')) { const r = await serverPut('main', localStr); alert(r && r.ok ? '서버 업로드 성공' : '서버 업로드 실패 — ' + syncFailText(r)); }
         return;
       }
       const rTime = rObj && rObj.updatedAt ? Date.parse(rObj.updatedAt) : 0;
@@ -3757,7 +3788,7 @@ function App() {
         }
       } else if (lTime > rTime) {
         if (confirm(msg + '→ 이 PC가 더 최신입니다. 이 데이터를 서버로 올릴까요? (다른 PC에 반영됨)')) {
-          const ok = await serverPut('main', localStr); alert(ok ? '서버 업로드 성공 — 다른 PC에서 새로고침하세요' : '서버 업로드 실패');
+          const r = await serverPut('main', localStr); alert(r && r.ok ? '서버 업로드 성공 — 다른 PC에서 새로고침하세요' : '서버 업로드 실패 — ' + syncFailText(r));
         }
       } else {
         alert(msg + '→ 서버와 이 PC 데이터가 동일합니다.');
@@ -3794,7 +3825,7 @@ function App() {
         const cur = stripTs(payload);
         if (cur === lastSavedRef.current) { return; }   // 실질 변화 없음 → 서버 요청 안 함
         lastSavedRef.current = cur;
-        serverPut('main', payload).then(ok => setServerSyncOk(!!ok));   // 서버 저장 (모든 PC 공유) — 실패 시 경고 표시
+        serverPut('main', payload).then(r => setSyncFail(r && r.ok ? null : (r || { reason: 'unknown' })));   // 실패 시 사유를 상단 배너로
       } catch (e) { /* 저장 공간 부족 등 — 수동 저장/내보내기 사용 */ }
     }, 1200);
     return () => clearTimeout(t);
@@ -4318,11 +4349,27 @@ function App() {
           }}>
             {/* K 워터마크 - 메인 영역 우하단 거대 배경 */}
             <KWatermark />
-            {!serverSyncOk && (
-              <div style={{ background: '#FDECEA', border: '1px solid #E8B4AE', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 12.5, color: '#8A2A21', fontWeight: 600 }}>
-                ⚠ 서버 저장 실패 — 변경사항이 지금 이 브라우저에만 저장되고 있습니다. 새로고침해도 이 브라우저에서는 유지되지만, 다른 PC와 공유되지 않습니다. 잠시 후 자동 재시도되며, 계속되면 관리자에게 알려주세요. (서버 사용량 한도 초과 가능성)
-              </div>
-            )}
+            {syncFail && (() => {
+              const soft = syncFail.reason === 'no-token' || (syncFail.reason === 'http' && (syncFail.status === 401 || syncFail.status === 403));
+              const tone = soft ? T.warning : T.danger;
+              const bg = soft ? '#FFF4E5' : '#FDECEA';
+              return (
+                <div style={{ background: bg, border: `1px solid ${tone}`, borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 12.5, lineHeight: 1.8 }}>
+                  <strong style={{ color: tone }}>⚠ 서버에 저장되지 않았습니다</strong> — {syncFailText(syncFail)}
+                  <div style={{ color: T.textMute, fontSize: 11.5, marginTop: 3 }}>
+                    입력한 내용은 이 브라우저에 남아 있습니다. <strong>로그아웃하지 마세요</strong> — 로그아웃하면 사라집니다.
+                    다른 PC와는 아직 공유되지 않습니다.
+                  </div>
+                  {(syncFail.reason === 'no-token' || syncFail.status === 401 || syncFail.status === 403) && (
+                    <div style={{ marginTop: 6 }}>
+                      <Button size="sm" variant="primary" onClick={() => { try { localStorage.setItem('koition_hr_pending', localStorage.getItem('koition_hr_v6') || ''); } catch (e) {} setUser(null); }}>
+                        다시 로그인하기 (입력 내용 보존)
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             {(user.role === 'admin' || user.role === 'manager') && (
               <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
                 <button onClick={diagnoseSync} title="다른 PC와 데이터가 다를 때: 서버·이 PC 저장 시각을 비교하고 최신본으로 맞춥니다" style={{ fontSize: 11.5, padding: '5px 12px', borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.textMute, cursor: 'pointer', fontFamily: FONT, fontWeight: 600 }}>🔄 서버 동기화 진단</button>
