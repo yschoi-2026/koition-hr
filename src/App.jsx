@@ -5,6 +5,13 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 // ════════════════════════════════════════════════════════════
 // koition-hr  v180
 //
+// [v224 → v225] 로그인 시 로컬 캐시 선제거 → 데이터 유실 위험 제거
+// 95) 직원·평가자 로그인 직후 localStorage 를 먼저 지우고 서버에서 다시 받았다.
+//     서버 요청이 실패하면(네트워크·사용량 한도·토큰 만료) 로컬 데이터까지 함께 사라져
+//     입력 중이던 평가 내용을 잃는다. 17명이 로그인할 때마다 발생 가능한 경로였다.
+//     → 선제거를 없애고, 서버 응답을 정상 수신했을 때만 교체한다.
+//        (공용 PC 의 관리자 캐시 노출은 서버가 필터본을 내려주므로 교체 시점에 해소된다)
+//
 // [v223 → v224] 서버 저장 실패 원인별 안내
 // 92) serverPut 이 true/false 만 반환해, 화면이 모든 실패를 '사용량 한도 초과 가능성'으로
 //     안내했다. 실제로는 토큰 만료·필터본 차단이 더 흔해 원인을 오판하게 만들었다.
@@ -3727,7 +3734,8 @@ function App() {
     (async () => {
       try {
         // 민감정보가 섞였을 수 있는 로컬 캐시 선제거
-        try { localStorage.removeItem('koition_hr_v6'); } catch (e) {}
+          // ★ 캐시를 먼저 지우면 안 된다 — 서버 요청이 실패하면(네트워크·한도·토큰) 로컬 데이터까지
+          //   함께 사라져 입력 중이던 내용을 잃는다. 서버 응답을 받은 뒤에만 교체한다.
         const remote = await serverGet('main');   // 서버가 역할 확인 후 급여·재무 제거본을 내려줌
         if (remote != null) {
           const str = typeof remote === 'string' ? remote : JSON.stringify(remote);
