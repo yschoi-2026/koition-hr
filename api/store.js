@@ -212,7 +212,7 @@ export default async function handler(req, res) {
         //   - 직원 앱은 projects에 revenue 등 재무필드가 없음(서버가 필터링해서 내려줬으므로)
         let hasHeavy = false, looksFull = false;
         try {
-          const pv = typeof value === 'string' ? JSON.parse(value) : value;
+          const pv = JSON.parse(payload);
           if (pv && typeof pv === 'object') {
             hasHeavy = !!(pv.fin || pv.scores || pv.cashCfg || pv.empLedger || pv.loans || pv.receivables);
             // '전체 구조' 감지: projects에 revenue(재무필드)가 살아있으면 관리자 데이터 (직원본엔 제거돼 있음)
@@ -227,7 +227,7 @@ export default async function handler(req, res) {
         //   빈 값으로 덮이면 그 입력이 통째로 사라진다(이종민 사례).
         if (isAdmin) {
           try {
-            const inc2 = typeof value === 'string' ? JSON.parse(value) : (value || {});
+            const inc2 = JSON.parse(payload);   // ★ value(원본)가 아니라 payload(직전 가드 결과)를 이어받는다
             const cur2 = await redisGetRaw(baseUrl, token, 'main'); basePrev = cur2;
             const base2 = cur2 && cur2.result != null ? JSON.parse(cur2.result) : null;
             if (base2 && inc2 && typeof inc2 === 'object') {
