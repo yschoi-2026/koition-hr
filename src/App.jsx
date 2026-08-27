@@ -3206,10 +3206,26 @@ function serverPut(key, value) {
   } catch (e) { return Promise.resolve({ ok: false, reason: 'exception', message: e && e.message }); }
 }
 // 계정 저장: 브라우저 + 서버 동시 기록 (비밀번호 변경이 모든 PC에 반영)
-function persistUsers(users) {
+// 계정 저장. ★ 서버 저장 성공까지 확인해야 한다.
+//   v225 부터 계정은 '서버가 정본'이므로, 서버에 못 올라간 비밀번호 변경은
+//   재접속 시 옛 값으로 되돌아간다(변경 직후엔 되고 브라우저를 닫으면 안 되는 증상).
+//   실패하면 재시도하고, 그래도 안 되면 호출자가 알 수 있게 결과를 돌려준다.
+async function persistUsers(users) {
   const stamped = { _v: 2, updatedAt: new Date().toISOString(), list: users };
   try { localStorage.setItem('koition_hr_users', JSON.stringify(users)); localStorage.setItem('koition_hr_users_ts', stamped.updatedAt); } catch (e) {}
-  serverPut('users', JSON.stringify(stamped));   // 서버엔 타임스탬프 포함 저장
+  const body = JSON.stringify(stamped);
+  let r = await serverPut('users', body);
+  if (!r || !r.ok) {
+    await new Promise(res => setTimeout(res, 800));
+    r = await serverPut('users', body);                       // 1회 재시도
+  }
+  if (!r || !r.ok) {
+    console.warn('[계정저장 실패] 서버에 반영되지 않았습니다 —', r && r.reason, r && r.status);
+    try { localStorage.setItem('koition_hr_users_pending', body); } catch (e) {}   // 다음 기회에 재전송
+  } else {
+    try { localStorage.removeItem('koition_hr_users_pending'); } catch (e) {}
+  }
+  return r || { ok: false, reason: 'unknown' };
 }
 // 서버/로컬 계정 응답을 배열로 정규화 (구버전=배열, 신버전={updatedAt,list})
 function normUsers(raw) {
@@ -3441,6 +3457,15 @@ function App() {
         //   예전에는 로컬 타임스탬프가 더 크면 로컬 계정을 서버로 되돌려 썼는데,
         //   기기가 여러 대면 A기기에서 바꾼 비밀번호가 B기기 접속만으로 옛 값으로 되돌아간다.
         //   비밀번호는 기기 간 병합할 수 있는 값이 아니므로 서버를 무조건 따른다.
+        // ★ 이전에 서버 저장이 실패한 계정 변경분이 있으면 먼저 재전송한다.
+        //   그러지 않으면 서버의 옛 계정이 정본이 되어 변경한 비밀번호가 사라진다.
+        try {
+          const pend = localStorage.getItem('koition_hr_users_pending');
+          if (pend) {
+            const rp = await serverPut('users', pend);
+            if (rp && rp.ok) { localStorage.removeItem('koition_hr_users_pending'); console.info('[계정저장] 대기 중이던 변경분을 서버에 반영했습니다.'); }
+          }
+        } catch (e) {}
         const sv = await serverGet('users');
         const svN = normUsers(sv);
         if (svN && svN.list.length && svN.list[0].passwordHash) {
@@ -3547,9 +3572,15 @@ function App() {
         : u
     );
     setUsers(updated);
-    persistUsers(updated);                        // ★ 서버 users에 새 해시 저장 (토큰 검증 일치)
+    const pr = await persistUsers(updated);       // ★ 서버 users에 새 해시 저장 (토큰 검증 일치)
     await setAuth(user.username, newHash, user.role);         // ★ 앱 토큰도 새 해시로 갱신 (저장 권한 유지)
     setUser(prev => ({ ...prev, mustChangePassword: false }));
+    if (!pr.ok) {
+      // 서버에 반영되지 않으면 다음 접속에서 옛 비밀번호로 되돌아간다 → 반드시 알린다.
+      return { success: true, warning: '새 비밀번호가 서버에 저장되지 않았습니다 (' + syncFailText(pr) + ')\n\n'
+        + '이 브라우저에서는 새 비밀번호로 로그인되지만, 브라우저를 닫거나 다른 PC에서 접속하면 이전 비밀번호로 돌아갑니다.\n'
+        + '네트워크·로그인 상태를 확인한 뒤 비밀번호를 다시 변경해 주세요.' };
+    }
     return { success: true };
   };
   
@@ -4721,6 +4752,8 @@ function PasswordChangeModal({ user, onChangePassword, onChangeUsername, onClose
     try {
       const result = await onChangePassword(currentPassword, newPassword);
       if (result.success) {
+        // ★ 서버 반영 실패 시 반드시 알린다 — 알리지 않으면 다음 접속에서 옛 비밀번호로 돌아간다.
+        if (result.warning) alert('⚠ 주의\n\n' + result.warning);
         onSuccess();
       } else {
         setError(result.error || '비밀번호 변경에 실패했습니다');
