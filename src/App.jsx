@@ -3864,6 +3864,10 @@ function App() {
         const cur = stripTs(payload);
         if (cur === lastSavedRef.current) { return; }   // 실질 변화 없음 → 서버 요청 안 함
         lastSavedRef.current = cur;
+        // ★ 로그인 전(토큰 없음)에는 서버 저장을 시도하지 않는다.
+        //   시도하면 no-token 으로 실패하고 그 배너가 로그인 후에도 남아
+        //   "로그인이 만료되었습니다"가 계속 보인다. 실제로는 저장이 정상인데도.
+        if (!user) return;
         serverPut('main', payload).then(r => setSyncFail(r && r.ok ? null : (r || { reason: 'unknown' })));   // 실패 시 사유를 상단 배너로
       } catch (e) { /* 저장 공간 부족 등 — 수동 저장/내보내기 사용 */ }
     }, 1200);
