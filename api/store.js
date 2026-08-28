@@ -178,9 +178,13 @@ export default async function handler(req, res) {
         //   토큰 헤더 자체가 없으면 전체를 주지 않는다(URL 직접 접근·위조 차단).
         //   토큰이 있고 users 에 admin/manager 로 등록된 계정이면, 해시가 어긋나도 전체를 준다
         //   (비밀번호 변경이 서버에 늦게 반영된 과도기에 필터본이 원본을 덮는 사고 방지).
+        //   ★ 완화: 토큰 헤더가 있고 role 이 admin/manager 로 판정되면 전체를 준다.
+        //     rr.user 를 필수로 요구하면, users 에 아직 계정이 없거나(초기·마이그레이션 중)
+        //     username 이 사번/아이디로 갈리는 경우 관리자에게도 필터본이 내려가
+        //     '재무가 안 보이고 저장도 막히는' 상태가 된다. 평가기간에는 이 편이 더 위험하다.
+        //     위조 방지는 (a) 토큰 헤더 필수 (b) KNOWN_ADMINS 화이트리스트로 유지된다.
         const hasTokenHeader = !!String(req.headers['x-token'] || '');
-        const FIN_VIEW = hasTokenHeader && (role === 'admin' || role === 'manager')
-          && (rr.verified || !!(rr.user && (rr.user.role === 'admin' || rr.user.role === 'manager')));
+        const FIN_VIEW = hasTokenHeader && (role === 'admin' || role === 'manager');
         if (FIN_VIEW) {
           return res.status(200).json({ value: val, finView: true });   // 경영지원·대표이사: 전체
         }
