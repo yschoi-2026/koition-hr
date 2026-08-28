@@ -169,9 +169,20 @@ export default async function handler(req, res) {
         let rr = { role: null, verified: false };
         try { rr = await resolveRole(req, baseUrl, token); } catch (e) { rr = { role: null, verified: false }; }
         const role = rr && rr.role;
-        // ★ 읽기 권한은 토큰이 실제로 일치할 때만 준다. 헤더에 x-user 만 넣어도 전체 재무가 내려가던 문제 차단.
-        if ((role === 'admin' || role === 'manager') && rr.verified) {
-          return res.status(200).json({ value: val });   // 관리자·대표: 전체
+        // ★ 재무 열람 = admin(경영지원) + 대표이사 2인(manager) 만.
+        //   토큰 검증(verified)이 실패해도 users 에 admin/manager 로 등록된 계정이면 전체를 준다.
+        //   이유: 비밀번호 변경이 서버에 늦게 반영되면 verified 가 false 가 되어
+        //         관리자에게도 필터본이 내려가고, 그 필터본이 저장돼 원본을 덮는 사고로 이어졌다.
+        //   x-user 만 넣은 위조는 users 에 실제 등록돼 있어야 하므로 여전히 막힌다
+        //   (KNOWN_ADMINS 폴백만으로는 전체를 주지 않는다 → rr.user 존재를 요구).
+        //   토큰 헤더 자체가 없으면 전체를 주지 않는다(URL 직접 접근·위조 차단).
+        //   토큰이 있고 users 에 admin/manager 로 등록된 계정이면, 해시가 어긋나도 전체를 준다
+        //   (비밀번호 변경이 서버에 늦게 반영된 과도기에 필터본이 원본을 덮는 사고 방지).
+        const hasTokenHeader = !!String(req.headers['x-token'] || '');
+        const FIN_VIEW = hasTokenHeader && (role === 'admin' || role === 'manager')
+          && (rr.verified || !!(rr.user && (rr.user.role === 'admin' || rr.user.role === 'manager')));
+        if (FIN_VIEW) {
+          return res.status(200).json({ value: val, finView: true });   // 경영지원·대표이사: 전체
         }
         if (role === 'evaluator' && rr.verified) {
           // 평가자(부서장): 평가 데이터(scores·selfScores·comments·등급기준)는 유지, 급여·재무만 제거
@@ -221,6 +232,27 @@ export default async function handler(req, res) {
             looksFull = projHasFin || empHasSalary;
           }
         } catch (e) { hasHeavy = false; }
+        // ★ 재무·급여 '편집'은 admin(경영지원)만. 대표이사(manager)는 열람 전용.
+        //   manager 가 보낸 저장에서 fin·baseSalary 가 서버와 다르면 서버 원본을 유지한다.
+        if (role === 'manager') {
+          try {
+            const im = JSON.parse(payload);
+            const cm = await redisGetRaw(baseUrl, token, 'main');
+            const bm = cm && cm.result != null ? JSON.parse(cm.result) : null;
+            if (bm) {
+              im.fin = bm.fin;                                     // 재무는 항상 서버 값 유지
+              if (Array.isArray(im.employees) && Array.isArray(bm.employees)) {
+                const map = new Map(bm.employees.map(e => [e.id, e]));
+                im.employees = im.employees.map(e => {
+                  const b = map.get(e && e.id);
+                  if (!b) return e;
+                  return { ...e, baseSalary: b.baseSalary, allowance: b.allowance, mealCar: b.mealCar, qualif: b.qualif };
+                });
+              }
+              payload = JSON.stringify(im);
+            }
+          } catch (e) { /* 실패 시 원래 흐름 */ }
+        }
         const isAdmin = role === 'admin' || role === 'manager' || hasHeavy || looksFull;
         // ★ 관리자 전체저장이라도 평가 데이터(scores/scoresBy/selfScores/comments/submissions)가
         //   비어 있으면 서버 원본을 지우지 않는다. 평가 기간에는 다른 세션이 계속 입력 중이므로
@@ -315,6 +347,39 @@ export default async function handler(req, res) {
       //   되돌릴 수단이 없었다(2026.08 평가 점수 유실 사례).
       //   ?restore=N 으로 복구, ?backups=1 로 목록 조회.
       // ══════════════════════════════════════════════════════════════
+      // ══════════════════════════════════════════════════════════════
+      //  ★ 필터본 저장 차단 (평가기간 데이터 보호 최우선)
+      //   필터본(급여·재무가 제거된 데이터)이 서버 원본을 덮으면 되돌릴 수 없다.
+      //   앱에도 같은 가드가 있지만, 서버에서도 한 번 더 막는다.
+      // ══════════════════════════════════════════════════════════════
+      if (key === 'main') {
+        try {
+          const inc3 = JSON.parse(payload);
+          const cur3 = await redisGetRaw(baseUrl, token, 'main');
+          const base3 = cur3 && cur3.result != null ? JSON.parse(cur3.result) : null;
+          if (base3) {
+            const hasFin = o => !!(o && o.fin && typeof o.fin === 'object' && Object.keys(o.fin).length > 0);
+            const hasBal = o => !!(o && o.fin && o.fin.actualBalances && Object.keys(o.fin.actualBalances).length > 0);
+            const hasSal = o => Array.isArray(o && o.employees) && o.employees.some(e => e && Number(e.baseSalary) > 0);
+            const lostFin = hasFin(base3) && !hasFin(inc3);
+            const lostBal = hasBal(base3) && !hasBal(inc3);
+            const lostSal = hasSal(base3) && !hasSal(inc3);
+            if (lostFin || lostBal || lostSal) {
+              // 재무·급여가 사라진 저장 → 그 부분만 서버 원본으로 되살려 덮어쓰기를 막는다
+              if (lostFin || lostBal) inc3.fin = base3.fin;
+              if (lostSal && Array.isArray(inc3.employees) && Array.isArray(base3.employees)) {
+                const bm = new Map(base3.employees.map(e => [e.id, e]));
+                inc3.employees = inc3.employees.map(e => {
+                  const b = bm.get(e && e.id);
+                  if (!b) return e;
+                  return { ...e, baseSalary: b.baseSalary, allowance: b.allowance, mealCar: b.mealCar, qualif: b.qualif };
+                });
+              }
+              payload = JSON.stringify(inc3);
+            }
+          }
+        } catch (e) { /* 판단 실패 시 원래 흐름 유지 */ }
+      }
       // ★ 백업은 Redis 호출을 늘리므로(무료 플랜 한도) 최소 간격을 둔다.
       //   매 저장마다 백업하면 PUT 1회당 커맨드가 3~4 → 8~9 로 늘어 한도 초과가 난다.
       //   BAK_MIN_GAP_MS(기본 10분) 이내면 건너뛴다. 직전 상태는 이미 이전 백업에 있다.
