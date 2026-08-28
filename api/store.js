@@ -365,12 +365,26 @@ export default async function handler(req, res) {
             const hasFin = o => !!(o && o.fin && typeof o.fin === 'object' && Object.keys(o.fin).length > 0);
             const hasBal = o => !!(o && o.fin && o.fin.actualBalances && Object.keys(o.fin.actualBalances).length > 0);
             const hasSal = o => Array.isArray(o && o.employees) && o.employees.some(e => e && Number(e.baseSalary) > 0);
+            // ★ cashCfg(수금회차·급여인출·고정비)도 반드시 지켜야 한다.
+            //   이것이 비면 '그 달 수입 0 · 인출 직전 잔고 음수'가 되어 지급여력이 통째로 무너진다.
+            const hasCash = o => !!(o && o.cashCfg && typeof o.cashCfg === 'object' && Object.keys(o.cashCfg).length > 0);
+            const hasOh = o => Array.isArray(o && o.overheads) && o.overheads.length > 0;
+            const hasLedger = o => Array.isArray(o && o.empLedger) && o.empLedger.length > 0;
+            const hasRecv = o => Array.isArray(o && o.receivables) && o.receivables.length > 0;
             const lostFin = hasFin(base3) && !hasFin(inc3);
             const lostBal = hasBal(base3) && !hasBal(inc3);
             const lostSal = hasSal(base3) && !hasSal(inc3);
-            if (lostFin || lostBal || lostSal) {
+            const lostCash = hasCash(base3) && !hasCash(inc3);
+            const lostOh = hasOh(base3) && !hasOh(inc3);
+            const lostLedger = hasLedger(base3) && !hasLedger(inc3);
+            const lostRecv = hasRecv(base3) && !hasRecv(inc3);
+            if (lostFin || lostBal || lostSal || lostCash || lostOh || lostLedger || lostRecv) {
               // 재무·급여가 사라진 저장 → 그 부분만 서버 원본으로 되살려 덮어쓰기를 막는다
               if (lostFin || lostBal) inc3.fin = base3.fin;
+              if (lostCash) inc3.cashCfg = base3.cashCfg;
+              if (lostOh) inc3.overheads = base3.overheads;
+              if (lostLedger) inc3.empLedger = base3.empLedger;
+              if (lostRecv) inc3.receivables = base3.receivables;
               if (lostSal && Array.isArray(inc3.employees) && Array.isArray(base3.employees)) {
                 const bm = new Map(base3.employees.map(e => [e.id, e]));
                 inc3.employees = inc3.employees.map(e => {
