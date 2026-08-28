@@ -3185,7 +3185,6 @@ function syncFailText(r) {
     if (st >= 500) return `서버 오류입니다 (코드 ${st}). 잠시 후 자동으로 재시도됩니다.`;
     return `서버가 저장을 거부했습니다 (코드 ${st}).`;
   }
-  if (reason === 'restricted') return '권한 확인이 완료되지 않아 일부 데이터(급여·재무)를 받지 못했습니다. 비밀번호를 한 번 다시 변경하면 서버 계정과 동기화됩니다. 그때까지 이 브라우저에서 저장하지 마세요.';
   if (reason === 'network') return '네트워크에 연결되지 않았습니다. 인터넷 연결을 확인해 주세요.';
   return '알 수 없는 오류입니다. 관리자에게 알려 주세요.';
 }
@@ -3706,19 +3705,9 @@ function App() {
               lT = localStr ? (Date.parse((JSON.parse(localStr) || {}).updatedAt || 0) || 0) : -1;
               useRemote = rT >= lT;   // ★ 서버가 로컬보다 오래된 데이터면 덮어쓰지 않음 (편집 유실 방지)
             } catch (e) {}
-            // ★ 서버가 '필터본'을 내려준 경우(급여·재무 제거) 로컬에 저장하지 않는다.
-            //   저장하면 그 필터본이 로컬 정본이 되고, 이후 자동저장으로 서버 원본을 덮는다.
-            //   (평가기간 데이터 보호 최우선 — 화면 표시는 되지만 캐시에는 남기지 않는다)
-            let isFiltered = false;
-            try {
-              const ro = JSON.parse(remoteStr);
-              const hadFin = !!(ro.fin && Object.keys(ro.fin).length);
-              isFiltered = (Array.isArray(ro.projects) && ro.projects.length > 0) && !hadFin;
-            } catch (e) {}
-            if (isFiltered) {
-              console.warn('[동기화] 서버가 권한 제한본을 내려주었습니다 — 로컬 캐시에 저장하지 않습니다.');
-              setSyncFail({ reason: 'restricted' });
-            } else if (useRemote) localStorage.setItem('koition_hr_v6', remoteStr);
+            // [v229] 필터본 판정 제거 — 오탐으로 정상 데이터까지 '권한 제한'으로 처리해
+            //   재무·표지 등이 미설정으로 보이고 저장이 막혔다. 덮어쓰기 방어는 서버에서 한다.
+            if (useRemote) localStorage.setItem('koition_hr_v6', remoteStr);
             else {
               // (B) 로컬이 더 최신이면 유지하되, 사용자가 알 수 있게 화면에 알린다.
               //   예전에는 console.warn 만 찍혀서 다른 기기에서 옛 데이터를 보고 있는 줄 몰랐다.
@@ -3881,8 +3870,6 @@ function App() {
         //   시도하면 no-token 으로 실패하고 그 배너가 로그인 후에도 남아
         //   "로그인이 만료되었습니다"가 계속 보인다. 실제로는 저장이 정상인데도.
         if (!user) return;
-        // ★ 권한 제한본을 받은 상태에서는 저장하지 않는다 — 서버 원본을 덮을 위험.
-        if (syncFail && syncFail.reason === 'restricted') { console.warn('[저장보류] 권한 제한 상태 — 서버 저장을 건너뜁니다.'); return; }
         serverPut('main', payload).then(r => setSyncFail(r && r.ok ? null : (r || { reason: 'unknown' })));   // 실패 시 사유를 상단 배너로
       } catch (e) { /* 저장 공간 부족 등 — 수동 저장/내보내기 사용 */ }
     }, 1200);
