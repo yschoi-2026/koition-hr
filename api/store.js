@@ -378,6 +378,23 @@ export default async function handler(req, res) {
             const lostOh = hasOh(base3) && !hasOh(inc3);
             const lostLedger = hasLedger(base3) && !hasLedger(inc3);
             const lostRecv = hasRecv(base3) && !hasRecv(inc3);
+            // ★ projects 배열 안의 금액 필드도 지킨다.
+            //   사업 건수는 같은데 revenue·laborCost 가 null 로 바뀌어 들어오는 사고가 반복됐다
+            //   (사업 목록이 비고 수익성·지급여력이 0 으로 계산됨).
+            const projRevSum = o => (Array.isArray(o && o.projects) ? o.projects : []).reduce((t, p) => t + (Number(p && p.revenue) || 0), 0);
+            const lostProjMoney = projRevSum(base3) > 0 && projRevSum(inc3) === 0;
+            if (lostProjMoney && Array.isArray(inc3.projects) && Array.isArray(base3.projects)) {
+              const pm = new Map(base3.projects.map(p => [p.id, p]));
+              const KEEP = ['revenue', 'laborCost', 'workerLabor', 'mgrLabor', 'overhead', 'otherCost', 'planCost', 'shareRate', 'progress', 'monthly'];
+              inc3.projects = inc3.projects.map(p => {
+                const b = pm.get(p && p.id);
+                if (!b) return p;
+                const out = { ...p };
+                KEEP.forEach(k => { if ((out[k] === null || out[k] === '' || out[k] === undefined) && b[k] != null) out[k] = b[k]; });
+                return out;
+              });
+              payload = JSON.stringify(inc3);
+            }
             if (lostFin || lostBal || lostSal || lostCash || lostOh || lostLedger || lostRecv) {
               // 재무·급여가 사라진 저장 → 그 부분만 서버 원본으로 되살려 덮어쓰기를 막는다
               if (lostFin || lostBal) inc3.fin = base3.fin;
