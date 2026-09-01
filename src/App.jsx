@@ -3151,7 +3151,13 @@ async function serverGet(key, timeoutMs = 6000) {
     if (!r.ok) return null;
     const j = await r.json();
     // filtered 플래그를 함께 노출 (admin이 필터본을 받으면 로컬 전체를 덮지 않도록)
-    if (j && j.value != null) { try { serverGet._lastFiltered = !!j.filtered; } catch (e) {} return j.value; }
+    // ★ 매 호출마다 초기화한다. 예전에는 이전 호출의 값이 남아 판정이 어긋났다.
+    //   서버 최신판은 전체 응답에 finView:true 를 준다 → finView 가 true 면 필터본이 아니다.
+    try { serverGet._lastFiltered = false; } catch (e) {}
+    if (j && j.value != null) {
+      try { serverGet._lastFiltered = j.finView === true ? false : !!j.filtered; } catch (e) {}
+      return j.value;
+    }
     return null;
   } catch (e) { return null; }
 }
@@ -3699,7 +3705,10 @@ function App() {
         //   (급여·재무·cashCfg 제거)을 내려주는데, 그걸 localStorage 에 저장하면
         //   빈 데이터가 로컬 정본이 되고 이후 자동저장이 서버 원본까지 망가뜨린다.
         //   → 필터본이면 로컬을 건드리지 않고, 로그인 후 ② 단계에서 전체본을 받는다.
-        if (remote != null && !serverGet._lastFiltered) {
+        //   단, 로컬이 아예 비어 있으면 필터본이라도 표시용으로 쓴다(빈 화면 방지).
+        //   로그인 후 ② 단계에서 전체본으로 교체된다.
+        const localEmpty = (() => { try { const o = JSON.parse(localStorage.getItem('koition_hr_v6') || '{}'); return !(o.projects || []).length; } catch (e) { return true; } })();
+        if (remote != null && (!serverGet._lastFiltered || localEmpty)) {
           try {
             const remoteStr = typeof remote === 'string' ? remote : JSON.stringify(remote);
             const localStr = localStorage.getItem('koition_hr_v6');
