@@ -3695,7 +3695,11 @@ function App() {
     (async () => {
       try {
         const remote = await serverGet('main');
-        if (remote != null) {
+        // ★ 마운트 시점은 '로그인 전'이라 토큰이 없다. 서버는 미인증 요청에 필터본
+        //   (급여·재무·cashCfg 제거)을 내려주는데, 그걸 localStorage 에 저장하면
+        //   빈 데이터가 로컬 정본이 되고 이후 자동저장이 서버 원본까지 망가뜨린다.
+        //   → 필터본이면 로컬을 건드리지 않고, 로그인 후 ② 단계에서 전체본을 받는다.
+        if (remote != null && !serverGet._lastFiltered) {
           try {
             const remoteStr = typeof remote === 'string' ? remote : JSON.stringify(remote);
             const localStr = localStorage.getItem('koition_hr_v6');
