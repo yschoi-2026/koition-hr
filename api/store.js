@@ -381,6 +381,18 @@ export default async function handler(req, res) {
             // ★ projects 배열 안의 금액 필드도 지킨다.
             //   사업 건수는 같은데 revenue·laborCost 가 null 로 바뀌어 들어오는 사고가 반복됐다
             //   (사업 목록이 비고 수익성·지급여력이 0 으로 계산됨).
+            // ★ 배열이 통째로 비어 오는 경우도 막는다.
+            //   금액이 null 인 경우는 이미 막고 있었지만, projects: [] 처럼 배열 자체가
+            //   빈 채로 저장되면 사업·직원·제안이 통째로 사라졌다(2026-09-02 03:47 사고).
+            const ARR_KEEP = ['projects', 'employees', 'proposals', 'overheads', 'empLedger', 'receivables'];
+            let arrLost = false;
+            ARR_KEEP.forEach(k => {
+              const b = Array.isArray(base3[k]) ? base3[k] : null;
+              const i2 = Array.isArray(inc3[k]) ? inc3[k] : null;
+              if (b && b.length > 0 && i2 && i2.length === 0) { inc3[k] = b; arrLost = true; }
+              if (b && b.length > 0 && i2 === null) { inc3[k] = b; arrLost = true; }
+            });
+            if (arrLost) payload = JSON.stringify(inc3);
             const projRevSum = o => (Array.isArray(o && o.projects) ? o.projects : []).reduce((t, p) => t + (Number(p && p.revenue) || 0), 0);
             const lostProjMoney = projRevSum(base3) > 0 && projRevSum(inc3) === 0;
             if (lostProjMoney && Array.isArray(inc3.projects) && Array.isArray(base3.projects)) {
