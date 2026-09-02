@@ -1167,7 +1167,13 @@ function CoverImageDisplay({ coverImage }) {
   const cachedCover = (() => {
     try { const v = localStorage.getItem('koition_hr_cover'); return v ? JSON.parse(v) : null; } catch (e) { return null; }
   })();
-  const ci = coverImage || cachedCover || { enabled: true, url: '', caption: '' };
+  // ★ INITIAL_POLICY.coverImage 는 url:'' 로 존재한다. 따라서 coverImage 자체는 truthy 이고
+  //   || 로는 캐시를 타지 않아 로그인 화면에서 계속 '미설정'이 나왔다.
+  //   → url 이 비어 있을 때 캐시의 url 을 쓴다.
+  const base = coverImage || { enabled: true, url: '', caption: '' };
+  const ci = (base.url && String(base.url).trim())
+    ? base
+    : { ...base, url: (cachedCover && cachedCover.url) || '', caption: base.caption || (cachedCover && cachedCover.caption) || '' };
   const [imgError, setImgError] = useState(false);
   
   if (!ci.enabled) return null;
