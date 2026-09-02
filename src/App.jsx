@@ -3191,6 +3191,7 @@ function syncFailText(r) {
     if (st >= 500) return `서버 오류입니다 (코드 ${st}). 잠시 후 자동으로 재시도됩니다.`;
     return `서버가 저장을 거부했습니다 (코드 ${st}).`;
   }
+  if (reason === 'load-failed') return '서버에서 데이터를 받지 못했습니다. 화면은 이 기기의 사본으로 표시되며, 원본 보호를 위해 저장이 잠겨 있습니다. 새로고침해 주세요.';
   if (reason === 'network') return '네트워크에 연결되지 않았습니다. 인터넷 연결을 확인해 주세요.';
   return '알 수 없는 오류입니다. 관리자에게 알려 주세요.';
 }
@@ -3646,9 +3647,10 @@ function App() {
     return { success: true, newUsername: trimmed };
   };
 
-  const dataLoadedRef = useRef(false);   // 자동 저장 가드: 초기 로드 완료 전에는 저장 안 함(기존 데이터 보호)
+  const dataLoadedRef = useRef(false);
+  const serverLoadOkRef = useRef(false);   // 서버에서 정상 수신했는가 — 실패 시 저장 금지
+  const [saveState, setSaveState] = useState('idle');   // idle | saving | saved | failed — 헤더에 즉시 표시   // 자동 저장 가드: 초기 로드 완료 전에는 저장 안 함(기존 데이터 보호)
   // (B) 기기 간 데이터 충돌 알림 — 로컬이 서버보다 최신일 때 사용자에게 선택지를 준다.
-  const [syncConflict, setSyncConflict] = useState(null);   // {localAt, remoteAt}
   const heavyLoadedRef = useRef(false);
   const empRefetchedRef = useRef(false);   // 직원 로그인 후 필터링 데이터 재요청 1회 가드
   const lastSavedRef = useRef(null);        // 직전 서버 저장 페이로드(타임스탬프 제외) — 중복 저장 방지
@@ -3696,101 +3698,53 @@ function App() {
     }
     if (data.history) setHistory(data.history);
   };
-  // ① 마운트 시: 경량 데이터만 로드 (로그인 화면·본인 평가에 필요한 최소한)
+  // ══════════════════════════════════════════════════════════════════
+  //  ★ 데이터 로드 — 서버 단일 정본 (v232)
+  //   이전 구조: 로드 경로 3개 + updatedAt 시각 비교로 '로컬이 더 최신이면 로컬 유지'.
+  //     → 로컬이 한 번 비면(로그인 전 필터본·오탐·캐시 삭제) 그 빈 값이 정본이 되고
+  //        자동저장이 서버까지 덮어써 재무·사업이 반복적으로 사라졌다.
+  //   새 구조: 서버가 유일한 정본이다.
+  //     · 로그인 후 서버에서 받아 그대로 적용한다. 시각 비교를 하지 않는다.
+  //     · localStorage 는 '오프라인 표시용 사본'일 뿐이며 정본으로 승격되지 않는다.
+  //     · 서버에서 받지 못하면 사본으로 화면만 그린다(저장은 하지 않는다).
+  // ══════════════════════════════════════════════════════════════════
+  const loadedForRef = useRef(null);
   useEffect(() => {
+    if (!user) return;
+    if (loadedForRef.current === user.username) return;
+    loadedForRef.current = user.username;
     (async () => {
+      let applied = false;
       try {
         const remote = await serverGet('main');
-        // ★ 마운트 시점은 '로그인 전'이라 토큰이 없다. 서버는 미인증 요청에 필터본
-        //   (급여·재무·cashCfg 제거)을 내려주는데, 그걸 localStorage 에 저장하면
-        //   빈 데이터가 로컬 정본이 되고 이후 자동저장이 서버 원본까지 망가뜨린다.
-        //   → 필터본이면 로컬을 건드리지 않고, 로그인 후 ② 단계에서 전체본을 받는다.
-        //   단, 로컬이 아예 비어 있으면 필터본이라도 표시용으로 쓴다(빈 화면 방지).
-        //   로그인 후 ② 단계에서 전체본으로 교체된다.
-        const localEmpty = (() => { try { const o = JSON.parse(localStorage.getItem('koition_hr_v6') || '{}'); return !(o.projects || []).length; } catch (e) { return true; } })();
-        if (remote != null && (!serverGet._lastFiltered || localEmpty)) {
-          try {
-            const remoteStr = typeof remote === 'string' ? remote : JSON.stringify(remote);
-            const localStr = localStorage.getItem('koition_hr_v6');
-            let useRemote = true, rT = 0, lT = -1;
-            try {
-              rT = Date.parse((JSON.parse(remoteStr) || {}).updatedAt || 0) || 0;
-              lT = localStr ? (Date.parse((JSON.parse(localStr) || {}).updatedAt || 0) || 0) : -1;
-              useRemote = rT >= lT;   // ★ 서버가 로컬보다 오래된 데이터면 덮어쓰지 않음 (편집 유실 방지)
-            } catch (e) {}
-            // [v229] 필터본 판정 제거 — 오탐으로 정상 데이터까지 '권한 제한'으로 처리해
-            //   재무·표지 등이 미설정으로 보이고 저장이 막혔다. 덮어쓰기 방어는 서버에서 한다.
-            if (useRemote) localStorage.setItem('koition_hr_v6', remoteStr);
-            else {
-              // (B) 로컬이 더 최신이면 유지하되, 사용자가 알 수 있게 화면에 알린다.
-              //   예전에는 console.warn 만 찍혀서 다른 기기에서 옛 데이터를 보고 있는 줄 몰랐다.
-              setSyncConflict({ localAt: lT ? new Date(lT).toISOString() : '', remoteAt: rT ? new Date(rT).toISOString() : '' });
-              console.warn('[동기화] 서버 데이터가 로컬보다 오래됨 — 로컬 유지');
-            }
-          } catch (e) {}
-        }
-      } catch (e) {}
-      try {
-        const res = localStorage.getItem('koition_hr_v6');
-        if (res) applyLightData(JSON.parse(res));
-      } catch (e) {}
-      dataLoadedRef.current = true;
-    })();
-  }, []);
-  // ② 로그인 후: admin/manager/evaluator면 중량(평가) 데이터 로드 (일반 직원은 로드 안 함 → 빠름·안전)
-  useEffect(() => {
-    if (!user || heavyLoadedRef.current) return;
-    if (user.role !== 'admin' && user.role !== 'manager' && user.role !== 'evaluator') return;   // 일반 직원은 불필요
-    (async () => {
-      // ★ 서버에서 최신본을 다시 받아 로컬과 비교 (다른 PC에서 입력한 데이터가 이 PC의 오래된 캐시에 가려지지 않도록)
-      try {
-        const remote = await serverGet('main');
-        const wasFiltered = !!serverGet._lastFiltered;
-        if (remote != null && !wasFiltered) {
-          // 정상(전체) 데이터만 로컬 비교·반영. 필터본이면 무시하고 로컬 전체 유지.
-          const remoteStr = typeof remote === 'string' ? remote : JSON.stringify(remote);
-          const localStr = localStorage.getItem('koition_hr_v6');
-          let useRemote = true;
-          try {
-            const rT = Date.parse((JSON.parse(remoteStr) || {}).updatedAt || 0) || 0;
-            const lT = localStr ? (Date.parse((JSON.parse(localStr) || {}).updatedAt || 0) || 0) : -1;
-            useRemote = rT >= lT;   // 서버가 최신(또는 동급)이면 서버 사용
-          } catch (e) {}
-          if (useRemote) localStorage.setItem('koition_hr_v6', remoteStr);
-        } else if (wasFiltered) {
-          // ★ admin/manager인데 서버가 필터본(급여·재무 제거)을 보냄 = 서버가 이 계정을 admin으로 인식 못 함.
-          //   로컬의 전체 데이터를 유지하고, 그대로 서버에 재전송(전체구조 → 서버가 looksFull로 전체저장).
-          console.warn('[동기화] 서버가 필터본을 반환 — 로컬 전체 데이터 유지 및 재전송');
-          try { const localStr = localStorage.getItem('koition_hr_v6'); if (localStr) serverPut('main', localStr); } catch (e) {}
-        }
-      } catch (e) {}
-      try {
-        const res = localStorage.getItem('koition_hr_v6');
-        if (res) applyHeavyData(JSON.parse(res));
-      } catch (e) {}
-      heavyLoadedRef.current = true;
-    })();
-  }, [user]);
-
-  // ②-b 로그인 후: 직원·평가자면 로컬 캐시를 비우고 서버에서 '필터링된' 데이터를 다시 받음
-  //     (공용 PC에 남아있을 수 있는 관리자 캐시의 급여·재무 정보 노출 방지)
-  useEffect(() => {
-    if (!user || empRefetchedRef.current) return;
-    if (user.role === 'admin' || user.role === 'manager') return;
-    (async () => {
-      try {
-        // 민감정보가 섞였을 수 있는 로컬 캐시 선제거
-          // ★ 캐시를 먼저 지우면 안 된다 — 서버 요청이 실패하면(네트워크·한도·토큰) 로컬 데이터까지
-          //   함께 사라져 입력 중이던 내용을 잃는다. 서버 응답을 받은 뒤에만 교체한다.
-        const remote = await serverGet('main');   // 서버가 역할 확인 후 급여·재무 제거본을 내려줌
         if (remote != null) {
           const str = typeof remote === 'string' ? remote : JSON.stringify(remote);
-          try { localStorage.setItem('koition_hr_v6', str); } catch (e) {}
-          if (user.role === 'evaluator') { applyLightData(JSON.parse(str)); applyHeavyData(JSON.parse(str)); }   // 평가자: 평가 데이터도 반영
-          else applyLightData(JSON.parse(str));
+          let obj = null;
+          try { obj = JSON.parse(str); } catch (e) { obj = null; }
+          if (obj && typeof obj === 'object') {
+            // 서버본을 그대로 적용 (권한에 따라 재무가 제거된 필터본일 수 있음 — 그것도 정본으로 본다)
+            applyLightData(obj);
+            if (user.role === 'admin' || user.role === 'manager' || user.role === 'evaluator') applyHeavyData(obj);
+            try { localStorage.setItem('koition_hr_v6', str); } catch (e) {}
+            applied = true;
+            serverLoadOkRef.current = true;
+          }
         }
-      } catch (e) {}
-      empRefetchedRef.current = true;
+      } catch (e) { /* 아래 사본 폴백 */ }
+      if (!applied) {
+        // 서버 실패 → 사본으로 화면만 그린다. 저장은 막는다(빈 값이 서버를 덮지 않도록).
+        serverLoadOkRef.current = false;
+        try {
+          const res = localStorage.getItem('koition_hr_v6');
+          if (res) {
+            const o = JSON.parse(res);
+            applyLightData(o);
+            if (user.role === 'admin' || user.role === 'manager' || user.role === 'evaluator') applyHeavyData(o);
+          }
+        } catch (e) {}
+        setSyncFail({ reason: 'load-failed' });
+      }
+      dataLoadedRef.current = true;
     })();
   }, [user]);
 
@@ -3816,40 +3770,10 @@ function App() {
   }, [employees, results]);
 
   // 서버 동기화 진단 + 강제 새로고침 (다른 PC 데이터가 안 보일 때)
-  const diagnoseSync = async () => {
-    let msg = '';
-    try {
-      const remote = await serverGet('main', 8000);
-      const localStr = localStorage.getItem('koition_hr_v6');
-      const rObj = remote ? (typeof remote === 'string' ? JSON.parse(remote) : remote) : null;
-      const lObj = localStr ? JSON.parse(localStr) : null;
-      const rT = rObj && rObj.updatedAt ? new Date(rObj.updatedAt).toLocaleString('ko-KR') : '(없음)';
-      const lT = lObj && lObj.updatedAt ? new Date(lObj.updatedAt).toLocaleString('ko-KR') : '(없음)';
-      const rProj = rObj && rObj.projects ? rObj.projects.length : 0;
-      const lProj = lObj && lObj.projects ? lObj.projects.length : 0;
-      msg = `[서버 동기화 진단]\n\n· 서버 저장 시각: ${rT}  (사업 ${rProj}건)\n· 이 PC 저장 시각: ${lT}  (사업 ${lProj}건)\n\n`;
-      if (!remote) {
-        msg += '⚠ 서버에서 데이터를 받지 못했습니다. 서버 연결·사용량 한도를 확인하세요. 이 PC 데이터를 서버로 올리려면 [서버로 올리기]를 누르세요.';
-        if (confirm(msg + '\n\n지금 이 PC 데이터를 서버로 올릴까요?')) { const r = await serverPut('main', localStr); alert(r && r.ok ? '서버 업로드 성공' : '서버 업로드 실패 — ' + syncFailText(r)); }
-        return;
-      }
-      const rTime = rObj && rObj.updatedAt ? Date.parse(rObj.updatedAt) : 0;
-      const lTime = lObj && lObj.updatedAt ? Date.parse(lObj.updatedAt) : 0;
-      if (rTime > lTime) {
-        if (confirm(msg + '→ 서버가 더 최신입니다. 서버 데이터로 이 화면을 새로고침할까요?')) {
-          localStorage.setItem('koition_hr_v6', typeof remote === 'string' ? remote : JSON.stringify(remote));
-          location.reload();
-        }
-      } else if (lTime > rTime) {
-        if (confirm(msg + '→ 이 PC가 더 최신입니다. 이 데이터를 서버로 올릴까요? (다른 PC에 반영됨)')) {
-          const r = await serverPut('main', localStr); alert(r && r.ok ? '서버 업로드 성공 — 다른 PC에서 새로고침하세요' : '서버 업로드 실패 — ' + syncFailText(r));
-        }
-      } else {
-        alert(msg + '→ 서버와 이 PC 데이터가 동일합니다.');
-      }
-    } catch (e) { alert('진단 중 오류: ' + (e && e.message)); }
-  };
   const handleSave = () => {
+    // ★ 서버 로드가 끝나기 전에는 저장을 막는다. 빈 초기 상태가 서버 원본을 덮는 것을 방지.
+    if (!user) { showToast('로그인 후 저장할 수 있습니다', 'error'); return; }
+    if (!serverLoadOkRef.current) { showToast('서버에서 데이터를 받는 중입니다. 잠시 후 다시 시도해 주세요', 'error'); return; }
     try {
       const payload = JSON.stringify({ employees, policy, scores, scoresBy, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, fin, history, updatedAt: new Date().toISOString() });
       localStorage.setItem('koition_hr_v6', payload);
@@ -3873,6 +3797,9 @@ function App() {
           try { base = JSON.parse(localStorage.getItem('koition_hr_v6') || '{}'); } catch (e) {}
           payload = JSON.stringify({ ...base, selfScores, comments, submissions, peerEvals, updatedAt: new Date().toISOString() });
         }
+        // ★ 서버 로드가 끝나기 전에는 로컬 사본도 건드리지 않는다.
+        //   빈 초기 상태가 사본을 덮으면, 서버 장애 시 폴백할 데이터마저 사라진다.
+        if (!user || !serverLoadOkRef.current) return;
         localStorage.setItem('koition_hr_v6', payload);
         // 직전 저장과 내용이 같으면(타임스탬프 제외) 서버 저장 생략 — 불필요한 요청·폭주 방지
         const stripTs = (s) => { try { const o = JSON.parse(s); delete o.updatedAt; return JSON.stringify(o); } catch (e) { return s; } };
@@ -3883,9 +3810,18 @@ function App() {
         //   시도하면 no-token 으로 실패하고 그 배너가 로그인 후에도 남아
         //   "로그인이 만료되었습니다"가 계속 보인다. 실제로는 저장이 정상인데도.
         if (!user) return;
-        serverPut('main', payload).then(r => setSyncFail(r && r.ok ? null : (r || { reason: 'unknown' })));   // 실패 시 사유를 상단 배너로
+        // ★ 서버에서 정상 수신하지 못한 상태에서는 절대 저장하지 않는다.
+        //   빈 사본이 서버 원본을 덮는 사고(재무·사업 소실)의 유일한 경로였다.
+        if (!serverLoadOkRef.current) { console.warn('[저장보류] 서버 로드 미완료 — 저장을 건너뜁니다.'); return; }
+        setSaveState('saving');
+        serverPut('main', payload).then(r => {
+          const ok = !!(r && r.ok);
+          setSyncFail(ok ? null : (r || { reason: 'unknown' }));
+          setSaveState(ok ? 'saved' : 'failed');
+          if (ok) setTimeout(() => setSaveState(prev => prev === 'saved' ? 'idle' : prev), 2000);
+        });
       } catch (e) { /* 저장 공간 부족 등 — 수동 저장/내보내기 사용 */ }
-    }, 1200);
+    }, 400);   // ★ 편집 직후 바로 서버에 반영 (내용 동일 시 요청 생략 로직이 폭주를 막는다)
     return () => clearTimeout(t);
   }, [employees, policy, scores, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, fin, history]);
 
@@ -4358,32 +4294,8 @@ function App() {
       <div style={{ minHeight: '100vh', background: T.bg, fontFamily: FONT, color: T.text }}>
         <Header user={user} onLogout={() => { setAuth(null, null); try { localStorage.removeItem('koition_hr_v6'); } catch (e) {} setUser(null); setTab('dashboard'); }} 
           handleSave={handleSave} handleExport={handleExport} handleImport={handleImport}
-          onChangePassword={() => setPasswordModalOpen(true)} />
+          onChangePassword={() => setPasswordModalOpen(true)} saveState={saveState} />
         {/* (B) 기기 간 데이터 충돌 알림 — 로컬이 서버보다 최신이면 유지하되 사용자에게 알린다 */}
-        {syncConflict && (
-          <div style={{ background: '#FFF4E5', borderBottom: `2px solid ${T.warning}`, padding: `10px 16px`, fontSize: 12.5, lineHeight: 1.75 }}>
-            <strong style={{ color: T.warning }}>⚠ 이 기기의 데이터가 서버보다 최신입니다</strong> — 서버 최신본으로 덮어쓰지 않고 이 기기 데이터를 표시하고 있습니다.
-            <div style={{ color: T.textMute, fontSize: 11.5, marginTop: 2 }}>
-              이 기기 {syncConflict.localAt ? syncConflict.localAt.replace('T', ' ').slice(0, 16) : '-'} · 서버 {syncConflict.remoteAt ? syncConflict.remoteAt.replace('T', ' ').slice(0, 16) : '-'}
-              {' '}— 다른 기기(PC 등)에서 최근에 저장했다면 <strong>서버 데이터 받기</strong>를 누르세요. 이 기기에서 방금 편집했다면 <strong>[저장]</strong>으로 서버에 올리세요.
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-              <Button size="sm" variant="primary" onClick={async () => {
-                try {
-                  const r = await serverGet('main');
-                  if (r != null) {
-                    const str = typeof r === 'string' ? r : JSON.stringify(r);
-                    localStorage.setItem('koition_hr_v6', str);
-                    setSyncConflict(null);
-                    location.reload();
-                  }
-                } catch (e) { alert('서버 데이터를 받지 못했습니다.'); }
-              }}>서버 데이터 받기 (이 기기 변경분 폐기)</Button>
-              <Button size="sm" variant="outline" onClick={() => { handleSave(); setSyncConflict(null); }}>이 기기 데이터를 서버에 저장</Button>
-              <Button size="sm" variant="ghost" onClick={() => setSyncConflict(null)}>나중에</Button>
-            </div>
-          </div>
-        )}
         {isMobile && (
           <button onClick={() => setNavOpen(o => !o)} aria-label="메뉴"
             style={{ position: 'fixed', bottom: 18, right: 18, zIndex: 1200, width: 52, height: 52, borderRadius: 26, border: 'none', background: T.brand, color: '#fff', fontSize: 22, boxShadow: '0 4px 14px rgba(0,0,0,0.25)', cursor: 'pointer' }}>
@@ -4428,11 +4340,6 @@ function App() {
                 </div>
               );
             })()}
-            {(user.role === 'admin' || user.role === 'manager') && (
-              <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-                <button onClick={diagnoseSync} title="다른 PC와 데이터가 다를 때: 서버·이 PC 저장 시각을 비교하고 최신본으로 맞춥니다" style={{ fontSize: 11.5, padding: '5px 12px', borderRadius: 6, border: `1px solid ${T.border}`, background: T.surface, color: T.textMute, cursor: 'pointer', fontFamily: FONT, fontWeight: 600 }}>🔄 서버 동기화 진단</button>
-              </div>
-            )}
             
             <div style={{ position: 'relative', zIndex: 1 }}>
             {user.role === 'admin' && backupDue && (
@@ -5357,7 +5264,7 @@ function ImportButton({ handleImport }) {
   );
 }
 
-function Header({ user, onLogout, handleSave, handleExport, handleImport, onChangePassword }) {
+function Header({ user, onLogout, handleSave, handleExport, handleImport, onChangePassword, saveState }) {
   const roleConfig = {
     admin: { label: '관리자', color: T.brand },
     manager: { label: '부서장', color: T.brandLight },
@@ -5416,7 +5323,18 @@ function Header({ user, onLogout, handleSave, handleExport, handleImport, onChan
 
         {/* 사용자 + 액션 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: S[2] }}>
-          {/* 사용자 정보 + 비밀번호 변경 버튼 */}
+          {/* 서버 저장 상태 — 편집하면 바로 서버에 반영되는지 눈으로 확인 */}
+      {saveState && saveState !== 'idle' && (
+        <span style={{
+          fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, marginRight: S[2], whiteSpace: 'nowrap',
+          background: saveState === 'failed' ? '#FDECEA' : saveState === 'saved' ? 'rgba(27,122,67,0.10)' : T.surfaceAlt,
+          color: saveState === 'failed' ? T.danger : saveState === 'saved' ? T.success : T.textMute,
+          border: `1px solid ${saveState === 'failed' ? T.danger : saveState === 'saved' ? T.success : T.border}`,
+        }}>
+          {saveState === 'saving' ? '서버 저장 중…' : saveState === 'saved' ? '✓ 서버 저장됨' : '⚠ 저장 실패'}
+        </span>
+      )}
+      {/* 사용자 정보 + 비밀번호 변경 버튼 */}
           <button
             onClick={onChangePassword}
             title="클릭하여 비밀번호 변경"
@@ -11402,7 +11320,7 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             sched.forEach(e => {
               const mm = String(e.month || '').match(/(\d{4})[.\-\/](\d{1,2})/); if (!mm) return;
               const i = idxOf(+mm[1], +mm[2]); const amt = Number(e.amount) || 0;
-              if (i >= 0 && i < FC_MONTHS && amt > 0) { inc[i] += amt; incManual[i] += amt; incNote[i].push(`${p.id} ${e.memo || '회차'} ${fmtEok(amt)}`); }
+              if (i >= 0 && i < FC_MONTHS && amt > 0) { inc[i] += amt; incManual[i] += amt; incNote[i].push(`${p.id} ${shorten(p.name, 24)} · ${e.memo || '회차'} ${fmtEok(amt)}`); }
             });
             return;
           }
@@ -11410,9 +11328,9 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           const adv = advOf(p.id);
           const rev = effectiveRevenue(p);   // 컨소시엄이면 지분 반영된 우리 몫
           const si = idxOf(pr.sy, pr.sm), eiRaw = idxOf(pr.ey, pr.em) + 1; // 잔금 = 검수 익월
-          if (si >= 0 && si < FC_MONTHS && adv > 0) { const a = rev * adv; inc[si] += a; incSched[si] += a; incNote[si].push(`${p.id} 선급 ${fmtEok(a)}`); }
+          if (si >= 0 && si < FC_MONTHS && adv > 0) { const a = rev * adv; inc[si] += a; incSched[si] += a; incNote[si].push(`${p.id} ${shorten(p.name, 24)} · 선급 ${fmtEok(a)}`); }
           const ei = eiRaw < 0 ? 0 : eiRaw; // 이미 종료됐는데 미수금 → 이번 달 수금 가정
-          if (ei < FC_MONTHS) { const rem = rev * (1 - adv); inc[ei] += rem; incSched[ei] += rem; if (eiRaw < 0) overdueColl += rem; incNote[ei].push(`${p.id} 잔금 ${fmtEok(rem)}${eiRaw < 0 ? '(지연)' : ''}`); }
+          if (ei < FC_MONTHS) { const rem = rev * (1 - adv); inc[ei] += rem; incSched[ei] += rem; if (eiRaw < 0) overdueColl += rem; incNote[ei].push(`${p.id} ${shorten(p.name, 24)} · 잔금 ${fmtEok(rem)}${eiRaw < 0 ? '(지연)' : ''}`); }
         });
         // ══ 수금 반영율 보정 ══
         //   기간이 이미 끝난 사업의 잔금은 위에서 '이번 달 수금'(index 0)으로 몰아넣는다.
