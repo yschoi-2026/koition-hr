@@ -1161,7 +1161,13 @@ function KoitionVisualTrio() {
 // 표지 이미지 표시 (admin이 URL로 교체 가능)
 // ============================================================
 function CoverImageDisplay({ coverImage }) {
-  const ci = coverImage || { enabled: true, url: '', caption: '' };
+  // ★ 로그인 화면은 서버 데이터를 받기 전에 그려진다(v232 서버 단일 정본 구조).
+  //   policy.coverImage 가 아직 없어 '미설정'으로 보였다 → 표지 전용 캐시에서 읽는다.
+  //   데이터 본체(koition_hr_v6) 경로와 완전히 분리된 표시 전용이라 사고 위험이 없다.
+  const cachedCover = (() => {
+    try { const v = localStorage.getItem('koition_hr_cover'); return v ? JSON.parse(v) : null; } catch (e) { return null; }
+  })();
+  const ci = coverImage || cachedCover || { enabled: true, url: '', caption: '' };
   const [imgError, setImgError] = useState(false);
   
   if (!ci.enabled) return null;
@@ -3672,6 +3678,10 @@ function App() {
         allocation: { ...INITIAL_POLICY.allocation, ...(data.policy.allocation || {}) }
       };
       setPolicy(migrated);
+      // ★ 표지 정보만 별도 키에 캐시 — 다음 로그인 화면에서 바로 표시된다(표시 전용).
+      try {
+        if (migrated.coverImage) localStorage.setItem('koition_hr_cover', JSON.stringify(migrated.coverImage));
+      } catch (e) {}
     }
     // 평가 관련(본인 평가에 필요) — 경량
     if (data.selfScores) setSelfScores(data.selfScores);
