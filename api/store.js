@@ -137,6 +137,28 @@ export default async function handler(req, res) {
         out.sort((a, b) => String(b.at).localeCompare(String(a.at)));
         return res.status(200).json({ ok: true, backups: out });
       }
+      // ── 계정 백업 조회/복구 (admin 전용) : GET ?userbackups=1 / ?userrestore=N ──
+      if (String(req.query.userbackups || '') === '1' || (req.query.userrestore != null && String(req.query.userrestore) !== '')) {
+        const rr = await resolveRole(req, baseUrl, token).catch(() => ({ role: null, verified: false }));
+        if (!rr || rr.role !== 'admin') return res.status(403).json({ error: 'admin only' });
+        if (String(req.query.userbackups || '') === '1') {
+          const out = [];
+          for (let i = 0; i < 5; i++) {
+            try {
+              const m = await redisGetRaw(baseUrl, token, 'users:bakmeta:' + i);
+              if (m && m.result != null) out.push({ slot: i, ...JSON.parse(m.result) });
+            } catch (e) {}
+          }
+          out.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+          return res.status(200).json({ ok: true, backups: out });
+        }
+        const slot = Number(req.query.userrestore);
+        if (!(slot >= 0 && slot < 5)) return res.status(400).json({ error: 'invalid slot' });
+        const b = await redisGetRaw(baseUrl, token, 'users:bak:' + slot);
+        if (!b || b.result == null) return res.status(404).json({ error: 'backup not found' });
+        await fetch(`${baseUrl}/set/${encodeURIComponent('users')}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: String(b.result) });
+        return res.status(200).json({ ok: true, restored: slot });
+      }
       // ── 백업 복구 (admin 전용) : GET ?restore=슬롯번호 ──
       if (req.query.restore != null && String(req.query.restore) !== '') {
         const rr = await resolveRole(req, baseUrl, token).catch(() => ({ role: null, verified: false }));
@@ -351,6 +373,44 @@ export default async function handler(req, res) {
       //   되돌릴 수단이 없었다(2026.08 평가 점수 유실 사례).
       //   ?restore=N 으로 복구, ?backups=1 로 목록 조회.
       // ══════════════════════════════════════════════════════════════
+      // ══════════════════════════════════════════════════════════════
+      //  ★ 계정(users) 보호 — 초기화 덮어쓰기 차단 + 백업
+      //   사고: 캐시가 지워진 기기에서 접속하면 앱이 '첫 실행'으로 판단해
+      //     INITIAL_USERS 를 서버에 덮어썼고, 전 직원 비밀번호가 초기값으로 리셋됐다.
+      //   방어: 서버에 이미 계정이 있는데 들어온 값이 '전부 mustChangePassword=true'
+      //     (= 초기 계정 묶음)이면 거부한다. 정상적인 비밀번호 변경은 통과한다.
+      // ══════════════════════════════════════════════════════════════
+      if (key === 'users') {
+        try {
+          const cur = await redisGetRaw(baseUrl, token, 'users');
+          const prevStr = cur && cur.result != null ? String(cur.result) : '';
+          if (prevStr) {
+            const prev = JSON.parse(prevStr);
+            const inc = JSON.parse(payload);
+            const pl = Array.isArray(prev) ? prev : (prev.list || []);
+            const il = Array.isArray(inc) ? inc : (inc.list || []);
+            const allInitial = il.length > 0 && il.every(u => u && u.mustChangePassword === true && !u.lastPasswordChange);
+            const someChanged = pl.some(u => u && (u.mustChangePassword === false || u.lastPasswordChange));
+            if (pl.length > 0 && allInitial && someChanged) {
+              // 초기 계정 묶음이 기존 계정을 덮으려 한다 → 거부하고 서버 원본 유지
+              return res.status(200).json({ ok: true, guarded: 'users-initial-blocked' });
+            }
+            // 계정 수가 크게 줄어드는 저장도 막는다(사고성 삭제 방지)
+            if (pl.length >= 3 && il.length < Math.ceil(pl.length / 2)) {
+              return res.status(200).json({ ok: true, guarded: 'users-shrink-blocked' });
+            }
+            // 저장 직전 백업 (users:bak:0~4 순환)
+            try {
+              const iRaw = await redisGetRaw(baseUrl, token, 'users:bak:idx');
+              const i2 = (iRaw && iRaw.result != null ? Number(iRaw.result) : 0) || 0;
+              const sl = i2 % 5;
+              await fetch(`${baseUrl}/set/${encodeURIComponent('users:bak:' + sl)}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: prevStr });
+              await fetch(`${baseUrl}/set/${encodeURIComponent('users:bakmeta:' + sl)}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ at: new Date().toISOString(), count: pl.length }) });
+              await fetch(`${baseUrl}/set/${encodeURIComponent('users:bak:idx')}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: String(i2 + 1) });
+            } catch (e) {}
+          }
+        } catch (e) { /* 판단 실패 시 원래 흐름 */ }
+      }
       // ══════════════════════════════════════════════════════════════
       //  ★ 필터본 저장 차단 (평가기간 데이터 보호 최우선)
       //   필터본(급여·재무가 제거된 데이터)이 서버 원본을 덮으면 되돌릴 수 없다.
