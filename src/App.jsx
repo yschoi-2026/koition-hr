@@ -3494,6 +3494,16 @@ function App() {
           } catch (e) {}
           setUsers(svN.list);
           setUsersInitialized(true);
+          return;   // ★ 서버 계정을 받았으면 끝. 아래 초기화 로직으로 내려가면 안 된다.
+        }
+        // ★ 서버 응답 자체를 못 받았으면(네트워크·인증 실패) 절대 초기화하지 않는다.
+        //   초기화하면 전 직원 비밀번호가 리셋된다.
+        //   (2026-09-03 08:31 사고: 캐시 삭제 후 접속 → 로컬에 계정 없음 → '첫 실행'으로 판단
+        //    → INITIAL_USERS 22개가 서버를 덮어써 모든 계정이 초기값으로 돌아감)
+        if (sv === null) {
+          console.warn('[계정] 서버 응답 없음 — 초기화하지 않고 캐시를 사용합니다.');
+          setUsersInitialized(true);
+          return;
         }
         const stored = localStorage.getItem('koition_hr_users');
         if (stored) {
