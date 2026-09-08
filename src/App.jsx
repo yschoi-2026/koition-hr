@@ -467,6 +467,15 @@ const T = {
   success: '#1B7F4F',
   warning: '#D97706',
   danger: '#B91C1C',
+  // ★ 경영보고서 경고색 — 붉은색은 과도한 위기감을 주어 판단을 흐린다.
+  //   청색·라벤더 계열로 차분하게 전달한다. 배경이 진할 때는 흰 글씨를 쓴다.
+  alert: '#4C4E9E',          // 라벤더 인디고 (텍스트·숫자)
+  alertSoft: '#EEEEF8',      // 연라벤더 배경 (어두운 글씨용)
+  alertLine: '#B6B8E0',      // 라벤더 테두리
+  alertDeep: '#3B3D80',      // 진한 인디고 (배경 — 흰 글씨와 조합)
+  alertOn: '#FFFFFF',        // 진한 배경 위 글씨
+  caution: '#5B6CB8',        // 중간 경고 (스틸 블루)
+  cautionSoft: '#F2F5FC',
   info: '#1B3A6F',
   
   // Shadow
@@ -11119,6 +11128,8 @@ function PayrollCapacityCards({ eng }) {
 
 function ManagementReportView({ user, borrowings, projects, proposals, overheads, employees, empLedger, setEmpLedger, currentYear, policy, receivables, cashCfg, setCashCfg, upsertProject, deleteProject, fin }) {
   const [acctOpen, setAcctOpen] = React.useState(false);   // 계좌별 잔고 편집 패널
+  const [payPanelOpen, setPayPanelOpen] = React.useState(false);   // 급여일 판단 상세 — 기본 접힘
+  const [payModal, setPayModal] = React.useState(false);           // 급여일 판단 모달
   const [monthDetail, setMonthDetail] = React.useState(null);   // 월별 상세 모달 (클릭한 월의 row)
   // 데이터 기준월: CMS 마감월(fin.period '2026-06') → '1~6월 누계' 라벨
   const cutM = (() => { const m = String((fin || {}).period || '').match(/-(\d{2})/); return m ? Number(m[1]) : null; })();
@@ -11382,7 +11393,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
   const costMix = [
     { name: '작업자 인건비', value: Math.round(T0.worker), color: T.brand },
     { name: '관리자 인건비', value: Math.round(T0.mgr), color: T.brandLight },
-    { name: '사업경비(제경비)', value: Math.round(T0.overhead), color: T.warning },
+    { name: '사업경비(제경비)', value: Math.round(T0.overhead), color: T.caution },
     { name: '공통비(간접비)', value: Math.round(pool), color: T.textMute },
   ].filter(x => x.value > 0);
 
@@ -11413,7 +11424,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
 
   // ---- 종합 진단 ----
   const health = full >= 0 && marginContrib >= 15 && sev.length === 0 ? '양호' : full >= 0 && sev.length <= 1 ? '보통' : '주의';
-  const healthColor = health === '양호' ? T.success : health === '보통' ? T.warning : T.danger;
+  const healthColor = health === '양호' ? T.success : health === '보통' ? T.caution : T.alert;
   const bestOrg = orgRows.filter(o => o.revenue > 0).sort((a, b) => b.fullMargin - a.fullMargin)[0];
   const worstOrg = orgRows.filter(o => o.revenue > 0).sort((a, b) => a.fullMargin - b.fullMargin)[0];
   const assess = [];
@@ -11578,11 +11589,11 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
           </div>
         );
         return (
-          <div style={{ ...card({ borderLeft: `4px solid ${ok ? T.success : T.danger}` }), padding: S[4], marginBottom: S[4],
-            background: ok ? 'rgba(27,122,67,0.04)' : '#FDECEA' }}>
+          <div style={{ ...card({ borderLeft: `4px solid ${ok ? T.success : T.alertDeep}` }), padding: S[4], marginBottom: S[4],
+            background: ok ? 'rgba(27,122,67,0.04)' : T.alertSoft }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: S[3], flexWrap: 'wrap', marginBottom: S[2] }}>
               <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>이번 달 급여일 판단</span>
-              <Badge color={ok ? T.success : T.danger} size="sm">{ty}년 {tm}월 {payDay}일 · D-{Math.max(0, daysLeft)}</Badge>
+              <Badge color={ok ? T.success : T.alert} size="sm">{ty}년 {tm}월 {payDay}일 · D-{Math.max(0, daysLeft)}</Badge>
               <div style={{ flex: 1 }} />
               {setCashCfg && (
                 <div style={{ display: 'flex', gap: S[2], alignItems: 'center' }}>
@@ -11596,12 +11607,29 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 </div>
               )}
             </div>
-            <div style={{ fontSize: 30, fontWeight: 800, color: ok ? T.success : T.danger, letterSpacing: '-0.02em', marginBottom: 2 }}>
-              {ok ? '지급 가능' : `${fmtMoney(Math.abs(room))}원 부족`}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: S[3] }}>
+              <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 2,
+                padding: ok ? 0 : '6px 16px', borderRadius: ok ? 0 : 8,
+                background: ok ? 'transparent' : T.alertDeep, color: ok ? T.success : T.alertOn }}>
+                {ok ? '지급 가능' : `${fmtMoney(Math.abs(room))}원 부족`}
+              </div>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setPayPanelOpen(v => !v)}
+                style={{ border: `1px solid ${T.border}`, background: T.surface, borderRadius: 6, padding: '4px 12px',
+                  fontSize: 11.5, cursor: 'pointer', fontFamily: FONT, color: T.textMute, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                {payPanelOpen ? '내역 접기 ▲' : '내역 보기 ▼'}
+              </button>
+              <button onClick={() => setPayModal(true)}
+                style={{ border: `1px solid ${ok ? T.success : T.alert}`, background: T.surface, borderRadius: 6, padding: '4px 12px',
+                  fontSize: 11.5, cursor: 'pointer', fontFamily: FONT, color: ok ? T.success : T.alert, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                크게 보기 ⤢
+              </button>
             </div>
-            <div style={{ fontSize: 12, color: ok ? T.success : T.danger, fontWeight: 700, marginBottom: S[3] }}>
+            <div style={{ fontSize: 12, color: ok ? T.success : T.alert, fontWeight: 700, marginBottom: S[3] }}>
               {ok ? `급여 지급 후 ${fmtMoney(room)}원 남습니다` : `${payDay}일까지 ${fmtMoney(Math.abs(room))}원을 확보해야 합니다`}
             </div>
+            {/* 상세 내역 — 접기/모달에서 같은 내용을 쓴다 */}
+            {(() => { const detailBody = (<>
             <table style={{ width: '100%', maxWidth: 460, borderCollapse: 'collapse', fontSize: 12.5 }}>
               <tbody>
                 <tr><Td>{tbDate || '오늘'} 가용 잔고{accts.length ? ` (${accts.filter(a => a.usable !== false).length}개 계좌)` : ''}</Td><Td align="right" mono>{fmtMoney(tb)}</Td></tr>
@@ -11609,8 +11637,8 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                   <tr key={i}><Td style={{ color: T.textMute, fontSize: 11.5 }}>　· {a.name}</Td><Td align="right" mono style={{ color: T.textMute, fontSize: 11.5 }}>{fmtMoney(Number(a.balance) || 0)}</Td></tr>
                 ))}
                 {dedIdle > 0 && (
-                  <tr><Td style={{ color: T.warning, fontSize: 11.5 }}>　− 전용통장 유휴분 (해당 사업 외 사용 불가)</Td>
-                    <Td align="right" mono style={{ color: T.warning, fontSize: 11.5 }}>−{fmtMoney(dedIdle)}</Td></tr>
+                  <tr><Td style={{ color: T.caution, fontSize: 11.5 }}>　− 전용통장 유휴분 (해당 사업 외 사용 불가)</Td>
+                    <Td align="right" mono style={{ color: T.caution, fontSize: 11.5 }}>−{fmtMoney(dedIdle)}</Td></tr>
                 )}
                 {accts.length > 0 && acctAll > acctUsable && (
                   <tr><Td style={{ color: T.textMute, fontSize: 11.5 }}>　(가용 제외 계좌 {fmtMoney(acctAll - acctUsable)})</Td><Td align="right" mono style={{ color: T.textMute, fontSize: 11.5 }}>—</Td></tr>
@@ -11618,12 +11646,12 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 {paidSum > 0 && <tr><Td style={{ color: T.textMute, fontSize: 11.5 }}>　(이번 사이클 입금 완료 {paidIn.length}건 — 잔고 포함)</Td><Td align="right" mono style={{ color: T.textMute, fontSize: 11.5 }}>{fmtMoney(paidSum)}</Td></tr>}
                 <tr><Td>+ 급여일까지 수금 예정 {due.length ? `(${due.length}건)` : ''}</Td><Td align="right" mono style={{ color: T.success }}>{dueSum ? '+' + fmtMoney(dueSum) : '0'}</Td></tr>
                 {brSum > 0 && <tr><Td>+ 차입 입금 예정 ({brIn.length}건)</Td><Td align="right" mono style={{ color: T.brand }}>+{fmtMoney(brSum)}</Td></tr>}
-                <tr><Td>− 남은 기간 운영경비 ({Math.max(0, daysLeft)}일)</Td><Td align="right" mono style={{ color: T.danger }}>−{fmtMoney(opexLeft)}</Td></tr>
-                {brPay > 0 && <tr><Td>− 차입 상환</Td><Td align="right" mono style={{ color: T.danger }}>−{fmtMoney(brPay)}</Td></tr>}
-                <tr><Td>− 급여 필요액</Td><Td align="right" mono style={{ color: T.danger }}>−{fmtMoney(need)}</Td></tr>
+                <tr><Td>− 남은 기간 운영경비 ({Math.max(0, daysLeft)}일)</Td><Td align="right" mono style={{ color: T.alert }}>−{fmtMoney(opexLeft)}</Td></tr>
+                {brPay > 0 && <tr><Td>− 차입 상환</Td><Td align="right" mono style={{ color: T.alert }}>−{fmtMoney(brPay)}</Td></tr>}
+                <tr><Td>− 급여 필요액</Td><Td align="right" mono style={{ color: T.alert }}>−{fmtMoney(need)}</Td></tr>
                 <tr style={{ borderTop: `2px solid ${T.border}` }}>
                   <Td style={{ fontWeight: 800 }}>여유</Td>
-                  <Td align="right" mono style={{ fontWeight: 800, color: ok ? T.success : T.danger }}>{room >= 0 ? '+' : ''}{fmtMoney(room)}</Td>
+                  <Td align="right" mono style={{ fontWeight: 800, color: ok ? T.success : T.alert }}>{room >= 0 ? '+' : ''}{fmtMoney(room)}</Td>
                 </tr>
               </tbody>
             </table>
@@ -11650,7 +11678,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                       onChange={e => setCashCfg(pv => ({ ...pv, accounts: (pv.accounts || []).map((x, j) => j === i ? { ...x, balance: parseInput(e.target.value) } : x) }))}
                       style={{ width: 130, padding: '4px 8px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, textAlign: 'right' }} />
                     <button onClick={() => setCashCfg(pv => ({ ...pv, accounts: (pv.accounts || []).filter((_, j) => j !== i) }))}
-                      style={{ border: 'none', background: 'none', color: T.danger, cursor: 'pointer', fontSize: 14 }}>×</button>
+                      style={{ border: 'none', background: 'none', color: T.alert, cursor: 'pointer', fontSize: 14 }}>×</button>
                     </div>
                     {/* 전용통장이면 대상 사업을 지정 — 그 사업 인건비만 인출 가능 */}
                     <div style={{ marginLeft: 22, marginBottom: 6 }}>
@@ -11684,7 +11712,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                         <Td style={{ fontSize: 11.5 }}>{shorten(x.name, 30)}</Td>
                         <Td align="right" mono style={{ fontSize: 11.5 }}>{fmtMoney(x.bal)}</Td>
                         <Td align="right" mono style={{ fontSize: 11.5, color: T.textMute }}>인건비 {fmtMoney(x.need)}</Td>
-                        <Td align="right" mono style={{ fontSize: 11.5, fontWeight: 700, color: x.gap >= 0 ? T.success : T.danger }}>
+                        <Td align="right" mono style={{ fontSize: 11.5, fontWeight: 700, color: x.gap >= 0 ? T.success : T.alert }}>
                           {x.gap >= 0 ? '여유 ' : '부족 '}{fmtMoney(Math.abs(x.gap))}
                         </Td>
                       </tr>
@@ -11692,7 +11720,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                   </tbody>
                 </table>
                 {dedShort > 0 && (
-                  <div style={{ fontSize: 11, color: T.danger, marginTop: 4 }}>
+                  <div style={{ fontSize: 11, color: T.alert, marginTop: 4 }}>
                     전용통장 부족분 {fmtMoney(dedShort)}원은 주계좌에서 메워야 합니다.
                   </div>
                 )}
@@ -11707,17 +11735,41 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 return (
                   <div style={{ color: T.textMute }}>
                     이번 여유 {fmtMoney(room)} + 수입 예정 {fmtMoney(nextSum)}{nextDue.length ? `(${nextDue.length}건)` : ''} − 경비 {fmtMoney(opexM)} − 급여 {fmtMoney(nextNeed)}
-                    <span style={{ color: nextRoom >= 0 ? T.success : T.danger, fontWeight: 800 }}> = {nextRoom >= 0 ? '여유 ' : '부족 '}{fmtMoney(Math.abs(nextRoom))}원</span>
+                    <span style={{ color: nextRoom >= 0 ? T.success : T.alert, fontWeight: 800 }}> = {nextRoom >= 0 ? '여유 ' : '부족 '}{fmtMoney(Math.abs(nextRoom))}원</span>
                   </div>
                 );
               })()}
             </div>
             {!ok && (
-              <div style={{ fontSize: 11.5, color: T.danger, marginTop: S[2], lineHeight: 1.8, borderTop: `1px dashed ${T.danger}`, paddingTop: S[2] }}>
+              <div style={{ fontSize: 11.5, color: T.alert, marginTop: S[2], lineHeight: 1.8, borderTop: `1px dashed ${T.alert}`, paddingTop: S[2] }}>
                 <strong>대응 검토</strong> — 미수금 조기 수금 요청 · <strong>차입 {fmtMoney(Math.ceil(Math.abs(room) / 10000000) * 10000000)}원</strong>(1천만 단위) · 지급 분산(정규/계약직 분리) · 경비 집행 연기
                 <div style={{ color: T.textMute, marginTop: 2 }}>「차입 관리」에 등록하면 입금일이 이 계산에 바로 반영됩니다.</div>
               </div>
             )}
+            </>);
+              return (<>
+                {payPanelOpen && detailBody}
+                {payModal && (
+                  <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1400, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: S[4], overflowY: 'auto' }} onClick={() => setPayModal(false)}>
+                    <div style={{ ...card(), padding: S[5], width: 720, maxWidth: '100%', marginTop: S[5] }} onClick={e => e.stopPropagation()}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: S[3], marginBottom: S[4] }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: T.textMute, fontWeight: 600, letterSpacing: '0.1em' }}>PAYDAY CHECK</div>
+                          <div style={{ fontSize: 20, fontWeight: 800, color: T.ink }}>{ty}년 {tm}월 {payDay}일 급여일 판단</div>
+                        </div>
+                        <div style={{ flex: 1 }} />
+                        <div style={{ fontSize: 22, fontWeight: 800, padding: ok ? 0 : '6px 16px', borderRadius: ok ? 0 : 8,
+                          background: ok ? 'transparent' : T.alertDeep, color: ok ? T.success : T.alertOn }}>
+                          {ok ? '지급 가능' : `${fmtMoney(Math.abs(room))}원 부족`}
+                        </div>
+                        <Button size="sm" variant="ghost" onClick={() => setPayModal(false)}>닫기 ✕</Button>
+                      </div>
+                      {detailBody}
+                    </div>
+                  </div>
+                )}
+              </>);
+            })()}
           </div>
         );
       })()}
@@ -11747,7 +11799,28 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
         const cfg = cashCfg || {};
         const up = (k, v) => setCashCfg && setCashCfg(prev => ({ ...prev, [k]: Number(v) || 0 }));
         // ── CMS 실적 연동: 실제 월 인건비·운영경비를 예측 기본값으로 산출 ──
-        const finData = fin || {};
+        // ★ 급여일 판단 패널과 같은 출발점을 쓰도록 actualBalances 를 보정한다.
+        //   패널은 '계좌 합산 − 전용통장 유휴분'을 가용 잔고로 본다.
+        //   엔진(카드·월별 상세표·그래프)이 주계좌 단일값만 쓰면 세 화면 수치가 어긋난다.
+        const finData = (() => {
+          const base = fin || {};
+          const cfgA = Array.isArray((cashCfg || {}).accounts) ? cashCfg.accounts : [];
+          if (!cfgA.length) return base;
+          const tbd = String((cashCfg || {}).todayBalanceDate || '');
+          const mk2 = tbd.slice(0, 7);   // 'YYYY-MM'
+          if (!mk2) return base;
+          const usableSum = cfgA.filter(a => a && a.usable !== false).reduce((x, a) => x + (Number(a.balance) || 0), 0);
+          const labM = ((cashCfg || {}).laborByProject || {});
+          const labKey = labM[mk2] ? mk2 : Object.keys(labM).sort().pop();
+          const lab2 = labM[labKey] || {};
+          let idle2 = 0;
+          cfgA.filter(a => a && a.usable !== false && Array.isArray(a.projectIds) && a.projectIds.length).forEach(a => {
+            const need2 = a.projectIds.reduce((x, pid) => x + (Number(lab2[pid]) || 0), 0);
+            const bal2 = Number(a.balance) || 0;
+            if (bal2 > need2) idle2 += bal2 - need2;   // 그 사업 외 사용 불가 → 가용에서 제외
+          });
+          return { ...base, actualBalances: { ...(base.actualBalances || {}), [mk2]: usableSum - idle2 } };
+        })();
         const monthsElapsed = (() => { const m = String(finData.period || '').match(/-(\d{2})/); return m ? Number(m[1]) : 6; })();
         const actualLaborMonthly = ((finData.salaryReg || 0) + (finData.salaryCon || 0));   // CMS 인건비(월)
         const sgaVals = Object.entries(finData.sga || {});
@@ -12264,8 +12337,8 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
             {/* ══ 경영자용 ①: 급여 지급 가능 여부 — 이 화면에서 가장 먼저 봐야 하는 한 줄 ══ */}
             {payrollCheck.upcoming.length > 0 && (() => {
               const pc = payrollCheck, fs = pc.firstShort;
-              const tone = !fs ? T.success : (pc.runway <= 1 ? T.danger : T.warning);
-              const bg = !fs ? 'rgba(27,122,67,0.07)' : (pc.runway <= 1 ? '#FDECEC' : '#FFF4E5');
+              const tone = !fs ? T.success : (pc.runway <= 1 ? T.alert : T.caution);
+              const bg = !fs ? 'rgba(27,122,67,0.07)' : (pc.runway <= 1 ? '#FDECEC' : T.cautionSoft);
               const mlabel = (m) => `${m.y}년 ${m.m}월`;
               return (
                 <div style={{ background: bg, border: `2px solid ${tone}`, borderRadius: 10, padding: S[4], marginBottom: S[4] }}>
@@ -12273,7 +12346,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                   <div style={{ fontSize: 19, fontWeight: 800, color: tone, lineHeight: 1.35 }}>
                     {!fs
                       ? `앞으로 ${pc.runway}회 급여일 모두 지급 가능`
-                      : <>{mlabel(fs.month)} <span style={{ color: T.danger }}>{fmtMoney(Math.abs(fs.room))}원 부족</span> 예상</>}
+                      : <>{mlabel(fs.month)} <span style={{ color: T.alert }}>{fmtMoney(Math.abs(fs.room))}원 부족</span> 예상</>}
                   </div>
                   <div style={{ fontSize: 12, color: T.text, marginTop: 6, lineHeight: 1.8 }}>
                     {fs
@@ -12297,7 +12370,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                             <Td align="right" mono>{fmtMoney(x.bal)}</Td>
                             <Td align="right" mono><strong>{fmtMoney(x.need)}</strong></Td>
                             <Td align="center" style={{ fontSize: 10, color: x.src === '실측' ? T.success : T.textMute }}>{x.src}</Td>
-                            <Td align="right" mono style={{ color: x.ok ? T.success : T.danger, fontWeight: 700 }}>{x.ok ? '' : '▲ '}{fmtMoney(x.room)}</Td>
+                            <Td align="right" mono style={{ color: x.ok ? T.success : T.alert, fontWeight: 700 }}>{x.ok ? '' : '▲ '}{fmtMoney(x.room)}</Td>
                           </tr>
                         ))}
                       </tbody>
@@ -12305,7 +12378,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                   </div>
                   {pc.past.length > 0 && (
                     <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2], paddingTop: S[2], borderTop: `1px solid ${T.divider}` }}>
-                      지난 실적: {pc.past.length}회 급여일 중 <strong style={{ color: pc.pastOk === pc.past.length ? T.success : T.danger }}>{pc.pastOk}회 지급 가능</strong>
+                      지난 실적: {pc.past.length}회 급여일 중 <strong style={{ color: pc.pastOk === pc.past.length ? T.success : T.alert }}>{pc.pastOk}회 지급 가능</strong>
                       {pc.pastOk === pc.past.length ? ' — 부족한 적 없음' : ` — ${pc.past.length - pc.pastOk}회 부족`}
                       {' '}(실제 인출액 기준)
                     </div>
@@ -12334,8 +12407,8 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 );
               }
               const good = ac.skill >= 30, mid = ac.skill >= 10;
-              const tone = good ? T.success : (mid ? T.warning : T.danger);
-              const bg = good ? 'rgba(27,122,67,0.07)' : (mid ? '#FFF4E5' : '#FDECEC');
+              const tone = good ? T.success : (mid ? T.caution : T.alert);
+              const bg = good ? 'rgba(27,122,67,0.07)' : (mid ? T.cautionSoft : '#FDECEC');
               const grade = good ? '쓸 만함' : (mid ? '보통' : '개선 필요');
               const last = rows.filter(r => !r.confirmed)[0];
               return (
@@ -12349,12 +12422,12 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                     아무 모델 없이 「전월 잔고와 같다」고만 해도 <strong>{fmtMoney(ac.naiveMae)}원</strong> 차이가 나는데,
                     {ac.skill >= 0
                       ? <> 모델이 그보다 <strong style={{ color: T.success }}>{ac.skill.toFixed(0)}% 정확</strong>합니다.</>
-                      : <> 모델이 그보다 <strong style={{ color: T.danger }}>{Math.abs(ac.skill).toFixed(0)}% 부정확</strong>합니다 — 가정을 손봐야 합니다.</>}
+                      : <> 모델이 그보다 <strong style={{ color: T.alert }}>{Math.abs(ac.skill).toFixed(0)}% 부정확</strong>합니다 — 가정을 손봐야 합니다.</>}
                     {' '}(잔고 대비 오차율 {ac.mape.toFixed(1)}%, 단순예측은 {(ac.naiveMae / (ac.errs.reduce((a, e) => a + Math.abs(e.actual), 0) / ac.n) * 100).toFixed(1)}%)
-                    편향은 <strong style={{ color: ac.mean >= 0 ? T.success : T.danger }}>{ac.mean >= 0 ? '+' : ''}{fmtMoney(ac.mean)}원</strong>
+                    편향은 <strong style={{ color: ac.mean >= 0 ? T.success : T.alert }}>{ac.mean >= 0 ? '+' : ''}{fmtMoney(ac.mean)}원</strong>
                     {ac.mean >= 0 ? ' — 실제가 예측보다 많았습니다(보수적 예측).' : ' — 실제가 예측보다 적었습니다(낙관적 예측).'}
                     {bias !== 0 && <> 이 편향은 미래 예측에 자동 반영 중입니다.</>}
-                    {cfg.autoCorrect === false && <> <span style={{ color: T.warning }}>(자동보정 꺼져 있음)</span></>}
+                    {cfg.autoCorrect === false && <> <span style={{ color: T.caution }}>(자동보정 꺼져 있음)</span></>}
                   </div>
                   {last && ac.sd > 0 && (
                     <div style={{ fontSize: 12, color: T.text, marginTop: 4, lineHeight: 1.8 }}>
@@ -12377,8 +12450,8 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                             <Td style={{ fontSize: 11 }}>{mlabel(e)}</Td>
                             <Td align="right" mono>{fmtMoney(e.pred)}</Td>
                             <Td align="right" mono>{fmtMoney(e.actual)}</Td>
-                            <Td align="right" mono style={{ color: Math.abs(e.err) > ac.mae ? T.danger : T.textMute, fontWeight: 600 }}>{e.err >= 0 ? '+' : ''}{fmtMoney(e.err)}</Td>
-                            <Td align="right" mono style={{ fontWeight: 700, color: e.pct != null && Math.abs(e.pct) < 5 ? T.success : T.warning }}>{e.pct != null ? (e.pct >= 0 ? '+' : '') + e.pct.toFixed(1) + '%' : '-'}</Td>
+                            <Td align="right" mono style={{ color: Math.abs(e.err) > ac.mae ? T.alert : T.textMute, fontWeight: 600 }}>{e.err >= 0 ? '+' : ''}{fmtMoney(e.err)}</Td>
+                            <Td align="right" mono style={{ fontWeight: 700, color: e.pct != null && Math.abs(e.pct) < 5 ? T.success : T.caution }}>{e.pct != null ? (e.pct >= 0 ? '+' : '') + e.pct.toFixed(1) + '%' : '-'}</Td>
                           </tr>
                         ))}
                       </tbody>
@@ -12392,8 +12465,8 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
               );
             })()}
             {collAdj && collAdj.cut > 0 && (
-              <div style={{ background: '#FFF4E5', border: `1px solid ${T.warning}`, borderRadius: 8, padding: S[3], marginBottom: S[3], fontSize: 11.5, lineHeight: 1.8 }}>
-                <strong style={{ color: T.warning }}>수금 반영율 보정</strong> — 기간이 끝난 사업의 미수 잔금 {fmtMoney(collAdj.before)}원이
+              <div style={{ background: T.cautionSoft, border: `1px solid ${T.caution}`, borderRadius: 8, padding: S[3], marginBottom: S[3], fontSize: 11.5, lineHeight: 1.8 }}>
+                <strong style={{ color: T.caution }}>수금 반영율 보정</strong> — 기간이 끝난 사업의 미수 잔금 {fmtMoney(collAdj.before)}원이
                 이번 달 수입으로 잡혀 있었는데, 실제 매출채권 잔액은 {fmtMoney(collAdj.after)}원입니다.
                 <strong> {fmtMoney(collAdj.cut)}원을 차감</strong>해 반영율 {(collAdj.ratio * 100).toFixed(0)}%로 맞췄습니다.
                 <span style={{ color: T.textMute }}> 개별 수금 예정일을 「수금 관리」에 입력하면 이 추정 대신 실제 일정으로 계산합니다.</span>
@@ -12426,7 +12499,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 {recurList.length > 0 && <><br />현재 잔여 정액 <strong style={{ color: T.ink }}>{fmtMoney(fixedBase)}원</strong> + 그 달 반복항목.</>}
               </div>
               {recurOverflow > 0 && (
-                <div style={{ background: '#FDECEC', border: `1px solid ${T.danger}`, borderRadius: 6, padding: '8px 12px', fontSize: 11.5, color: T.danger, fontWeight: 600, marginBottom: S[2] }}>
+                <div style={{ background: '#FDECEC', border: `1px solid ${T.alert}`, borderRadius: 6, padding: '8px 12px', fontSize: 11.5, color: T.alert, fontWeight: 600, marginBottom: S[2] }}>
                   ⚠ 등록액 합계가 고정경비 정액을 {fmtMoney(recurOverflow)}원 초과합니다. 정액(CMS 현금경비)에 없는 항목을 넣었거나 금액이 과대합니다 — 확인하세요.
                 </div>
               )}
@@ -12447,7 +12520,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                         <Td align="right" mono>{fmtMoney(Number(r.amount) || 0)}</Td>
                         <Td align="center">{r.day ? r.day + '일' : '-'}</Td>
                         <Td align="center" style={{ fontSize: 11, color: T.textMute }}>{r.from || '제한 없음'}</Td>
-                        <Td align="center" style={{ fontSize: 11, color: r.to ? T.warning : T.textMute, fontWeight: r.to ? 700 : 400 }}>{r.to || '무기한'}</Td>
+                        <Td align="center" style={{ fontSize: 11, color: r.to ? T.caution : T.textMute, fontWeight: r.to ? 700 : 400 }}>{r.to || '무기한'}</Td>
                         <Td align="center">
                           <button onClick={() => setCashCfg(prev => ({ ...prev, recurring: (prev.recurring || []).filter(x => x.id !== r.id) }))}
                             style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}><Trash2 size={14} /></button>
@@ -12534,7 +12607,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
               <div style={{ fontSize: 11.5, color: T.ink, lineHeight: 1.8, marginTop: S[2] }}>
                 <strong style={{ color: T.brand }}>1. 시작점</strong> — 가장 최근 <strong>급여일(10일) 인출 직전 실제 잔고</strong>에서 출발합니다. 확정월은 실제 잔고를 그대로 쓰고, 다음 달로 넘길 때 그 달 급여일 인출액을 차감합니다. 이후 매월 <strong>잔고 = 전월 이월 + 그달 수입 − 그달 지출</strong>로 {FC_MONTHS}개월을 이어 계산합니다.<br />
                 <strong style={{ color: T.success }}>2. 수입(파란 실선에 반영)</strong> — ① <strong>수금관리 등록분</strong>(미입금 예정일 기준, 가장 확정적) ② <strong>진행 사업의 선급·잔금</strong>: 계약기간 시작월에 매출×선급률, 종료 익월에 잔금(이미 수금관리에 있는 사업은 중복 제외) ③ <strong>기타 예정 수입</strong>(직접 등록분). 선급률은 사업별 입력값 → 없으면 수금 실적에서 학습한 중앙값 → 없으면 기본값 순.<br />
-                <strong style={{ color: T.warning }}>3. 지출</strong> — ① <strong>정규직 인건비</strong>: 매월 고정(CMS 급여 실적) ② <strong>계약직 인건비</strong>: 각 사업의 계약직 인건비를 계약기간에 배분 — 사업이 끝나는 달부터 그만큼 자동 감소(월별 수동 보정이 있으면 그 값 우선) ③ <strong>고정 운영경비</strong>: 임차·보험·세금과공과 등 매월 동일 ④ <strong>프로젝트성 경비</strong>: 외주·매입 + 사업 법인카드(여비·차량·운반·인쇄), 그달의 <strong>활성 사업 비율로 자동 증감</strong> + 조정 슬라이더 배율 적용 ⑤ <strong>세금</strong>: 부가세·법인세 추정액은 <strong>기본 제외</strong>(실질 지출 파악 왜곡 방지) — 정밀도 옵션에서 켜면 부가세 1·4·7·10월, 법인세 3월에 반영됩니다. ⑥ <strong>예정 지출</strong>(직접 등록): 세금 납부 확정액·장비 구입·보증금 등 미래 확정 지출을 월별로 등록하면 그 달 지출에 가산됩니다.<br />
+                <strong style={{ color: T.caution }}>3. 지출</strong> — ① <strong>정규직 인건비</strong>: 매월 고정(CMS 급여 실적) ② <strong>계약직 인건비</strong>: 각 사업의 계약직 인건비를 계약기간에 배분 — 사업이 끝나는 달부터 그만큼 자동 감소(월별 수동 보정이 있으면 그 값 우선) ③ <strong>고정 운영경비</strong>: 임차·보험·세금과공과 등 매월 동일 ④ <strong>프로젝트성 경비</strong>: 외주·매입 + 사업 법인카드(여비·차량·운반·인쇄), 그달의 <strong>활성 사업 비율로 자동 증감</strong> + 조정 슬라이더 배율 적용 ⑤ <strong>세금</strong>: 부가세·법인세 추정액은 <strong>기본 제외</strong>(실질 지출 파악 왜곡 방지) — 정밀도 옵션에서 켜면 부가세 1·4·7·10월, 법인세 3월에 반영됩니다. ⑥ <strong>예정 지출</strong>(직접 등록): 세금 납부 확정액·장비 구입·보증금 등 미래 확정 지출을 월별로 등록하면 그 달 지출에 가산됩니다.<br />
                 <strong style={{ color: T.success }}>4. 수주 반영 시나리오(초록 점선)</strong> — 미수주 제안의 <strong>예산 × 수주율(%)</strong>을 기대수입으로 가산. 계약기간 시작월에 선급, +6개월에 잔금으로 배치하며, 아래 「수주 파이프라인 개별 설정」에서 제안별 포함/제외·계약월·선급률을 조정할 수 있습니다.<br />
                 <strong>5. 낙관·보수 밴드(연한 점선)</strong> — 낙관 = 수주율 +20%p, 보수 = 수주율 −20%p에 프로젝트성 경비 +10%를 가정한 상·하한 범위입니다. 실제 잔고는 대개 이 밴드 안에서 움직입니다.<br />
                 <strong>6. 자동 보정</strong> — 매월 10일 급여 인출 직전 실제 잔고를 입력하면, 최근 3개월의 (실제−예측) 평균 편차를 미래 예측에 가산해 체계적 오차를 줄입니다. 보정은 미래 구간에만 적용됩니다.<br />
@@ -12551,7 +12624,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
               <label style={{ cursor: 'pointer' }}><input type="checkbox" checked={cfg.autoCorrect !== false} onChange={e => setCashCfg(prev => ({ ...prev, autoCorrect: e.target.checked }))} style={{ verticalAlign: 'middle', marginRight: 3 }} />실제잔고 기반 자동보정{bias !== 0 ? ` (${bias > 0 ? '+' : ''}${fmtMoney(bias)}원)` : ''}</label>
               {learnedAdvRate != null && <span style={{ color: T.success }}>💡 수금 실적 기준 추천 선급률 {learnedAdvRate}%{(cfg.advRate == null || cfg.advRate === '') ? ' (적용 중)' : ''}</span>}
             </div>
-            {startBal === 0 && <div style={{ fontSize: 12, color: T.warning, marginBottom: S[3] }}>⚠ 법인통장 잔고를 입력하면 예측이 시작됩니다 (입력값은 자동 저장).</div>}
+            {startBal === 0 && <div style={{ fontSize: 12, color: T.caution, marginBottom: S[3] }}>⚠ 법인통장 잔고를 입력하면 예측이 시작됩니다 (입력값은 자동 저장).</div>}
             {(Number(cfg.balance) || 0) === 0 && startBal > 0 && <div style={{ fontSize: 11.5, color: T.textMute, marginBottom: S[3] }}>ℹ 잔고 미입력 — 경영회계 CMS의 통장잔고 <strong>{fmtMoney(startBal)}원</strong>(자금현황표 기준)을 시작점으로 사용 중. 최신 잔고를 입력하면 그 값이 우선합니다.</div>}
             <details className="no-print" style={{ marginBottom: S[3] }}>
               <summary style={{ fontSize: 12, fontWeight: 700, color: T.brand, cursor: 'pointer' }}>사업별 기간·선급금 비율 편집 (기간·비율 수정 시 예측 즉시 반영 · 기본 선급률 {cfg.advRate}%)</summary>
@@ -12588,7 +12661,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                       let line;
                       if (covered2) line = <span style={{ color: T.success }}>수금관리 등록분으로 반영 중 (이 카드 설정 무시)</span>;
                       else if (sched2.length > 0) line = <span style={{ color: '#7C5CBF', fontWeight: 700 }}>수동 회차 {sched2.filter(e => Number(e.amount) > 0).length}건 · 합계 {fmtMoney(sched2.reduce((a, e) => a + (Number(e.amount) || 0), 0))}원 (자동 선급·잔금 대체)</span>;
-                      else if (!pr2) line = <span style={{ color: T.warning }}>기간 미입력 — 예측에 반영 안 됨</span>;
+                      else if (!pr2) line = <span style={{ color: T.caution }}>기간 미입력 — 예측에 반영 안 됨</span>;
                       else {
                         const adv2 = advOf(p.id);   // ★ 엔진과 같은 함수를 쓴다 (cfg.advRate 직접 참조는 학습값 폴백을 놓친다)
                         const advAmt = Math.round(p.revenue * adv2), remAmt = Math.round(p.revenue * (1 - adv2));
@@ -12600,7 +12673,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                         <div style={{ marginTop: 6 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 10.5, color: T.ink, flexWrap: 'wrap' }}>
                             <div>{off ? <span style={{ color: T.textMute, textDecoration: 'line-through' }}>{line}</span> : line}</div>
-                            <label style={{ cursor: 'pointer', whiteSpace: 'nowrap', color: off ? T.danger : T.textMute, fontWeight: 600 }}>
+                            <label style={{ cursor: 'pointer', whiteSpace: 'nowrap', color: off ? T.alert : T.textMute, fontWeight: 600 }}>
                               <input type="checkbox" checked={!!off} onChange={ev => setCashCfg(prev => ({ ...prev, incomeOff: { ...(prev.incomeOff || {}), [p.id]: ev.target.checked } }))} style={{ verticalAlign: 'middle', marginRight: 3 }} />예측 제외{off ? ' 중' : ''}
                             </label>
                           </div>
@@ -12614,13 +12687,13 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                                   <select value={e.memo || '기성'} onChange={ev => upSched(sched2.map((x, j) => j === i ? { ...x, memo: ev.target.value } : x))} style={{ padding: '3px 4px', border: `1px solid ${T.border}`, borderRadius: 4, fontSize: 10.5, fontFamily: FONT }}>
                                     <option value="선급">선급</option><option value="기성">기성</option><option value="잔금">잔금</option>
                                   </select>
-                                  <button onClick={() => upSched(sched2.filter((_, j) => j !== i))} style={{ border: 'none', background: 'transparent', color: T.danger, cursor: 'pointer', fontSize: 12 }}>🗑</button>
+                                  <button onClick={() => upSched(sched2.filter((_, j) => j !== i))} style={{ border: 'none', background: 'transparent', color: T.alert, cursor: 'pointer', fontSize: 12 }}>🗑</button>
                                 </div>
                               ))}
                               <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
                                 <button onClick={() => upSched([...sched2, { month: '', amount: '', memo: sched2.length === 0 ? '선급' : '기성' }])} style={{ padding: '3px 8px', border: `1px solid #7C5CBF`, background: '#fff', color: '#7C5CBF', borderRadius: 4, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT }}>+ 회차 추가</button>
                                 {sched2.length > 0 && <button onClick={() => upSched([])} style={{ padding: '3px 8px', border: `1px solid ${T.border}`, background: '#fff', color: T.textMute, borderRadius: 4, fontSize: 10.5, cursor: 'pointer', fontFamily: FONT }}>자동 계산으로 되돌리기</button>}
-                                {sched2.length > 0 && (() => { const sum = sched2.reduce((a, e) => a + (Number(e.amount) || 0), 0); const tol = Math.max(10000, Math.round(p.revenue * 0.005)); const diff = Math.abs(sum - p.revenue); return diff > tol ? <span style={{ fontSize: 10, color: T.warning }}>합계 {fmtMoney(sum)} ≠ 계약 {fmtMoney(p.revenue)} (차이 {fmtMoney(diff)})</span> : <span style={{ fontSize: 10, color: T.success }}>✓ 합계 일치</span>; })()}
+                                {sched2.length > 0 && (() => { const sum = sched2.reduce((a, e) => a + (Number(e.amount) || 0), 0); const tol = Math.max(10000, Math.round(p.revenue * 0.005)); const diff = Math.abs(sum - p.revenue); return diff > tol ? <span style={{ fontSize: 10, color: T.caution }}>합계 {fmtMoney(sum)} ≠ 계약 {fmtMoney(p.revenue)} (차이 {fmtMoney(diff)})</span> : <span style={{ fontSize: 10, color: T.success }}>✓ 합계 일치</span>; })()}
                               </div>
                             </details>
                           )}
@@ -12682,20 +12755,20 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                   <input placeholder="2026.09" value={e.month || ''} onChange={ev => setCashCfg(prev => ({ ...prev, extraIncome: (prev.extraIncome || []).map((x, j) => j === i ? { ...x, month: ev.target.value } : x) }))} style={{ width: 90, padding: '4px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, fontFamily: FONT }} />
                   <input inputMode="numeric" placeholder="금액(원)" value={e.amount != null && e.amount !== '' ? fmtInput(e.amount) : ''} onChange={ev => setCashCfg(prev => ({ ...prev, extraIncome: (prev.extraIncome || []).map((x, j) => j === i ? { ...x, amount: parseInput(ev.target.value) } : x) }))} style={{ width: 130, padding: '4px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, fontFamily: FONT, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} />
                   <input placeholder="메모(예: 유지보수 수입)" value={e.memo || ''} onChange={ev => setCashCfg(prev => ({ ...prev, extraIncome: (prev.extraIncome || []).map((x, j) => j === i ? { ...x, memo: ev.target.value } : x) }))} style={{ flex: 1, padding: '4px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, minWidth: 0, fontFamily: FONT }} />
-                  <button onClick={() => setCashCfg(prev => ({ ...prev, extraIncome: (prev.extraIncome || []).filter((_, j) => j !== i) }))} style={{ border: 'none', background: 'transparent', color: T.danger, cursor: 'pointer', fontSize: 13 }}>🗑</button>
+                  <button onClick={() => setCashCfg(prev => ({ ...prev, extraIncome: (prev.extraIncome || []).filter((_, j) => j !== i) }))} style={{ border: 'none', background: 'transparent', color: T.alert, cursor: 'pointer', fontSize: 13 }}>🗑</button>
                 </div>
               ))}
               <Button variant="outline" size="sm" onClick={() => setCashCfg(prev => ({ ...prev, extraIncome: [...(prev.extraIncome || []), { month: '', amount: '', memo: '' }] }))}>+ 예정 수입 추가</Button>
             </details>
             <details className="no-print" open style={{ marginBottom: S[3] }}>
-              <summary style={{ fontSize: 12, fontWeight: 700, color: T.danger, cursor: 'pointer' }}>예정 지출 등록 (세금 납부 확정액·장비 구입·보증금 등 · 월·금액 직접 입력)</summary>
+              <summary style={{ fontSize: 12, fontWeight: 700, color: T.alert, cursor: 'pointer' }}>예정 지출 등록 (세금 납부 확정액·장비 구입·보증금 등 · 월·금액 직접 입력)</summary>
               <div style={{ fontSize: 11, color: T.textMute, margin: `4px 0 ${S[2]}px` }}>확정된 미래 지출을 등록하면 그 달 지출에 가산됩니다. 부가세·법인세는 고지서로 금액이 확정되면 여기에 등록하세요 (자동 추정은 기본 제외 상태).</div>
               {(cfg.extraExpense || []).map((e, i) => (
                 <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 5 }}>
                   <input placeholder="2026.10" value={e.month || ''} onChange={ev => setCashCfg(prev => ({ ...prev, extraExpense: (prev.extraExpense || []).map((x, j) => j === i ? { ...x, month: ev.target.value } : x) }))} style={{ width: 90, padding: '4px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, fontFamily: FONT }} />
                   <input inputMode="numeric" placeholder="금액(원)" value={e.amount != null && e.amount !== '' ? fmtInput(e.amount) : ''} onChange={ev => setCashCfg(prev => ({ ...prev, extraExpense: (prev.extraExpense || []).map((x, j) => j === i ? { ...x, amount: parseInput(ev.target.value) } : x) }))} style={{ width: 130, padding: '4px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, fontFamily: FONT, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} />
                   <input placeholder="메모(예: 2기 부가세 확정분)" value={e.memo || ''} onChange={ev => setCashCfg(prev => ({ ...prev, extraExpense: (prev.extraExpense || []).map((x, j) => j === i ? { ...x, memo: ev.target.value } : x) }))} style={{ flex: 1, padding: '4px 7px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, minWidth: 0, fontFamily: FONT }} />
-                  <button onClick={() => setCashCfg(prev => ({ ...prev, extraExpense: (prev.extraExpense || []).filter((_, j) => j !== i) }))} style={{ border: 'none', background: 'transparent', color: T.danger, cursor: 'pointer', fontSize: 13 }}>🗑</button>
+                  <button onClick={() => setCashCfg(prev => ({ ...prev, extraExpense: (prev.extraExpense || []).filter((_, j) => j !== i) }))} style={{ border: 'none', background: 'transparent', color: T.alert, cursor: 'pointer', fontSize: 13 }}>🗑</button>
                 </div>
               ))}
               <Button variant="outline" size="sm" onClick={() => setCashCfg(prev => ({ ...prev, extraExpense: [...(prev.extraExpense || []), { month: '', amount: '', memo: '' }] }))}>+ 예정 지출 추가</Button>
@@ -12706,9 +12779,9 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
               const nx = payrollCheck.next;
               const gap = nx.room, ok = nx.ok;
               return (
-                <div style={{ background: ok ? 'rgba(27,122,67,0.06)' : 'rgba(180,35,24,0.07)', border: `1px solid ${ok ? T.success : T.danger}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12.5, lineHeight: 1.8 }}>
-                  <strong style={{ color: ok ? T.success : T.danger }}>{ok ? '✅' : '🚨'} {nx.payFull} 급여일 지급 여력</strong> — 인출 직전 잔고 {fmtMoney(nx.bal)}원 − 필요액 {fmtMoney(nx.need)}원
-                  <span style={{ color: T.textMute, fontSize: 11 }}> ({nx.src})</span> = <strong style={{ color: ok ? T.success : T.danger }}>{fmtMoney(gap)}원</strong>{ok ? ' (지급 가능)' : ' — 수금 앞당기기·자금 확보 필요!'}
+                <div style={{ background: ok ? 'rgba(27,122,67,0.06)' : 'rgba(180,35,24,0.07)', border: `1px solid ${ok ? T.success : T.alert}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12.5, lineHeight: 1.8 }}>
+                  <strong style={{ color: ok ? T.success : T.alert }}>{ok ? '✅' : '🚨'} {nx.payFull} 급여일 지급 여력</strong> — 인출 직전 잔고 {fmtMoney(nx.bal)}원 − 필요액 {fmtMoney(nx.need)}원
+                  <span style={{ color: T.textMute, fontSize: 11 }}> ({nx.src})</span> = <strong style={{ color: ok ? T.success : T.alert }}>{fmtMoney(gap)}원</strong>{ok ? ' (지급 가능)' : ' — 수금 앞당기기·자금 확보 필요!'}
                   <br /><span style={{ fontSize: 11, color: T.textMute }}>
                     필요액은 임직원급여 + 작업자급여 + 4대보험 실제 인출 이력 기준입니다. 월 인건비(급여만)와는 다릅니다.
                   </span>
@@ -12717,8 +12790,8 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
             })()}
             {/* 위험 신호 */}
             {danger ? (
-              <div style={{ background: 'rgba(180,35,24,0.07)', border: `1px solid ${T.danger}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12.5 }}>
-                <strong style={{ color: T.danger }}>🚨 위험 신호</strong> — <strong>{danger.y}년 {danger.label}</strong> 잔고가 안전선 아래로 내려갑니다 (예상 {fmtMoney(danger.bal)}원). 최저점: {minRow.y}년 {minRow.label} {fmtMoney(minRow.bal)}원. 수금 앞당기기·지출 이연·단기 자금 확보를 검토하세요.
+              <div style={{ background: 'rgba(180,35,24,0.07)', border: `1px solid ${T.alert}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12.5 }}>
+                <strong style={{ color: T.alert }}>🚨 위험 신호</strong> — <strong>{danger.y}년 {danger.label}</strong> 잔고가 안전선 아래로 내려갑니다 (예상 {fmtMoney(danger.bal)}원). 최저점: {minRow.y}년 {minRow.label} {fmtMoney(minRow.bal)}원. 수금 앞당기기·지출 이연·단기 자금 확보를 검토하세요.
               </div>
             ) : (
               <div style={{ background: 'rgba(27,122,67,0.07)', border: `1px solid ${T.success}`, borderRadius: 8, padding: '10px 14px', marginBottom: S[3], fontSize: 12.5 }}>
@@ -12736,7 +12809,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 <div className="fc-full" style={{ height: 360, background: 'linear-gradient(180deg,#FBFCFE 0%,#EEF3FA 100%)', borderRadius: 14, padding: `${S[3]}px ${S[2]}px ${S[2]}px`, border: `1px solid ${T.border}`, boxShadow: 'inset 0 1px 0 #fff, 0 4px 16px rgba(21,35,63,0.08)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: `0 ${S[3]}px`, marginBottom: 2 }}>
                     <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, letterSpacing: '-0.01em' }}>자금 잔고 추이 <span style={{ fontSize: 10.5, fontWeight: 600, color: T.textMute }}>{rows.length ? `${rows[0].y}.${String(rows[0].m).padStart(2, '0')} ~ ${rows[rows.length - 1].y}.${String(rows[rows.length - 1].m).padStart(2, '0')} · ${rows.length}개월` : ''} · 급여일(10일) 기준 · 단위 백만원</span></span>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: belowSafe ? T.danger : T.success }}>최저 {minPt.name} {minPt.예측잔고.toLocaleString()}M {belowSafe ? '⚠ 안전선 이하' : '✓ 안전'}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: belowSafe ? T.alert : T.success }}>최저 {minPt.name} {minPt.예측잔고.toLocaleString()}M {belowSafe ? '⚠ 안전선 이하' : '✓ 안전'}</span>
                   </div>
                   <ResponsiveContainer width="100%" height="90%" minWidth={0}>
                     <ComposedChart data={chartData} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
@@ -12771,7 +12844,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                       <YAxis yAxisId="net" orientation="right" tick={{ fontSize: 9.5, fill: '#94A3B8' }} axisLine={false} tickLine={false} width={38} />
                       <Tooltip formatter={(v, n) => (v == null ? '-' : (n === '월 순증감' ? (v >= 0 ? '+' : '') : '') + v.toLocaleString() + '백만원')} contentStyle={{ fontSize: 12, borderRadius: 10, border: 'none', boxShadow: '0 8px 24px rgba(21,35,63,0.16)' }} />
                       <Legend wrapperStyle={{ fontSize: 11 }} iconType="plainline" />
-                      {safeM > 0 && <ReferenceLine yAxisId="bal" y={safeM} stroke={T.danger} strokeDasharray="5 4" strokeWidth={1.2} label={{ value: `안전선 ${safeM}M`, position: 'insideTopRight', fontSize: 10, fill: T.danger }} />}
+                      {safeM > 0 && <ReferenceLine yAxisId="bal" y={safeM} stroke={T.alert} strokeDasharray="5 4" strokeWidth={1.2} label={{ value: `안전선 ${safeM}M`, position: 'insideTopRight', fontSize: 10, fill: T.alert }} />}
                       {/* 월별 순증감 막대 (오른쪽 축) — 그 달 현금 들고남 */}
                       <Bar yAxisId="net" dataKey="순증감" name="월 순증감" barSize={16} radius={[3, 3, 0, 0]} isAnimationActive={false}>
                         {chartData.map((e, i) => <Cell key={i} fill={e.순증감 >= 0 ? 'url(#netPos)' : 'url(#netNeg)'} />)}
@@ -12782,7 +12855,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                       <Area yAxisId="bal" type="monotone" dataKey="예측(파이프라인)" name="🎯 수주 반영 시나리오" stroke="#10B981" strokeWidth={3} fill="url(#pipeFillHi)" dot={{ r: 3, fill: '#fff', stroke: '#10B981', strokeWidth: 2 }} activeDot={{ r: 6, strokeWidth: 2, stroke: '#fff' }} style={{ filter: 'url(#pipeGlow)' }} />
                       <Area yAxisId="bal" type="monotone" dataKey="예측잔고" name="예측 잔고(수주 미반영)" stroke="#6366F1" strokeWidth={2.2} strokeDasharray="5 3" fill="url(#balFill)" dot={{ r: 2.5, fill: '#fff', stroke: '#6366F1', strokeWidth: 1.5 }} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} />
                       {hasActual && <Line yAxisId="bal" type="monotone" dataKey="실제잔고" name="실제 잔고(확정)" stroke="#1E293B" strokeWidth={3.5} dot={{ r: 4, fill: '#fff', stroke: '#1E293B', strokeWidth: 2 }} activeDot={{ r: 6 }} connectNulls style={{ filter: 'url(#actGlow)' }} />}
-                      <ReferenceDot yAxisId="bal" x={minPt.name} y={minPt.예측잔고} r={6} fill={belowSafe ? T.danger : T.warning} stroke="#fff" strokeWidth={2} label={{ value: '최저점', position: 'bottom', fontSize: 9.5, fill: belowSafe ? T.danger : T.warning, fontWeight: 700 }} />
+                      <ReferenceDot yAxisId="bal" x={minPt.name} y={minPt.예측잔고} r={6} fill={belowSafe ? T.alert : T.caution} stroke="#fff" strokeWidth={2} label={{ value: '최저점', position: 'bottom', fontSize: 9.5, fill: belowSafe ? T.alert : T.caution, fontWeight: 700 }} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
@@ -12879,7 +12952,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                                         <div style={{ fontSize: 9.5, color: T.textMute, marginTop: 2 }}>{p.period}</div>
                                       </Td>
                                       <Td style={{ fontSize: 10, color: '#B8892B', fontWeight: 800, background: rowBg }}>계획</Td>
-                                      <Td align="center" style={{ fontSize: 10.5, fontWeight: 700, color: planSum === 100 ? T.success : planSum > 0 ? T.warning : T.textLight, background: rowBg }}>{planSum > 0 ? planSum + '%' : '-'}</Td>
+                                      <Td align="center" style={{ fontSize: 10.5, fontWeight: 700, color: planSum === 100 ? T.success : planSum > 0 ? T.caution : T.textLight, background: rowBg }}>{planSum > 0 ? planSum + '%' : '-'}</Td>
                                       {months.map((mo, k) => cell(pg[mo.key], e => setPlan(p.id, mo.key, e.target.value), k >= st && k <= en, 'plan'))}
                                     </tr>
                                     <tr>
@@ -12982,7 +13055,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                         <Bar dataKey="수금등록" stackId="a" fill="url(#incColl)" />
                         <Bar dataKey="선급·잔금(자동)" stackId="a" fill="url(#incSch)" />
                         <Bar dataKey="수동회차(기성)" stackId="a" fill="url(#incMan)" />
-                        <Bar dataKey="기타예정" stackId="a" fill={T.warning} />
+                        <Bar dataKey="기타예정" stackId="a" fill={T.caution} />
                         <Bar dataKey="수주예정(파이프라인)" stackId="a" fill="#FDBA74" radius={[3, 3, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -13006,10 +13079,10 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                         <Td align="right" mono style={{ color: r.inc > 0 ? T.success : T.textLight }}>{r.inc ? fmtMoney(r.inc) : '-'}</Td>
                         <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(r.expLabor)}</Td>
                         <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(r.expOpex)}</Td>
-                        <Td align="right" mono style={{ color: r.expTax > 0 ? T.warning : T.textLight }}>{r.expTax > 0 ? fmtMoney(r.expTax) : '-'}</Td>
-                        <Td align="right" mono style={{ color: r.expEtc > 0 ? T.warning : T.textLight }}>{r.expEtc > 0 ? fmtMoney(r.expEtc) : '-'}</Td>
+                        <Td align="right" mono style={{ color: r.expTax > 0 ? T.caution : T.textLight }}>{r.expTax > 0 ? fmtMoney(r.expTax) : '-'}</Td>
+                        <Td align="right" mono style={{ color: r.expEtc > 0 ? T.caution : T.textLight }}>{r.expEtc > 0 ? fmtMoney(r.expEtc) : '-'}</Td>
                         <Td align="right" mono>{fmtMoney(r.exp)}</Td>
-                        <Td align="right" mono><strong style={{ color: r.balS < 0 ? T.danger : r.balS < safety ? T.warning : T.ink }}>{fmtMoney(r.balS)}</strong></Td>
+                        <Td align="right" mono><strong style={{ color: r.balS < 0 ? T.alert : r.balS < safety ? T.caution : T.ink }}>{fmtMoney(r.balS)}</strong></Td>
                         <Td align="right" mono style={{ color: T.textLight }}>{fmtMoney(r.bal)}</Td>
                         <Td style={{ fontSize: 10.5, color: T.textMute, lineHeight: 1.5 }}>
                           {r.notes}
@@ -13031,7 +13104,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 ['수금 관리 등록분', r.incColl, T.success],
                 ['진행 사업 선급·잔금(자동)', r.incSched, T.brand],
                 ['수동 회차(기성 등)', r.incManual, '#7C5CBF'],
-                ['기타 예정 수입', r.incExtra, T.warning],
+                ['기타 예정 수입', r.incExtra, T.caution],
               ].filter(x => x[1] > 0);
               const pipeInc = r.incPipe || 0;
               const row = (label, val, color, indent) => (
@@ -13051,10 +13124,10 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                     {/* 잔고 흐름 요약 — 수주예정(파이프라인) 반영 예측잔고를 기본 강조 */}
                     <div style={{ background: 'linear-gradient(135deg,#EAF2FC,#F5F9FF)', borderRadius: 10, padding: S[4], marginBottom: S[4] }}>
                       <div style={{ fontSize: 12, color: T.textMute }}>전월 예측잔고 {fmtMoney(r.prevBalS != null ? r.prevBalS : r.prevBal)}원에서 시작</div>
-                      <div style={{ fontSize: 13, margin: '6px 0', color: T.ink }}>+ 수입(수주예정 반영) <strong style={{ color: T.success }}>{fmtMoney(r.incS != null ? r.incS : r.inc)}</strong> − 지출 <strong style={{ color: T.danger }}>{fmtMoney(r.exp)}</strong></div>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: r.balS < safety ? (r.balS < 0 ? T.danger : T.warning) : T.brand }}>= 예측 잔고 {fmtMoney(r.balS)}원</div>
+                      <div style={{ fontSize: 13, margin: '6px 0', color: T.ink }}>+ 수입(수주예정 반영) <strong style={{ color: T.success }}>{fmtMoney(r.incS != null ? r.incS : r.inc)}</strong> − 지출 <strong style={{ color: T.alert }}>{fmtMoney(r.exp)}</strong></div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: r.balS < safety ? (r.balS < 0 ? T.alert : T.caution) : T.brand }}>= 예측 잔고 {fmtMoney(r.balS)}원</div>
                       <div style={{ fontSize: 11.5, color: T.textMute, marginTop: 2 }}>수주예정(파이프라인) 반영 기준</div>
-                      {r.balS < safety && <div style={{ fontSize: 11.5, color: T.danger, marginTop: 4 }}>⚠ 안전선({fmtMoney(safety)}원) 이하 — 자금 확보 검토 필요</div>}
+                      {r.balS < safety && <div style={{ fontSize: 11.5, color: T.alert, marginTop: 4 }}>⚠ 안전선({fmtMoney(safety)}원) 이하 — 자금 확보 검토 필요</div>}
                       <div style={{ fontSize: 12, color: T.textMute, marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${T.border}` }}>
                         확정 수입만(수주예정 제외) 기준 통장잔고: <strong style={{ color: T.textMute }}>{fmtMoney(r.bal)}원</strong>
                       </div>
@@ -13070,12 +13143,12 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
 
                     {/* 지출 구성 */}
                     <div style={{ marginBottom: S[4] }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: T.danger, marginBottom: 4, borderBottom: `1px solid ${T.divider}`, paddingBottom: 3 }}>💸 지출 {fmtMoney(r.exp)}원</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.alert, marginBottom: 4, borderBottom: `1px solid ${T.divider}`, paddingBottom: 3 }}>💸 지출 {fmtMoney(r.exp)}원</div>
                       {row('인건비 (정규직 + 계약직)', r.expLabor, T.ink, true)}
                       {row('운영경비 (고정 + 프로젝트성)', r.expOpex, T.ink, true)}
                       <div style={{ fontSize: 10.5, color: T.textMute, paddingLeft: 26, marginTop: -2, marginBottom: 3 }}>= 고정 {fmtMoney(r.expFixed)} + 프로젝트성 {fmtMoney(r.expProj)} <span>(활성사업 {Math.round(r.activeRatio * 100)}%)</span></div>
-                      {r.expTax > 0 && row('세금 (부가세/법인세)', r.expTax, T.warning, true)}
-                      {r.expEtc > 0 && row('예정 지출 (등록분)', r.expEtc, T.warning, true)}
+                      {r.expTax > 0 && row('세금 (부가세/법인세)', r.expTax, T.caution, true)}
+                      {r.expEtc > 0 && row('예정 지출 (등록분)', r.expEtc, T.caution, true)}
                     </div>
 
                     {/* 수주예정 상세 */}
@@ -13137,25 +13210,25 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
         return (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: S[3], marginBottom: S[4] }}>
             {heroCard('linear-gradient(135deg,#EAF2FC,#F5F9FF)', T.brand, '계약·수주 매출', eok(T0.revenue) + '원', `${rows.length}개 사업${targets.revenue > 0 ? ` · 목표 ${revAch.toFixed(0)}%` : ''}`)}
-            {heroCard(full >= 0 ? 'linear-gradient(135deg,#E9F6EE,#F4FBF6)' : 'linear-gradient(135deg,#FCEBEA,#FFF5F4)', full >= 0 ? T.success : T.danger, '완전영업이익', eok(full) + '원',
-              null, <div style={{ position: 'absolute', top: S[3], right: S[4] }}>{gauge(Math.max(0, marginFull), full >= 0 ? T.success : T.danger)}</div>)}
+            {heroCard(full >= 0 ? 'linear-gradient(135deg,#E9F6EE,#F4FBF6)' : 'linear-gradient(135deg,#FCEBEA,#FFF5F4)', full >= 0 ? T.success : T.alert, '완전영업이익', eok(full) + '원',
+              null, <div style={{ position: 'absolute', top: S[3], right: S[4] }}>{gauge(Math.max(0, marginFull), full >= 0 ? T.success : T.alert)}</div>)}
             {heroCard('linear-gradient(135deg,#FBF0E4,#FEF9F3)', T.gold || '#B8892B', '인건비율', laborRev.toFixed(0) + '%',
-              `인건비 ${eok(T0.labor)}원`, <div style={{ position: 'absolute', top: S[3], right: S[4] }}>{gauge(laborRev, laborRev >= 70 ? T.warning : T.gold || '#B8892B')}</div>)}
-            {heroCard(sev.length ? 'linear-gradient(135deg,#FCEBEA,#FFF5F4)' : 'linear-gradient(135deg,#EEF2F7,#F7FAFD)', sev.length ? T.danger : T.textMute, '위험요소', `${sev.length + wrn.length}건`, `심각 ${sev.length} · 주의 ${wrn.length}`)}
+              `인건비 ${eok(T0.labor)}원`, <div style={{ position: 'absolute', top: S[3], right: S[4] }}>{gauge(laborRev, laborRev >= 70 ? T.caution : T.gold || '#B8892B')}</div>)}
+            {heroCard(sev.length ? 'linear-gradient(135deg,#FCEBEA,#FFF5F4)' : 'linear-gradient(135deg,#EEF2F7,#F7FAFD)', sev.length ? T.alert : T.textMute, '위험요소', `${sev.length + wrn.length}건`, `심각 ${sev.length} · 주의 ${wrn.length}`)}
           </div>
         );
       })()}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: S[3], marginBottom: S[3] }}>
         <KPI icon={TrendingUp} label="계약·수주 매출" value={fmtMoney(T0.revenue)} unit="원" color={T.brand} sub={targets.revenue > 0 ? `연간목표 대비 ${revAch.toFixed(0)}%` : `${rows.length}개 사업`} />
         <KPI icon={Layers} label="직접원가" value={fmtMoney(T0.cost)} unit="원" color={T.text} sub={`원가율 ${costRev.toFixed(0)}%`} />
-        <KPI icon={Wallet} label="공헌이익" value={fmtMoney(contrib)} unit="원" color={contrib >= 0 ? T.success : T.danger} sub={`공헌이익률 ${marginContrib.toFixed(1)}%`} />
-        <KPI icon={Award} label="완전영업이익" value={fmtMoney(full)} unit="원" color={full >= 0 ? T.success : T.danger} sub={`영업이익률 ${marginFull.toFixed(1)}% · 공통비 차감 후`} />
+        <KPI icon={Wallet} label="공헌이익" value={fmtMoney(contrib)} unit="원" color={contrib >= 0 ? T.success : T.alert} sub={`공헌이익률 ${marginContrib.toFixed(1)}%`} />
+        <KPI icon={Award} label="완전영업이익" value={fmtMoney(full)} unit="원" color={full >= 0 ? T.success : T.alert} sub={`영업이익률 ${marginFull.toFixed(1)}% · 공통비 차감 후`} />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: S[3] }}>
         <KPI icon={Users} label="인건비 계" value={fmtMoney(T0.labor)} unit="원" sub={`작업자 ${fmtMoney(T0.worker)} · 관리자 ${fmtMoney(T0.mgr)}`} />
-        <KPI icon={Percent} label="인건비율" value={laborRev.toFixed(0)} unit="%" sub="매출 대비 인건비" color={laborRev >= 70 ? T.warning : T.text} />
-        <KPI icon={Building2} label="공통비(간접비)" value={fmtMoney(pool)} unit="원" sub={`매출 대비 ${poolRev.toFixed(0)}%`} color={T.warning} />
-        <KPI icon={ShieldAlert} label="위험요소" value={`${sev.length}·${wrn.length}`} unit="건" sub="심각 · 주의" color={sev.length ? T.danger : wrn.length ? T.warning : T.success} />
+        <KPI icon={Percent} label="인건비율" value={laborRev.toFixed(0)} unit="%" sub="매출 대비 인건비" color={laborRev >= 70 ? T.caution : T.text} />
+        <KPI icon={Building2} label="공통비(간접비)" value={fmtMoney(pool)} unit="원" sub={`매출 대비 ${poolRev.toFixed(0)}%`} color={T.caution} />
+        <KPI icon={ShieldAlert} label="위험요소" value={`${sev.length}·${wrn.length}`} unit="건" sub="심각 · 주의" color={sev.length ? T.alert : wrn.length ? T.caution : T.success} />
       </div>
       <Note>{`${refLabel} 누적 공헌이익률 ${marginContrib.toFixed(1)}%, 완전영업이익률 ${marginFull.toFixed(1)}%. 수익 사업 ${profitable}건·손실 사업 ${lossmaking}건이며, ${laborRev >= 70 ? '인건비 비중이 높아 가동률 관리가 이익의 관건' : '원가 구조는 안정적'}입니다.${revAch != null ? ` 연간 매출목표 달성률은 ${revAch.toFixed(0)}%(진도기준 ${(activeMonths / 12 * 100).toFixed(0)}%)입니다.` : ''}`}</Note>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: S[3], marginTop: S[3] }}>
@@ -13167,7 +13240,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
           const dRate = dRev > 0 ? dPro / dRev * 100 : null, wRate = wRec > 0 ? wPoc / wRec * 100 : null;
           return (<>
             <KPI icon={CheckCircle2} label={`완료(정산확정) ${done.length}건`} value={dRate != null ? dRate.toFixed(1) : '—'} unit="%" color={T.success} sub={done.length ? `확정 매출 ${fmtMoney(dRev)} · 공헌이익 ${fmtMoney(dPro)}` : '정산 완료 사업 없음'} />
-            <KPI icon={Activity} label={`진행중(예상) ${wip.length}건`} value={wRate != null ? wRate.toFixed(1) : '—'} unit="%" color={T.warning} sub={`진행기준 추정 · 인식매출 ${fmtMoney(wRec)}`} />
+            <KPI icon={Activity} label={`진행중(예상) ${wip.length}건`} value={wRate != null ? wRate.toFixed(1) : '—'} unit="%" color={T.caution} sub={`진행기준 추정 · 인식매출 ${fmtMoney(wRec)}`} />
           </>);
         })()}
       </div>
@@ -13187,7 +13260,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 <Tooltip formatter={(v) => won(v)} contentStyle={{ fontSize: 12, fontFamily: FONT }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 <Bar dataKey="매출" fill={T.brand} radius={[3, 3, 0, 0]} />
-                <Bar dataKey="원가" fill={T.warning} radius={[3, 3, 0, 0]} />
+                <Bar dataKey="원가" fill={T.caution} radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -13207,12 +13280,12 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
               <ResponsiveContainer width={90} height={90}>
                 <PieChart>
                   <Pie data={[{ v: topShare }, { v: 100 - topShare }]} dataKey="v" innerRadius={28} outerRadius={42} startAngle={90} endAngle={-270}>
-                    <Cell fill={topShare > 40 ? T.warning : T.brand} /><Cell fill="#EEF2F7" />
+                    <Cell fill={topShare > 40 ? T.caution : T.brand} /><Cell fill="#EEF2F7" />
                   </Pie>
                 </PieChart>
               </ResponsiveContainer>
               <div>
-                <div style={{ fontSize: 26, fontWeight: 800, color: topShare > 40 ? T.warning : T.ink }}>{topShare.toFixed(0)}%</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: topShare > 40 ? T.caution : T.ink }}>{topShare.toFixed(0)}%</div>
                 <div style={{ fontSize: 11.5, color: T.textMute }}>최대 사업 비중</div>
                 <div style={{ fontSize: 11, color: T.textMute, marginTop: 2, maxWidth: 130 }}>{byRev[0] ? byRev[0].name : '-'}</div>
               </div>
@@ -13241,17 +13314,17 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 <Td align="right" mono>{fmtMoney(o.revenue)}</Td>
                 <Td align="right" mono>{fmtMoney(o.labor)}</Td>
                 <Td align="right" mono>{fmtMoney(o.overhead)}</Td>
-                <Td align="right" mono style={{ color: o.contrib >= 0 ? T.ink : T.danger }}>{fmtMoney(o.contrib)}</Td>
-                <Td align="right" mono style={{ color: T.warning }}>{o.alloc ? '-' + fmtMoney(o.alloc) : '0'}</Td>
-                <Td align="right" mono><strong style={{ color: o.full >= 0 ? T.success : T.danger }}>{fmtMoney(o.full)}</strong></Td>
-                <Td align="right" mono style={{ color: o.fullMargin >= 10 ? T.success : o.fullMargin >= 0 ? T.warning : T.danger }}>{o.fullMargin.toFixed(0)}%</Td>
+                <Td align="right" mono style={{ color: o.contrib >= 0 ? T.ink : T.alert }}>{fmtMoney(o.contrib)}</Td>
+                <Td align="right" mono style={{ color: T.caution }}>{o.alloc ? '-' + fmtMoney(o.alloc) : '0'}</Td>
+                <Td align="right" mono><strong style={{ color: o.full >= 0 ? T.success : T.alert }}>{fmtMoney(o.full)}</strong></Td>
+                <Td align="right" mono style={{ color: o.fullMargin >= 10 ? T.success : o.fullMargin >= 0 ? T.caution : T.alert }}>{o.fullMargin.toFixed(0)}%</Td>
               </tr>
             ))}
             <tr style={{ background: T.surfaceAlt }}>
               <Td><strong>합계</strong></Td><Td align="center"><strong>{rows.length}</strong></Td><Td align="center"><strong>{N}명</strong></Td>
               <Td align="right" mono><strong>{fmtMoney(T0.revenue)}</strong></Td><Td align="right" mono><strong>{fmtMoney(T0.labor)}</strong></Td>
               <Td align="right" mono><strong>{fmtMoney(T0.overhead)}</strong></Td><Td align="right" mono><strong>{fmtMoney(contrib)}</strong></Td>
-              <Td align="right" mono><strong>-{fmtMoney(pool)}</strong></Td><Td align="right" mono><strong style={{ color: full >= 0 ? T.success : T.danger }}>{fmtMoney(full)}</strong></Td>
+              <Td align="right" mono><strong>-{fmtMoney(pool)}</strong></Td><Td align="right" mono><strong style={{ color: full >= 0 ? T.success : T.alert }}>{fmtMoney(full)}</strong></Td>
               <Td align="right" mono><strong>{marginFull.toFixed(0)}%</strong></Td>
             </tr>
           </tbody>
@@ -13302,7 +13375,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 <Tooltip formatter={(v) => won(v)} contentStyle={{ fontSize: 12, fontFamily: FONT }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 <Bar dataKey="직접원가" fill={T.brand} radius={[3, 3, 0, 0]} />
-                <Line dataKey="공통비" stroke={T.warning} strokeWidth={2} dot={{ r: 3 }} />
+                <Line dataKey="공통비" stroke={T.caution} strokeWidth={2} dot={{ r: 3 }} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -13314,9 +13387,9 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
       <H n="5" icon={Activity}>인당 생산성 (Per-capita)</H>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: S[3] }}>
         <KPI icon={TrendingUp} label="1인당 매출" value={fmtMoney(perRev)} unit="원" color={T.brand} sub={`월 환산 ${fmtMoney(monthlyPerRev)}`} />
-        <KPI icon={Wallet} label="1인당 공헌이익" value={fmtMoney(perContrib)} unit="원" color={perContrib >= 0 ? T.success : T.danger} sub={`1인당 완전이익 ${fmtMoney(perFull)}`} />
+        <KPI icon={Wallet} label="1인당 공헌이익" value={fmtMoney(perContrib)} unit="원" color={perContrib >= 0 ? T.success : T.alert} sub={`1인당 완전이익 ${fmtMoney(perFull)}`} />
         <KPI icon={Users} label="1인당 인건비" value={fmtMoney(perLabor)} unit="원" sub={`인력 ${N}명 기준(정규직)`} />
-        <KPI icon={Percent} label="노동생산성" value={valueAddPerLabor.toFixed(2)} unit="배" color={valueAddPerLabor >= 1.5 ? T.success : valueAddPerLabor >= 1.2 ? T.warning : T.danger} sub={`인건비 1원당 공헌이익 · 분배율 ${laborShare.toFixed(0)}%`} />
+        <KPI icon={Percent} label="노동생산성" value={valueAddPerLabor.toFixed(2)} unit="배" color={valueAddPerLabor >= 1.5 ? T.success : valueAddPerLabor >= 1.2 ? T.caution : T.alert} sub={`인건비 1원당 공헌이익 · 분배율 ${laborShare.toFixed(0)}%`} />
       </div>
       <Note>{`인력 ${N}명 기준 1인당 매출 ${won(perRev)}, 1인당 공헌이익 ${won(perContrib)}입니다. 인건비 1원당 ${valueAddPerLabor.toFixed(2)}원의 공헌이익을 창출했으며(1.0 미만이면 인건비가 창출가치를 초과), ${valueAddPerLabor >= 1.5 ? '생산성이 양호' : valueAddPerLabor >= 1.2 ? '보통 수준이나 개선 여지' : '생산성이 낮아 가동률 제고가 시급'}합니다. 노동소득분배율 ${laborShare.toFixed(0)}%. (인원은 정규직 기준이며 계약직 인건비는 원가에 포함)`}</Note>
 
@@ -13366,13 +13439,13 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 <Td align="center">{e.cnt}</Td>
                 <Td align="right" mono>{fmtMoney(e.labor)}</Td>
                 <Td align="right" mono>{fmtMoney(e.rev)}</Td>
-                <Td align="right" mono style={{ color: e.net >= 0 ? T.ink : T.danger }}>{fmtMoney(e.net)}</Td>
-                <Td align="right" mono style={{ color: hasLedger ? (e.newOrder > 0 ? T.success : T.danger) : T.textLight }}>{hasLedger ? fmtMoney(e.newOrder) : '-'}</Td>
-                <Td align="right" mono style={{ color: e.card > 0 ? T.warning : T.textLight }}>{hasLedger ? fmtMoney(e.card) : '-'}</Td>
-                <Td align="right" mono><strong style={{ color: e.total >= 0 ? T.success : T.danger }}>{fmtMoney(e.total)}</strong></Td>
+                <Td align="right" mono style={{ color: e.net >= 0 ? T.ink : T.alert }}>{fmtMoney(e.net)}</Td>
+                <Td align="right" mono style={{ color: hasLedger ? (e.newOrder > 0 ? T.success : T.alert) : T.textLight }}>{hasLedger ? fmtMoney(e.newOrder) : '-'}</Td>
+                <Td align="right" mono style={{ color: e.card > 0 ? T.caution : T.textLight }}>{hasLedger ? fmtMoney(e.card) : '-'}</Td>
+                <Td align="right" mono><strong style={{ color: e.total >= 0 ? T.success : T.alert }}>{fmtMoney(e.total)}</strong></Td>
                 <Td align="center">{e.score != null ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                    <Badge color={e.score >= 80 ? T.success : e.score >= 70 ? T.warning : T.danger} size="sm">{e.score}</Badge>
+                    <Badge color={e.score >= 80 ? T.success : e.score >= 70 ? T.caution : T.alert} size="sm">{e.score}</Badge>
                     {(e.track === 'support' || e.track === 'sales' || (e.hasBid && e.track !== 'sales') || e.evBonus > 0) && (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
                         {e.track === 'support' && <span title={'비매출 지원트랙: 전사성과40+MBO60' + (e.mbo != null ? ' (MBO ' + e.mbo + ')' : ' · MBO 미입력')} style={{ fontSize: 9, color: '#7C3AED', fontWeight: 700 }}>지원</span>}
@@ -13386,7 +13459,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 {canEditLedger && <Td align="center">
                   <span style={{ display: 'inline-flex', gap: 4 }}>
                     <button title="원장 수정 (신규수주·카드)" onClick={() => setLedgerForm({ name: e.name, empId: e.empId, card: e.card || 0, newOrder: e.newOrder || 0 })} style={{ padding: 3, background: 'transparent', border: 'none', cursor: 'pointer', color: T.textMute }}><Pencil size={13} /></button>
-                    <button title="원장에서 삭제 (신규수주·카드 기록 제거 — 사업 참여는 유지)" onClick={() => removeLedger(e)} style={{ padding: 3, background: 'transparent', border: 'none', cursor: 'pointer', color: T.danger }}><Trash2 size={13} /></button>
+                    <button title="원장에서 삭제 (신규수주·카드 기록 제거 — 사업 참여는 유지)" onClick={() => removeLedger(e)} style={{ padding: 3, background: 'transparent', border: 'none', cursor: 'pointer', color: T.alert }}><Trash2 size={13} /></button>
                   </span>
                 </Td>}
               </tr>
@@ -13416,9 +13489,9 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                       <Td align="center"><Badge color={T.textMute} size="sm">{STATUS_LABEL[e.status] || '-'}</Badge></Td>
                       <Td align="right" mono>{fmtMoney(base)}</Td>
                       <Td align="center">{e.cnt}</Td>
-                      <Td align="right" mono style={{ color: e.net >= 0 ? T.ink : T.danger }}>{fmtMoney(e.net)}</Td>
-                      <Td align="right" mono style={{ color: hasLedger ? (e.newOrder > 0 ? T.success : T.danger) : T.textLight }}>{hasLedger ? fmtMoney(e.newOrder) : '-'}</Td>
-                      <Td align="center">{e.score != null ? <Badge color={e.score >= 80 ? T.success : e.score >= 70 ? T.warning : T.danger} size="sm">{e.score}</Badge> : <span style={{ color: T.textLight }}>미참여</span>}</Td>
+                      <Td align="right" mono style={{ color: e.net >= 0 ? T.ink : T.alert }}>{fmtMoney(e.net)}</Td>
+                      <Td align="right" mono style={{ color: hasLedger ? (e.newOrder > 0 ? T.success : T.alert) : T.textLight }}>{hasLedger ? fmtMoney(e.newOrder) : '-'}</Td>
+                      <Td align="center">{e.score != null ? <Badge color={e.score >= 80 ? T.success : e.score >= 70 ? T.caution : T.alert} size="sm">{e.score}</Badge> : <span style={{ color: T.textLight }}>미참여</span>}</Td>
                     </tr>
                   );
                 })}
@@ -13446,7 +13519,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                     <Td style={{ fontSize: 11, color: T.textMute }}>{shortName(e.dept)}</Td>
                     <Td align="center" mono>{e.company}</Td>
                     <Td align="center" mono>{e.mbo != null ? e.mbo : <span style={{ color: T.textLight }}>미입력</span>}</Td>
-                    <Td align="center"><Badge color={e.score >= 80 ? T.success : e.score >= 70 ? T.warning : T.danger} size="sm">{e.score}</Badge></Td>
+                    <Td align="center"><Badge color={e.score >= 80 ? T.success : e.score >= 70 ? T.caution : T.alert} size="sm">{e.score}</Badge></Td>
                   </tr>
                 ))}
               </tbody>
@@ -13468,7 +13541,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
           {/* 요약 카드 3개 */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: S[3], marginTop: S[3] }}>
             <div style={{ background: T.surfaceAlt, borderRadius: 8, padding: S[3], textAlign: 'center' }}>
-              <div style={{ fontSize: 22, fontWeight: 800, color: avgUtil >= 80 ? T.success : avgUtil >= 60 ? T.warning : T.danger }}>{avgUtil}%</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: avgUtil >= 80 ? T.success : avgUtil >= 60 ? T.caution : T.alert }}>{avgUtil}%</div>
               <div style={{ fontSize: 11, color: T.textMute }}>평균 가동률</div>
             </div>
             <div style={{ background: T.surfaceAlt, borderRadius: 8, padding: S[3], textAlign: 'center' }}>
@@ -13476,11 +13549,11 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
               <div style={{ fontSize: 11, color: T.textMute }}>고가동(90%↑)</div>
             </div>
             <div style={{ background: lowUtil > 0 ? 'rgba(180,35,24,0.06)' : T.surfaceAlt, borderRadius: 8, padding: S[3], textAlign: 'center' }}>
-              <div style={{ fontSize: 22, fontWeight: 800, color: lowUtil > 0 ? T.danger : T.textMute }}>{lowUtil}<span style={{ fontSize: 12, fontWeight: 600 }}>명</span></div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: lowUtil > 0 ? T.alert : T.textMute }}>{lowUtil}<span style={{ fontSize: 12, fontWeight: 600 }}>명</span></div>
               <div style={{ fontSize: 11, color: T.textMute }}>저가동(60%↓)</div>
             </div>
           </div>
-          {lowUtil > 0 && <div style={{ fontSize: 12, color: T.warning, marginTop: S[2] }}>저가동 {lowUtil}명 — 급여의 상당 부분이 사업에 배분되지 않고 공통비로 흡수되고 있습니다.</div>}
+          {lowUtil > 0 && <div style={{ fontSize: 12, color: T.caution, marginTop: S[2] }}>저가동 {lowUtil}명 — 급여의 상당 부분이 사업에 배분되지 않고 공통비로 흡수되고 있습니다.</div>}
           <details className="no-print" style={{ marginTop: S[3] }}>
             <summary style={{ fontSize: 12, fontWeight: 700, color: T.brand, cursor: 'pointer' }}>직원별 상세 펼치기 ({utilRows.length}명)</summary>
             <div style={{ overflow: 'auto', marginTop: S[2] }}>
@@ -13496,7 +13569,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                       <Td align="center" mono>{r.cnt}</Td>
                       <Td align="right" mono>{fmtMoney(r.lab)}</Td>
                       <Td align="right" mono style={{ color: T.textMute }}>{fmtMoney(r.cap)}</Td>
-                      <Td align="center">{r.util == null ? '-' : <Badge color={r.util >= 90 ? T.success : r.util >= 60 ? T.warning : T.danger} size="sm">{r.util.toFixed(0)}%</Badge>}</Td>
+                      <Td align="center">{r.util == null ? '-' : <Badge color={r.util >= 90 ? T.success : r.util >= 60 ? T.caution : T.alert} size="sm">{r.util.toFixed(0)}%</Badge>}</Td>
                     </tr>
                   ))}
                 </tbody>
@@ -13561,14 +13634,14 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                   <Td align="right" mono>{fmtMoney(r.m.revenue)}</Td>
                   <Td align="right" mono>{fmtMoney(r.m.labor)}</Td>
                   <Td align="right" mono>{fmtMoney(r.m.overhead)}</Td>
-                  <Td align="right" mono style={{ color: r.m.profit >= 0 ? T.ink : T.danger }}>{fmtMoney(r.m.profit)}</Td>
-                  <Td align="right" mono style={{ color: T.warning }}>{alloc ? '-' + fmtMoney(alloc) : '0'}</Td>
-                  <Td align="right" mono><strong style={{ color: fp >= 0 ? T.success : T.danger }}>{fmtMoney(fp)}</strong></Td>
+                  <Td align="right" mono style={{ color: r.m.profit >= 0 ? T.ink : T.alert }}>{fmtMoney(r.m.profit)}</Td>
+                  <Td align="right" mono style={{ color: T.caution }}>{alloc ? '-' + fmtMoney(alloc) : '0'}</Td>
+                  <Td align="right" mono><strong style={{ color: fp >= 0 ? T.success : T.alert }}>{fmtMoney(fp)}</strong></Td>
                   <Td align="center" style={{ fontSize: 11, color: T.textMute }}>{r.m.progress != null ? Math.round(Math.min(r.m.progress, 1) * 100) + '%' : '-'}</Td>
-                  <Td align="right" mono style={{ color: r.m.rate == null ? T.textLight : r.m.rate >= 10 ? T.success : r.m.rate >= 0 ? T.warning : T.danger }}>{r.m.rate != null ? r.m.rate.toFixed(0) + '%' : '-'}</Td>
-                  <Td align="right" mono style={{ color: r.m.pocRate == null ? T.textLight : r.m.pocRate >= 10 ? T.success : r.m.pocRate >= 0 ? T.warning : T.danger }}><strong>{r.m.pocRate != null ? r.m.pocRate.toFixed(0) + '%' : '-'}</strong></Td>
+                  <Td align="right" mono style={{ color: r.m.rate == null ? T.textLight : r.m.rate >= 10 ? T.success : r.m.rate >= 0 ? T.caution : T.alert }}>{r.m.rate != null ? r.m.rate.toFixed(0) + '%' : '-'}</Td>
+                  <Td align="right" mono style={{ color: r.m.pocRate == null ? T.textLight : r.m.pocRate >= 10 ? T.success : r.m.pocRate >= 0 ? T.caution : T.alert }}><strong>{r.m.pocRate != null ? r.m.pocRate.toFixed(0) + '%' : '-'}</strong></Td>
                   <Td align="center">{r.m.grade ? <GradeBadge grade={r.m.grade} size="sm" /> : '-'}</Td>
-                  <Td align="center">{r.diag.status === 'alert' ? <Badge color={T.danger} size="sm">위험</Badge> : r.diag.status === 'warn' ? <Badge color={T.warning} size="sm">주의</Badge> : <Badge color={T.success} size="sm">양호</Badge>}</Td>
+                  <Td align="center">{r.diag.status === 'alert' ? <Badge color={T.alert} size="sm">위험</Badge> : r.diag.status === 'warn' ? <Badge color={T.caution} size="sm">주의</Badge> : <Badge color={T.success} size="sm">양호</Badge>}</Td>
                 </tr>
               );
             })}
@@ -13576,7 +13649,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
               <Td><strong>합계</strong></Td><Td></Td>
               <Td align="right" mono><strong>{fmtMoney(T0.revenue)}</strong></Td><Td align="right" mono><strong>{fmtMoney(T0.labor)}</strong></Td>
               <Td align="right" mono><strong>{fmtMoney(T0.overhead)}</strong></Td><Td align="right" mono><strong>{fmtMoney(contrib)}</strong></Td>
-              <Td align="right" mono><strong>-{fmtMoney(pool)}</strong></Td><Td align="right" mono><strong style={{ color: full >= 0 ? T.success : T.danger }}>{fmtMoney(full)}</strong></Td>
+              <Td align="right" mono><strong>-{fmtMoney(pool)}</strong></Td><Td align="right" mono><strong style={{ color: full >= 0 ? T.success : T.alert }}>{fmtMoney(full)}</strong></Td>
               <Td></Td>
               <Td align="right" mono><strong>{marginFull.toFixed(0)}%</strong></Td>
               <Td align="right" mono><strong>{(() => { const rt = byRev.reduce((a, r) => a + (r.m.recognizedRevenue || 0), 0); const pp = byRev.reduce((a, r) => a + (r.m.pocProfit || 0), 0); return rt > 0 ? (pp / rt * 100).toFixed(0) + '%' : '-'; })()}</strong></Td>
@@ -13594,7 +13667,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
               <thead><tr style={{ background: T.surfaceAlt }}><Th>사업</Th><Th align="right">계약금액</Th><Th align="right">집행원가</Th><Th align="right">차액</Th></tr></thead>
               <tbody>
                 {etcProjects.map((p, i) => { const m = projectMetrics(p); return (
-                  <tr key={i}><Td>{p.name}</Td><Td align="right" mono>{fmtMoney(m.revenue)}</Td><Td align="right" mono>{fmtMoney(m.cost)}</Td><Td align="right" mono style={{ color: m.revenue - m.cost >= 0 ? T.ink : T.danger }}>{fmtMoney(m.revenue - m.cost)}</Td></tr>
+                  <tr key={i}><Td>{p.name}</Td><Td align="right" mono>{fmtMoney(m.revenue)}</Td><Td align="right" mono>{fmtMoney(m.cost)}</Td><Td align="right" mono style={{ color: m.revenue - m.cost >= 0 ? T.ink : T.alert }}>{fmtMoney(m.revenue - m.cost)}</Td></tr>
                 ); })}
               </tbody>
             </table>
@@ -13609,7 +13682,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: S[3] }}>
           {[...sev, ...wrn].map((r, i) => {
-            const c = r.level === '심각' ? T.danger : T.warning;
+            const c = r.level === '심각' ? T.alert : T.caution;
             return (
               <div key={i} style={{ ...card(), padding: S[4], borderLeft: `4px solid ${c}` }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
