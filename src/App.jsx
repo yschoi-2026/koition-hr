@@ -10759,6 +10759,11 @@ function AccountingCmsView({ fin, setFin, projects, cashCfg, canEdit }) {
 //   확정 = 의사결정 하한 · 수주반영 = 수주 성사 시 기대치
 // ══════════════════════════════════════════════════════════════════════
 const CAP_GREEN = '#1B7A43', CAP_BLUE = '#1D4ED8';
+// 억/만 단위 요약 표기 — 여러 화면에서 쓰므로 전역 function 으로 둔다(호이스팅 보장).
+function fmtEokLocal(v) {
+  const n = Number(v) || 0;
+  return n >= 100000000 ? (n / 100000000).toFixed(2) + '억' : Math.round(n / 10000).toLocaleString() + '만';
+}
 function shorten(v, n) { const t = String(v || ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; }
 // 엔진 계산 결과를 렌더가 끝난 뒤(effect) 부모로 올려보내는 전용 컴포넌트.
 //   렌더 도중 setState 를 호출하면 무한 재렌더로 화면이 멈춘다.
@@ -11297,6 +11302,101 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
           </div>
         </div>
       </div>
+
+      {/* ★★ 이번 달 급여일 판단 — "오늘 잔고로 이번 급여를 낼 수 있는가"
+           actualBalances 는 '급여일 인출 직전' 값이라 월초 잔고를 넣으면 확정월로 처리돼
+           그래프·예측이 반응하지 않는다. 그래서 월중 판단은 이 패널이 따로 담당한다.
+           todayBalance(오늘 잔고) + 급여일까지 들어올 수금 − 남은 경비 − 급여 필요액 */}
+      {(() => {
+        const tb = Number((cashCfg || {}).todayBalance) || 0;
+        const tbDate = (cashCfg || {}).todayBalanceDate || '';
+        const now = tbDate ? new Date(tbDate) : new Date();
+        if (isNaN(now)) return null;
+        const y = now.getFullYear(), mo = now.getMonth() + 1, dd = now.getDate();
+        const payDay = Number((policy && policy.payDay) || 10);
+        // 급여일이 지났으면 다음 달을 본다
+        let ty = y, tm = mo;
+        if (dd > payDay) { tm += 1; if (tm > 12) { tm = 1; ty += 1; } }
+        const mk = `${ty}-${String(tm).padStart(2, '0')}`;
+        const daysLeft = (dd > payDay)
+          ? Math.round((new Date(ty, tm - 1, payDay) - now) / 86400000)
+          : (payDay - dd);
+        // 급여 필요액: 실측 우선, 없으면 기준선
+        const need = Number(((cashCfg || {}).payrollActual || {})[mk]) || Number((cashCfg || {}).payrollBase) || 0;
+        // 급여일까지 입금 예정인 수금(미입금분)
+        const due = (receivables || []).filter(r => !r.paidDate && r.dueDate && Number(r.amount) > 0
+          && new Date(r.dueDate) >= now && new Date(r.dueDate) <= new Date(ty, tm - 1, payDay));
+        const dueSum = due.reduce((a, r) => a + Number(r.amount), 0);
+        // 남은 기간 경비(월 경비 × 남은일수/30)
+        const opexM = (Number((fin || {}).opexCash) || 0) + (Number((fin || {}).opexPurchase) || 0);
+        const opexLeft = Math.round(opexM * Math.max(0, daysLeft) / 30);
+        const room = tb + dueSum - opexLeft - need;
+        const ok = room >= 0;
+        if (!tb) return (
+          <div style={{ ...card({ borderLeft: `4px solid ${T.textMute}` }), padding: S[4], marginBottom: S[4] }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 4 }}>이번 달 급여일 판단</div>
+            <div style={{ fontSize: 12, color: T.textMute, lineHeight: 1.8 }}>
+              오늘 통장 잔고를 입력하면 <strong>{payDay}일 급여를 낼 수 있는지</strong> 바로 판정합니다.
+            </div>
+            {setCashCfg && (
+              <div style={{ display: 'flex', gap: S[2], alignItems: 'center', marginTop: S[3], flexWrap: 'wrap' }}>
+                <input type="date" defaultValue={new Date().toISOString().slice(0, 10)}
+                  onChange={e => setCashCfg(pv => ({ ...pv, todayBalanceDate: e.target.value }))}
+                  style={{ padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5 }} />
+                <input inputMode="numeric" placeholder="오늘 통장 잔고(원)"
+                  onChange={e => setCashCfg(pv => ({ ...pv, todayBalance: parseInput(e.target.value) }))}
+                  style={{ padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, width: 200, textAlign: 'right' }} />
+              </div>
+            )}
+          </div>
+        );
+        return (
+          <div style={{ ...card({ borderLeft: `4px solid ${ok ? T.success : T.danger}` }), padding: S[4], marginBottom: S[4],
+            background: ok ? 'rgba(27,122,67,0.04)' : '#FDECEA' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: S[3], flexWrap: 'wrap', marginBottom: S[2] }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>이번 달 급여일 판단</span>
+              <Badge color={ok ? T.success : T.danger} size="sm">{ty}년 {tm}월 {payDay}일 · D-{Math.max(0, daysLeft)}</Badge>
+              <div style={{ flex: 1 }} />
+              {setCashCfg && (
+                <div style={{ display: 'flex', gap: S[2], alignItems: 'center' }}>
+                  <input type="date" value={tbDate} onChange={e => setCashCfg(pv => ({ ...pv, todayBalanceDate: e.target.value }))}
+                    style={{ padding: '5px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 11.5 }} />
+                  <input inputMode="numeric" value={fmtInput(tb)} onChange={e => setCashCfg(pv => ({ ...pv, todayBalance: parseInput(e.target.value) }))}
+                    style={{ padding: '5px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 11.5, width: 150, textAlign: 'right' }} />
+                </div>
+              )}
+            </div>
+            <div style={{ fontSize: 30, fontWeight: 800, color: ok ? T.success : T.danger, letterSpacing: '-0.02em', marginBottom: 2 }}>
+              {ok ? '지급 가능' : `${fmtMoney(Math.abs(room))}원 부족`}
+            </div>
+            <div style={{ fontSize: 12, color: ok ? T.success : T.danger, fontWeight: 700, marginBottom: S[3] }}>
+              {ok ? `급여 지급 후 ${fmtMoney(room)}원 남습니다` : `${payDay}일까지 ${fmtMoney(Math.abs(room))}원을 확보해야 합니다`}
+            </div>
+            <table style={{ width: '100%', maxWidth: 460, borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <tbody>
+                <tr><Td>{tbDate || '오늘'} 통장 잔고</Td><Td align="right" mono>{fmtMoney(tb)}</Td></tr>
+                <tr><Td>+ 급여일까지 수금 예정 {due.length ? `(${due.length}건)` : ''}</Td><Td align="right" mono style={{ color: T.success }}>{dueSum ? '+' + fmtMoney(dueSum) : '0'}</Td></tr>
+                <tr><Td>− 남은 기간 운영경비 ({Math.max(0, daysLeft)}일)</Td><Td align="right" mono style={{ color: T.danger }}>−{fmtMoney(opexLeft)}</Td></tr>
+                <tr><Td>− 급여 필요액</Td><Td align="right" mono style={{ color: T.danger }}>−{fmtMoney(need)}</Td></tr>
+                <tr style={{ borderTop: `2px solid ${T.border}` }}>
+                  <Td style={{ fontWeight: 800 }}>여유</Td>
+                  <Td align="right" mono style={{ fontWeight: 800, color: ok ? T.success : T.danger }}>{room >= 0 ? '+' : ''}{fmtMoney(room)}</Td>
+                </tr>
+              </tbody>
+            </table>
+            {due.length > 0 && (
+              <div style={{ fontSize: 11, color: T.textMute, marginTop: S[2], lineHeight: 1.7 }}>
+                수금 예정: {due.map(r => `${shorten(r.project || r.client, 18)} ${fmtEokLocal(Number(r.amount))}`).join(' · ')}
+              </div>
+            )}
+            {!ok && (
+              <div style={{ fontSize: 11.5, color: T.danger, marginTop: S[2], lineHeight: 1.8, borderTop: `1px dashed ${T.danger}`, paddingTop: S[2] }}>
+                <strong>대응 검토</strong> — 미수금 조기 수금 요청 · 대출 한도 활용 · 지급 분산(정규/계약직 분리) · 경비 집행 연기
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ★ 핵심: 급여일 지급여력 — 경영보고의 최상위 지표. 상세 대시보드는 모달로 분리. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: `0 0 ${S[3]}px` }}>
