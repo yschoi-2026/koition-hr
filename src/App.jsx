@@ -11526,7 +11526,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
           dedCover += cover;                      // 전용통장이 실제로 부담하는 금액
           if (need2 > bal) dedShort += need2 - bal;   // 주계좌가 메워야 할 부족분
           else dedIdle += bal - need2;                // 그 사업에 쓰고 남는 유휴 자금
-          dedRows.push({ name: a.name, bal, need: need2, cover, gap: bal - need2 });
+          dedRows.push({ name: a.name, bal, need: need2, cover, gap: bal - need2, detail: a.laborDetail });
         });
         // 급여 가용액 = 전체 가용 − 전용통장 유휴분(다른 용도로 못 씀)
         const tb = accts.length ? (acctUsable - dedIdle) : (Number((cashCfg || {}).todayBalance) || 0);
@@ -11708,7 +11708,8 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 <table style={{ borderCollapse: 'collapse', fontSize: 11.5, minWidth: 420 }}>
                   <tbody>
                     {dedRows.map((x, i) => (
-                      <tr key={i} style={{ borderTop: i ? `1px solid ${T.divider}` : 'none' }}>
+                      <React.Fragment key={i}>
+                      <tr style={{ borderTop: i ? `1px solid ${T.divider}` : 'none' }}>
                         <Td style={{ fontSize: 11.5 }}>{shorten(x.name, 30)}</Td>
                         <Td align="right" mono style={{ fontSize: 11.5 }}>{fmtMoney(x.bal)}</Td>
                         <Td align="right" mono style={{ fontSize: 11.5, color: T.textMute }}>인건비 {fmtMoney(x.need)}</Td>
@@ -11716,6 +11717,19 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                           {x.gap >= 0 ? '여유 ' : '부족 '}{fmtMoney(Math.abs(x.gap))}
                         </Td>
                       </tr>
+                      {/* ★ 인력별 내역 — 이 통장에서 누구 급여가 나가는지 근거를 드러낸다 */}
+                      {Array.isArray(x.detail) && x.detail.length > 0 && (
+                        <tr>
+                          <Td colSpan={4} style={{ fontSize: 10.5, color: T.textMute, paddingTop: 0, paddingBottom: 6, lineHeight: 1.7 }}>
+                            {x.detail.map((m, k) => (
+                              <span key={k} style={{ marginRight: 10, whiteSpace: 'nowrap' }}>
+                                {m.name}{m.role ? `(${m.role})` : ''} {fmtEokLocal(Number(m.amount) || 0)}
+                              </span>
+                            ))}
+                          </Td>
+                        </tr>
+                      )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -11883,6 +11897,14 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                    payFull: `${yy}년 ${mm}월 10일`, payOf: `${pm.getMonth() + 1}월분` };
         });
         const idxOf = (yy, mm) => (yy - y0) * 12 + (mm - 1 - m0);
+        // ★ 급여일 사이클 인덱스 — 급여일이 10일이므로 '10일 이후 입금'은 다음 급여일 몫이다.
+        //   달력월로만 넣으면 9/19 입금이 9/10 급여에 쓸 수 있는 돈으로 잡혀 판단이 낙관적이 된다.
+        //   지급 판단은 '그 급여일 인출 직전까지 들어온 돈'만 대상으로 해야 한다.
+        const payDayN = Number((policy && policy.payDay) || 10);
+        const idxOfPay = (yy, mm, dd) => {
+          const base = idxOf(yy, mm);
+          return (Number(dd) > payDayN) ? base + 1 : base;   // 급여일 이후 입금 → 다음 달로
+        };
         const parsePeriod = (p) => { const m = String(p || '').match(/(\d{4})[.\-\/](\d{1,2})\s*~\s*(\d{4})[.\-\/](\d{1,2})/); return m ? { sy: +m[1], sm: +m[2], ey: +m[3], em: +m[4] } : null; };
         // #2 선급률 자동학습: 수금 실적(receivables)에서 사업별 첫 입금/계약금액 비율의 중앙값을 기본 선급률로 추천
         const learnedAdvRate = (() => {
@@ -11903,7 +11925,8 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
         // ① 수금 관리 등록분 (미입금) — 가장 확정적
         (receivables || []).filter(r => !r.paidDate && r.dueDate && Number(r.amount) > 0).forEach(r => {
           const d = new Date(r.dueDate); if (isNaN(d)) return;
-          const i = idxOf(d.getFullYear(), d.getMonth() + 1);
+          // 급여일 이후 입금은 다음 급여일 자금으로 계산한다
+          const i = idxOfPay(d.getFullYear(), d.getMonth() + 1, d.getDate());
           const at = i < 0 ? 0 : i;   // 연체분은 이번 달 수금 가정
           if (at < FC_MONTHS) { inc[at] += Number(r.amount); incColl[at] += Number(r.amount); incNote[at].push((r.project || '수금') + (i < 0 ? '(연체)' : '')); if (r.project) covered.add(String(r.project).trim()); }
         });
@@ -11954,6 +11977,29 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
           if (!mm) return;
           const i = idxOf(+mm[1], +mm[2]); const amt = Number(e.amount) || 0;
           if (i >= 0 && i < FC_MONTHS && amt > 0) { inc[i] += amt; incExtra[i] += amt; incNote[i].push((e.memo || '예정수입') + ' ' + fmtEok(amt)); }
+        });
+        // ★ 차입금 입금·상환 반영 (차입 관리에서 등록)
+        //   입금은 급여일 사이클 기준으로 넣고, 상환은 진행 중 차입의 월 부담을 매월 지출로 잡는다.
+        //   이것이 없으면 "차입으로 급여를 낸다"는 계획이 예측에 안 보인다.
+        let brMonthly = 0;
+        (borrowings || []).forEach(b => {
+          const P0 = Number(b.principal) || 0;
+          if (!(P0 > 0)) return;
+          const dm = String(b.drawDate || '').match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+          if (dm) {
+            const i2 = idxOfPay(+dm[1], +dm[2], +dm[3]);
+            if (i2 >= 0 && i2 < FC_MONTHS) {
+              inc[i2] += P0; incExtra[i2] += P0;
+              incNote[i2].push(`차입 ${b.lender || b.kind || ''} ${fmtEokLocal(P0)}`);
+            }
+          }
+          // 월 상환 부담 (미상환 잔액이 있을 때만)
+          const paid0 = (b.repayments || []).reduce((x, y) => x + (Number(y.amount) || 0), 0);
+          if (P0 - paid0 <= 0) return;
+          const rr = (Number(b.rate) || 0) / 100 / 12, nn = Number(b.months) || 0;
+          if (b.method === 'equal_pi' && nn > 0) brMonthly += (rr > 0 ? Math.round(P0 * rr * Math.pow(1 + rr, nn) / (Math.pow(1 + rr, nn) - 1)) : Math.round(P0 / nn));
+          else if (b.method === 'equal_p' && nn > 0) brMonthly += Math.round(P0 / nn) + Math.round(P0 * rr);
+          else brMonthly += Math.round(P0 * rr);
         });
         // ③ 파이프라인 시나리오: 미수주 제안을 수주율(%)로 가중해 반영 (계약기간 시작월 선급, +6개월 잔금)
         //    cfg.pipeline[id]={on,month,rate}: 개별 포함여부·예상 계약월·선급률. 기대금액 = 예산 × 수주율.
@@ -12102,7 +12148,8 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
         const fixedBase = Math.max(0, fixedOpexUse - recurMonthlyTotal);   // 진행 중 반복항목을 뺀 잔여 정액
         const recurOverflow = Math.max(0, recurMonthlyTotal - fixedOpexUse);   // 정액을 초과한 등록액(경고용)
         const fixedOf = (i) => fixedBase + recurAt(i);
-        const opexOf = (i) => fixedOf(i) + Math.round(projOpexUse * activeRatioOf(i));   // 고정(정액+반복) + 프로젝트성×진행률
+        // ★ 차입 월 상환액(brMonthly)을 운영경비에 더한다. 차입을 쓰면 그만큼 매월 부담이 늘어난다.
+        const opexOf = (i) => fixedOf(i) + Math.round(projOpexUse * activeRatioOf(i)) + brMonthly;   // 고정(정액+반복) + 프로젝트성×진행률 + 차입상환
         // 세금(부가세·법인세)은 추정액이라 기본 제외 — 실질 현금흐름 왜곡 방지. 옵션에서 켜면 반영.
         const taxOn = cfg.taxInclude === true;
         const taxOf = (mo) => taxOn ? (([1, 4, 7, 10].includes(mo.m) ? useVatQ : 0) + (mo.m === 3 ? useCorpTax : 0)) : 0;
@@ -12196,6 +12243,31 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
         //   실측 대비 모델 추정이 22.6% 과대했다(2026.08: 모델 262,727,005 vs 실제 214,258,244).
         const payActual = cfg.payrollActual || {};
         const payBase = Number(cfg.payrollBase) || 0;
+        // ★ 전용통장 유휴분 — 그 달 전용통장 잔액에서 해당 사업 인건비를 뺀 나머지.
+        //   그 돈은 다른 급여에 쓸 수 없으므로 가용액에서 제외해야 판단이 정확하다.
+        //   전용통장 잔액은 매월 그 사업 인건비만큼 줄어드는 것으로 본다(수금이 그 통장으로 들어오면 별도 입력).
+        const dedAccts = (Array.isArray((cashCfg || {}).accounts) ? cashCfg.accounts : [])
+          .filter(a => a && a.usable !== false && Array.isArray(a.projectIds) && a.projectIds.length);
+        const dedLabMap = ((cashCfg || {}).laborByProject || {});
+        const dedLabKey = Object.keys(dedLabMap).sort().pop();
+        const dedLab = dedLabMap[dedLabKey] || {};
+// ★ 자금 집계 구간 라벨 — 급여일 다음날 ~ 다음 급여일 (예: 09/11 ~ 10/10)
+        //   "지급하고 다음날부터 지급일 전날까지 들어오는 돈"이 그 급여의 재원이다.
+        const cycleLabel = (idx) => {
+          const mIdx = m0 + idx;                      // 0-based month offset from y0
+          const yy = y0 + Math.floor(mIdx / 12), mm = (mIdx % 12) + 1;
+          const py = mm === 1 ? yy - 1 : yy, pm = mm === 1 ? 12 : mm - 1;
+          return `${String(pm).padStart(2, '0')}/${String(payDayN + 1).padStart(2, '0')} ~ ${String(mm).padStart(2, '0')}/${String(payDayN).padStart(2, '0')}`;
+        };
+        const dedIdleAt = (idx) => {
+          if (!dedAccts.length) return 0;
+          return dedAccts.reduce((sum, a) => {
+            const need0 = a.projectIds.reduce((x, pid) => x + (Number(dedLab[pid]) || 0), 0);
+            // idx 개월 경과 후 잔액 추정 (그 사업 인건비만큼 매월 감소, 0 이하로는 안 내려감)
+            const bal0 = Math.max(0, (Number(a.balance) || 0) - need0 * Math.max(0, idx));
+            return sum + Math.max(0, bal0 - need0);   // 그 사업에 쓰고도 남는 = 묶인 돈
+          }, 0);
+        };
         const payrollAt = (i) => {
           const r = rows[i]; if (!r) return 0;
           const av = payActual[r.key];
@@ -12216,9 +12288,15 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
           for (let i = 0; i < rows.length; i++) {
             const r = rows[i], need = payrollAt(i);
             if (need <= 0) continue;
-            const room = r.bal - need;
+            // ★ 계좌 분리 반영 — 전용통장 자금은 그 사업 인건비에만 쓸 수 있다.
+            //   dedIdleAt(i): 그 달 전용통장에 묶여 다른 급여에 못 쓰는 금액
+            const idleI = dedIdleAt(i);
+            const balUse = r.bal - idleI;
+            const room = balUse - need;
             list.push({ i, month: r, payFull: r.payFull, fundedBy: r.payFull,
-                        bal: r.bal, need, salary: Math.round(Number(r.expLabor) || 0), ins: socialInsAt(i),
+                        bal: balUse, balRaw: r.bal, dedIdle: idleI,
+              cycIn: Math.round(Number(r.inc) || 0),   // ★ 그 사이클(전 급여일 다음날~이번 급여일) 수입
+              need, salary: Math.round(Number(r.expLabor) || 0), ins: socialInsAt(i),
                         src: payrollSrc(i), room, ok: room >= 0, confirmed: r.confirmed });
           }
           // ★ 판정은 '앞으로 다가올 급여일'만 대상으로 한다.
@@ -12230,7 +12308,17 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
           // 여유 회수: 지금부터 몇 번의 급여를 무리 없이 지급할 수 있는가
           let runway = 0; for (const x of upcoming) { if (!x.ok) break; runway++; }
           const pastOk = past.filter(x => x.ok).length;
-          return { list, upcoming, past, pastOk, next: upcoming[0] || null, firstShort, lastSafe, runway };
+          // ★ 표 표시용 — '이번 달 급여일'을 맨 앞에 함께 보여준다.
+          //   이번 달은 실측 잔고가 들어와 confirmed 로 잡히지만, 아직 급여를 안 냈다면
+          //   그 판정도 표에 있어야 "이번 달은 되는가"를 같은 표에서 확인할 수 있다.
+          const refD = String((cashCfg || {}).todayBalanceDate || '').match(/(\d{4})-(\d{2})-(\d{2})/);
+          const nowY = refD ? +refD[1] : new Date().getFullYear();
+          const nowM = refD ? +refD[2] : new Date().getMonth() + 1;
+          const nowD = refD ? +refD[3] : new Date().getDate();
+          const thisIdx = (nowY - y0) * 12 + (nowM - 1 - m0);
+          const thisRow = (nowD <= payDayN) ? list.find(x => x.i === thisIdx) : null;
+          const tableRows = thisRow ? [thisRow, ...upcoming.filter(x => x.i !== thisIdx)] : upcoming;
+          return { list, upcoming, past, pastOk, tableRows, thisRow, next: (thisRow || upcoming[0]) || null, firstShort, lastSafe, runway };
         })();
         // ══ 경영자용 ④: 예측 vs 실적 오차 추적 ══
         //   [버그 수정] 기존 자동보정은 확정월의 bal 을 실제값으로 치환한 뒤 (실제 − bal) 을 재던 탓에
@@ -12316,10 +12404,12 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
             // ★ 급여일 지급여력 카드와 같은 값을 쓴다(카드는 r.bal 을 그대로 사용).
             //   예전에는 미래월에 bias(과거 예측오차 평균)를 더해 카드와 그래프 숫자가 어긋났다.
             //   '10일 지급여력'과 그래프·상세표가 같은 기준이어야 판단이 흔들리지 않는다.
-            예측잔고: Math.round(r.bal / 1000000),
-            '예측(파이프라인)': Math.round(r.balS / 1000000),
-            낙관: Math.round(r.balOpt / 1000000),
-            보수: Math.round(r.balCons / 1000000),
+            // ★ 전용통장 유휴분을 제외한 '실제 가용 잔고'로 그린다.
+            //   카드·급여일 판단과 같은 기준이어야 그래프를 보고 판단할 수 있다.
+            예측잔고: Math.round((r.bal - dedIdleAt(chartData_i)) / 1000000),
+            '예측(파이프라인)': Math.round((r.balS - dedIdleAt(chartData_i)) / 1000000),
+            낙관: Math.round((r.balOpt - dedIdleAt(chartData_i)) / 1000000),
+            보수: Math.round((r.balCons - dedIdleAt(chartData_i)) / 1000000),
             안전선: Math.round(safety / 1000000),
             순증감: Math.round((r.inc - r.exp) / 1000000),   // 그 달 현금 순증감(수입−지출)
             인건비: Math.round((r.expLabor || 0) / 1000000),           // 실제 반영 인건비
@@ -12358,15 +12448,20 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                     <table style={{ borderCollapse: 'collapse', fontSize: 11.5, minWidth: 460 }}>
                       <thead><tr style={{ background: 'rgba(0,0,0,0.03)' }}>
                         <Th style={{ fontSize: 10 }}>급여일</Th>
+                        <Th style={{ fontSize: 10 }}>자금 집계 구간</Th>
+                        <Th align="right" style={{ fontSize: 10 }}>그 사이 수입</Th>
                         <Th align="right" style={{ fontSize: 10 }}>그 날 인출 직전 잔고</Th>
                         <Th align="right" style={{ fontSize: 10 }}>필요액</Th>
                         <Th align="center" style={{ fontSize: 10 }}>근거</Th>
                         <Th align="right" style={{ fontSize: 10 }}>지급 후 여유</Th>
                       </tr></thead>
                       <tbody>
-                        {pc.upcoming.slice(0, 6).map(x => (
+                        {(pc.tableRows || pc.upcoming).slice(0, 7).map(x => (
                           <tr key={x.i} style={{ borderTop: `1px solid ${T.divider}` }}>
-                            <Td style={{ fontSize: 11 }}>{x.payFull}{x.confirmed ? <span style={{ color: T.textMute, fontSize: 9.5 }}> (확정잔고 기준)</span> : null}</Td>
+                            <Td style={{ fontSize: 11 }}>{pc.thisRow && x.i === pc.thisRow.i ? <span style={{ background: T.brand, color: '#fff', fontSize: 9.5, padding: '1px 5px', borderRadius: 3, marginRight: 4, fontWeight: 700 }}>이번 달</span> : null}{x.payFull}{x.confirmed ? <span style={{ color: T.textMute, fontSize: 9.5 }}> (확정잔고 기준)</span> : null}</Td>
+                            {/* ★ 자금 집계 구간 — 급여일 다음날 ~ 다음 급여일. 판단 근거를 드러낸다 */}
+                            <Td style={{ fontSize: 10, color: T.textMute, whiteSpace: 'nowrap' }}>{cycleLabel(x.i)}</Td>
+                            <Td align="right" mono style={{ fontSize: 11, color: T.brand }}>{x.cycIn ? '+' + fmtMoney(x.cycIn) : '—'}</Td>
                             <Td align="right" mono>{fmtMoney(x.bal)}</Td>
                             <Td align="right" mono><strong>{fmtMoney(x.need)}</strong></Td>
                             <Td align="center" style={{ fontSize: 10, color: x.src === '실측' ? T.success : T.textMute }}>{x.src}</Td>
