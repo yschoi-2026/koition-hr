@@ -3402,6 +3402,7 @@ function App() {
   const [loans, setLoans] = useState([
     { id: 'LOAN-1', empId: 'K-240201', name: '오창민', principal: 30000000, rate: 4.6, startDate: '2026-01-01', monthly: 1000000, repayments: [], note: '회사 대출 — 상환약정 체결 예정' },
   ]);  // 임직원 대여금 원장
+  const [borrowings, setBorrowings] = useState([]);   // 회사 차입금 (직원 대여금 loans 와 별개)
   const [receivables, setReceivables] = useState([]);  // 수금 관리: {id,project,client,amount,dueDate,paidDate,note}
   const [cashCfg, setCashCfg] = useState({ balance: 0, advRate: 50, advRates: {}, monthlyLabor: 237000000, monthlyOpex: 51000000, vatQ: 30000000, corpTax: 20000000, safety: 50000000 });  // 자금 예측 설정
   const [fin, setFin] = useState(INITIAL_FIN);  // 경영회계 CMS 데이터
@@ -4388,6 +4389,7 @@ function App() {
             {activeTab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertProposal={upsertProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} cashCfg={cashCfg} setCashCfg={setCashCfg} />}
             {activeTab === 'cms' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <AccountingCmsView fin={fin} setFin={setFin} projects={projects} cashCfg={cashCfg} canEdit={user.role === 'admin'} />}
             {activeTab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} borrowings={borrowings} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} receivables={receivables} cashCfg={cashCfg} setCashCfg={setCashCfg} upsertProject={upsertProject} deleteProject={deleteProject} fin={fin} />}
+            {activeTab === 'borrow' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <BorrowingsView borrowings={borrowings} setBorrowings={setBorrowings} cashCfg={cashCfg} />}
             {activeTab === 'loans' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <LoansView loans={loans} setLoans={setLoans} employees={employees} />}
             {activeTab === 'receivables' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ReceivablesView receivables={receivables} setReceivables={setReceivables} projects={projects} />}
             {activeTab === 'monthclose' && <MonthCloseView projects={projects} employees={employees} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} />}
