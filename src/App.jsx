@@ -11118,6 +11118,7 @@ function PayrollCapacityCards({ eng }) {
 }
 
 function ManagementReportView({ user, borrowings, projects, proposals, overheads, employees, empLedger, setEmpLedger, currentYear, policy, receivables, cashCfg, setCashCfg, upsertProject, deleteProject, fin }) {
+  const [acctOpen, setAcctOpen] = React.useState(false);   // 계좌별 잔고 편집 패널
   const [monthDetail, setMonthDetail] = React.useState(null);   // 월별 상세 모달 (클릭한 월의 row)
   // 데이터 기준월: CMS 마감월(fin.period '2026-06') → '1~6월 누계' 라벨
   const cutM = (() => { const m = String((fin || {}).period || '').match(/-(\d{2})/); return m ? Number(m[1]) : null; })();
@@ -11486,7 +11487,11 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
            그래프·예측이 반응하지 않는다. 그래서 월중 판단은 이 패널이 따로 담당한다.
            todayBalance(오늘 잔고) + 급여일까지 들어올 수금 − 남은 경비 − 급여 필요액 */}
       {(() => {
-        const tb = Number((cashCfg || {}).todayBalance) || 0;
+        // ★ 계좌별 잔고 지원 — 주계좌만 보면 사업 전용계좌의 자금이 빠져 판단이 과도하게 비관적이 된다.
+        //   accounts: [{name, no, balance, usable}] · usable=false 면 급여 가용액에서 제외
+        const accts = Array.isArray((cashCfg || {}).accounts) ? cashCfg.accounts : [];
+        const acctUsable = accts.filter(a => a && a.usable !== false).reduce((x, a) => x + (Number(a.balance) || 0), 0);
+        const acctAll = accts.reduce((x, a) => x + (Number(a.balance) || 0), 0);
         const tbDate = (cashCfg || {}).todayBalanceDate || '';
         const now = tbDate ? new Date(tbDate) : new Date();
         if (isNaN(now)) return null;
@@ -11496,6 +11501,24 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
         let ty = y, tm = mo;
         if (dd > payDay) { tm += 1; if (tm > 12) { tm = 1; ty += 1; } }
         const mk = `${ty}-${String(tm).padStart(2, '0')}`;
+        // ★ 사업 전용통장 제약 — 그 통장 자금은 지정된 사업의 인건비에만 쓸 수 있다.
+        //   전용통장 잔액이 그 사업 인건비보다 많아도 남는 돈을 다른 급여에 못 쓴다(가용액 과대계상 방지).
+        //   반대로 부족하면 그 차액은 주계좌가 메워야 한다.
+        const labByProj = ((cashCfg || {}).laborByProject || {})[mk] || ((cashCfg || {}).laborByProject || {})[
+          Object.keys((cashCfg || {}).laborByProject || {}).sort().pop()] || {};
+        let dedCover = 0, dedShort = 0, dedIdle = 0;
+        const dedRows = [];
+        accts.filter(a => a && a.usable !== false && Array.isArray(a.projectIds) && a.projectIds.length).forEach(a => {
+          const bal = Number(a.balance) || 0;
+          const need2 = a.projectIds.reduce((x, pid) => x + (Number(labByProj[pid]) || 0), 0);
+          const cover = Math.min(bal, need2);
+          dedCover += cover;                      // 전용통장이 실제로 부담하는 금액
+          if (need2 > bal) dedShort += need2 - bal;   // 주계좌가 메워야 할 부족분
+          else dedIdle += bal - need2;                // 그 사업에 쓰고 남는 유휴 자금
+          dedRows.push({ name: a.name, bal, need: need2, cover, gap: bal - need2 });
+        });
+        // 급여 가용액 = 전체 가용 − 전용통장 유휴분(다른 용도로 못 씀)
+        const tb = accts.length ? (acctUsable - dedIdle) : (Number((cashCfg || {}).todayBalance) || 0);
         const daysLeft = (dd > payDay)
           ? Math.round((new Date(ty, tm - 1, payDay) - now) / 86400000)
           : (payDay - dd);
@@ -11506,9 +11529,22 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
           && new Date(r.dueDate) >= now && new Date(r.dueDate) <= new Date(ty, tm - 1, payDay));
         const dueSum = due.reduce((a, r) => a + Number(r.amount), 0);
         // ★ 급여일까지 입금 예정인 차입금도 더한다 (차입 관리에서 등록)
+        const payDate = new Date(ty, tm - 1, payDay);
         const brIn = (borrowings || []).filter(b => b.drawDate && Number(b.principal) > 0
-          && new Date(b.drawDate) >= now && new Date(b.drawDate) <= new Date(ty, tm - 1, payDay));
+          && new Date(b.drawDate) >= now && new Date(b.drawDate) <= payDate);
         const brSum = brIn.reduce((a, b) => a + Number(b.principal), 0);
+        // ★ 이번 사이클에 이미 입금된 수금(오늘 이전 완료분은 잔고에 포함돼 있으므로 표시만)
+        const cycStart = new Date(ty, tm - 2, payDay);   // 이전 급여일
+        const paidIn = (receivables || []).filter(r => r.paidDate
+          && new Date(r.paidDate) >= cycStart && new Date(r.paidDate) <= payDate && Number(r.amount) > 0);
+        const paidSum = paidIn.reduce((a, r) => a + Number(r.amount), 0);
+        // ★ 다음 사이클(급여일 ~ 다음 급여일) 예정 수입 — 다음 달 판단용
+        const nextStart = payDate, nextEnd = new Date(ty, tm, payDay);
+        const nextDue = (receivables || []).filter(r => !r.paidDate && r.dueDate && Number(r.amount) > 0
+          && new Date(r.dueDate) > nextStart && new Date(r.dueDate) <= nextEnd);
+        const nextSum = nextDue.reduce((a, r) => a + Number(r.amount), 0);
+        const nextNeed = Number(((cashCfg || {}).payrollActual || {})[`${nextEnd.getFullYear()}-${String(nextEnd.getMonth() + 1).padStart(2, '0')}`])
+          || Number((cashCfg || {}).payrollBase) || 0;
         // 진행 중 차입의 월 상환 부담
         const brPay = (borrowings || []).reduce((a, b) => {
           const P = Number(b.principal) || 0, r2 = (Number(b.rate) || 0) / 100 / 12, n2 = Number(b.months) || 0;
@@ -11552,8 +11588,11 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 <div style={{ display: 'flex', gap: S[2], alignItems: 'center' }}>
                   <input type="date" value={tbDate} onChange={e => setCashCfg(pv => ({ ...pv, todayBalanceDate: e.target.value }))}
                     style={{ padding: '5px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 11.5 }} />
-                  <input inputMode="numeric" value={fmtInput(tb)} onChange={e => setCashCfg(pv => ({ ...pv, todayBalance: parseInput(e.target.value) }))}
-                    style={{ padding: '5px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 11.5, width: 150, textAlign: 'right' }} />
+                  {!accts.length && (
+                    <input inputMode="numeric" value={fmtInput(tb)} onChange={e => setCashCfg(pv => ({ ...pv, todayBalance: parseInput(e.target.value) }))}
+                      style={{ padding: '5px 8px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 11.5, width: 150, textAlign: 'right' }} />
+                  )}
+                  <Button size="sm" variant="outline" onClick={() => setAcctOpen(v => !v)}>계좌 {accts.length ? `${accts.length}개` : '등록'}</Button>
                 </div>
               )}
             </div>
@@ -11565,7 +11604,18 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
             </div>
             <table style={{ width: '100%', maxWidth: 460, borderCollapse: 'collapse', fontSize: 12.5 }}>
               <tbody>
-                <tr><Td>{tbDate || '오늘'} 통장 잔고</Td><Td align="right" mono>{fmtMoney(tb)}</Td></tr>
+                <tr><Td>{tbDate || '오늘'} 가용 잔고{accts.length ? ` (${accts.filter(a => a.usable !== false).length}개 계좌)` : ''}</Td><Td align="right" mono>{fmtMoney(tb)}</Td></tr>
+                {accts.length > 0 && accts.filter(a => a.usable !== false && Number(a.balance) > 0).map((a, i) => (
+                  <tr key={i}><Td style={{ color: T.textMute, fontSize: 11.5 }}>　· {a.name}</Td><Td align="right" mono style={{ color: T.textMute, fontSize: 11.5 }}>{fmtMoney(Number(a.balance) || 0)}</Td></tr>
+                ))}
+                {dedIdle > 0 && (
+                  <tr><Td style={{ color: T.warning, fontSize: 11.5 }}>　− 전용통장 유휴분 (해당 사업 외 사용 불가)</Td>
+                    <Td align="right" mono style={{ color: T.warning, fontSize: 11.5 }}>−{fmtMoney(dedIdle)}</Td></tr>
+                )}
+                {accts.length > 0 && acctAll > acctUsable && (
+                  <tr><Td style={{ color: T.textMute, fontSize: 11.5 }}>　(가용 제외 계좌 {fmtMoney(acctAll - acctUsable)})</Td><Td align="right" mono style={{ color: T.textMute, fontSize: 11.5 }}>—</Td></tr>
+                )}
+                {paidSum > 0 && <tr><Td style={{ color: T.textMute, fontSize: 11.5 }}>　(이번 사이클 입금 완료 {paidIn.length}건 — 잔고 포함)</Td><Td align="right" mono style={{ color: T.textMute, fontSize: 11.5 }}>{fmtMoney(paidSum)}</Td></tr>}
                 <tr><Td>+ 급여일까지 수금 예정 {due.length ? `(${due.length}건)` : ''}</Td><Td align="right" mono style={{ color: T.success }}>{dueSum ? '+' + fmtMoney(dueSum) : '0'}</Td></tr>
                 {brSum > 0 && <tr><Td>+ 차입 입금 예정 ({brIn.length}건)</Td><Td align="right" mono style={{ color: T.brand }}>+{fmtMoney(brSum)}</Td></tr>}
                 <tr><Td>− 남은 기간 운영경비 ({Math.max(0, daysLeft)}일)</Td><Td align="right" mono style={{ color: T.danger }}>−{fmtMoney(opexLeft)}</Td></tr>
@@ -11582,6 +11632,86 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 수금 예정: {due.map(r => `${shorten(r.project || r.client, 18)} ${fmtEokLocal(Number(r.amount))}`).join(' · ')}
               </div>
             )}
+            {/* 계좌별 잔고 편집 — 사업 전용계좌까지 넣어야 실제 가용액이 나온다 */}
+            {acctOpen && setCashCfg && (
+              <div style={{ background: T.surfaceAlt, borderRadius: 8, padding: S[3], marginTop: S[3] }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: T.ink, marginBottom: S[2] }}>
+                  계좌별 잔고 <span style={{ color: T.textMute, fontWeight: 400 }}>· 체크 해제하면 급여 가용액에서 제외됩니다</span>
+                </div>
+                {accts.map((a, i) => (
+                  <div key={i} style={{ marginBottom: 4 }}>
+                    <div style={{ display: 'flex', gap: S[2], alignItems: 'center', marginBottom: 2 }}>
+                    <input type="checkbox" checked={a.usable !== false}
+                      onChange={e => setCashCfg(pv => ({ ...pv, accounts: (pv.accounts || []).map((x, j) => j === i ? { ...x, usable: e.target.checked } : x) }))} />
+                    <input value={a.name || ''} placeholder="계좌명"
+                      onChange={e => setCashCfg(pv => ({ ...pv, accounts: (pv.accounts || []).map((x, j) => j === i ? { ...x, name: e.target.value } : x) }))}
+                      style={{ flex: 1, padding: '4px 8px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5 }} />
+                    <input inputMode="numeric" value={fmtInput(a.balance)}
+                      onChange={e => setCashCfg(pv => ({ ...pv, accounts: (pv.accounts || []).map((x, j) => j === i ? { ...x, balance: parseInput(e.target.value) } : x) }))}
+                      style={{ width: 130, padding: '4px 8px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, textAlign: 'right' }} />
+                    <button onClick={() => setCashCfg(pv => ({ ...pv, accounts: (pv.accounts || []).filter((_, j) => j !== i) }))}
+                      style={{ border: 'none', background: 'none', color: T.danger, cursor: 'pointer', fontSize: 14 }}>×</button>
+                    </div>
+                    {/* 전용통장이면 대상 사업을 지정 — 그 사업 인건비만 인출 가능 */}
+                    <div style={{ marginLeft: 22, marginBottom: 6 }}>
+                      <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: 2 }}>
+                        전용 사업 (비우면 일반 계좌 — 모든 급여에 사용 가능)
+                      </div>
+                      <select multiple value={a.projectIds || []} size={3}
+                        onChange={e => { const v = Array.from(e.target.selectedOptions).map(o => o.value);
+                          setCashCfg(pv => ({ ...pv, accounts: (pv.accounts || []).map((x, j) => j === i ? { ...x, projectIds: v } : x) })); }}
+                        style={{ width: '100%', padding: '3px 6px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11 }}>
+                        {(projects || []).filter(q => q.status !== 'completed' && Number(q.revenue) > 0)
+                          .sort((x, y) => String(y.id).localeCompare(String(x.id)))
+                          .map(q => <option key={q.id} value={q.id}>{q.id} · {shorten(q.name, 24)}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                ))}
+                <Button size="sm" variant="ghost" onClick={() => setCashCfg(pv => ({ ...pv, accounts: [...(pv.accounts || []), { name: '', balance: 0, usable: true }] }))}>+ 계좌 추가</Button>
+              </div>
+            )}
+            {/* 사업 전용통장 — 잔액 대비 해당 사업 인건비 */}
+            {dedRows.length > 0 && (
+              <div style={{ marginTop: S[3], paddingTop: S[2], borderTop: `1px solid ${T.divider}` }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: T.ink, marginBottom: 4 }}>
+                  사업 전용통장 <span style={{ color: T.textMute, fontWeight: 400 }}>· 그 사업 인건비만 인출 가능</span>
+                </div>
+                <table style={{ borderCollapse: 'collapse', fontSize: 11.5, minWidth: 420 }}>
+                  <tbody>
+                    {dedRows.map((x, i) => (
+                      <tr key={i} style={{ borderTop: i ? `1px solid ${T.divider}` : 'none' }}>
+                        <Td style={{ fontSize: 11.5 }}>{shorten(x.name, 30)}</Td>
+                        <Td align="right" mono style={{ fontSize: 11.5 }}>{fmtMoney(x.bal)}</Td>
+                        <Td align="right" mono style={{ fontSize: 11.5, color: T.textMute }}>인건비 {fmtMoney(x.need)}</Td>
+                        <Td align="right" mono style={{ fontSize: 11.5, fontWeight: 700, color: x.gap >= 0 ? T.success : T.danger }}>
+                          {x.gap >= 0 ? '여유 ' : '부족 '}{fmtMoney(Math.abs(x.gap))}
+                        </Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {dedShort > 0 && (
+                  <div style={{ fontSize: 11, color: T.danger, marginTop: 4 }}>
+                    전용통장 부족분 {fmtMoney(dedShort)}원은 주계좌에서 메워야 합니다.
+                  </div>
+                )}
+              </div>
+            )}
+            {/* ★ 다음 급여일 전망 — 이번 달을 넘겨도 다음 달이 되는지 함께 본다 */}
+            <div style={{ marginTop: S[3], paddingTop: S[2], borderTop: `1px solid ${T.divider}`, fontSize: 11.5, lineHeight: 1.9 }}>
+              <strong style={{ color: T.ink }}>다음 급여일 전망</strong>
+              <span style={{ color: T.textMute }}> ({nextEnd.getFullYear()}.{nextEnd.getMonth() + 1}/{payDay})</span>
+              {(() => {
+                const nextRoom = room + nextSum - Math.round(opexM * 30 / 30) - nextNeed;
+                return (
+                  <div style={{ color: T.textMute }}>
+                    이번 여유 {fmtMoney(room)} + 수입 예정 {fmtMoney(nextSum)}{nextDue.length ? `(${nextDue.length}건)` : ''} − 경비 {fmtMoney(opexM)} − 급여 {fmtMoney(nextNeed)}
+                    <span style={{ color: nextRoom >= 0 ? T.success : T.danger, fontWeight: 800 }}> = {nextRoom >= 0 ? '여유 ' : '부족 '}{fmtMoney(Math.abs(nextRoom))}원</span>
+                  </div>
+                );
+              })()}
+            </div>
             {!ok && (
               <div style={{ fontSize: 11.5, color: T.danger, marginTop: S[2], lineHeight: 1.8, borderTop: `1px dashed ${T.danger}`, paddingTop: S[2] }}>
                 <strong>대응 검토</strong> — 미수금 조기 수금 요청 · <strong>차입 {fmtMoney(Math.ceil(Math.abs(room) / 10000000) * 10000000)}원</strong>(1천만 단위) · 지급 분산(정규/계약직 분리) · 경비 집행 연기
