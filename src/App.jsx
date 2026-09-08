@@ -5509,7 +5509,15 @@ function ReceivablesView({ receivables, setReceivables, projects }) {
             {sorted.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: T.textLight, padding: 24 }}>등록된 수금 예정이 없습니다</td></tr>}
             {sorted.map(r => (
               <tr key={r.id} style={r.paid ? { opacity: 0.55 } : undefined}>
-                <Td><strong>{r.project || '-'}</strong>{r.client ? <div style={{ fontSize: 10, color: T.textLight }}>{r.client}</div> : null}</Td>
+                <Td><strong>{r.project || '-'}</strong>
+                    {/* ★ 선급금/잔금 구분 뱃지 — label 의 마지막 조각 */}
+                    {r.label && String(r.label).includes(' · ') ? (
+                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
+                        color: String(r.label).includes('선급') ? T.brand : T.textMute,
+                        background: T.surfaceAlt, padding: '1px 6px', borderRadius: 3 }}>
+                        {String(r.label).split(' · ').pop()}
+                      </span>
+                    ) : null}{r.client ? <div style={{ fontSize: 10, color: T.textLight }}>{r.client}</div> : null}</Td>
                 <Td align="right" mono>{fmtMoney(r.amount)}</Td>
                 <Td align="center" style={{ fontSize: 11.5 }}>{r.dueDate || '-'}</Td>
                 <Td align="center">
@@ -11629,8 +11637,12 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
               {ok ? `급여 지급 후 ${fmtMoney(room)}원 남습니다` : `${payDay}일까지 ${fmtMoney(Math.abs(room))}원을 확보해야 합니다`}
             </div>
             {/* 상세 내역 — 접기/모달에서 같은 내용을 쓴다 */}
-            {(() => { const detailBody = (<>
-            <table style={{ width: '100%', maxWidth: 460, borderCollapse: 'collapse', fontSize: 12.5 }}>
+            {(() => { const detailBody = (
+            /* ★ 2열 그리드 — 세로로 길어지지 않게 폭을 활용한다.
+                 좌: 자금 계산 · 우: 전용통장 + 다음 급여일 전망 + 대응 */
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) minmax(300px, 1.1fr)', gap: S[4], alignItems: 'start' }}>
+            <div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
               <tbody>
                 <tr><Td>{tbDate || '오늘'} 가용 잔고{accts.length ? ` (${accts.filter(a => a.usable !== false).length}개 계좌)` : ''}</Td><Td align="right" mono>{fmtMoney(tb)}</Td></tr>
                 {accts.length > 0 && accts.filter(a => a.usable !== false && Number(a.balance) > 0).map((a, i) => (
@@ -11699,6 +11711,8 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 <Button size="sm" variant="ghost" onClick={() => setCashCfg(pv => ({ ...pv, accounts: [...(pv.accounts || []), { name: '', balance: 0, usable: true }] }))}>+ 계좌 추가</Button>
               </div>
             )}
+            </div>
+            <div>
             {/* 사업 전용통장 — 잔액 대비 해당 사업 인건비 */}
             {dedRows.length > 0 && (
               <div style={{ marginTop: S[3], paddingTop: S[2], borderTop: `1px solid ${T.divider}` }}>
@@ -11760,7 +11774,8 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 <div style={{ color: T.textMute, marginTop: 2 }}>「차입 관리」에 등록하면 입금일이 이 계산에 바로 반영됩니다.</div>
               </div>
             )}
-            </>);
+            </div>
+            </div>);
               return (<>
                 {payPanelOpen && detailBody}
                 {payModal && (
