@@ -444,7 +444,7 @@ export default async function handler(req, res) {
             // ★ 배열이 통째로 비어 오는 경우도 막는다.
             //   금액이 null 인 경우는 이미 막고 있었지만, projects: [] 처럼 배열 자체가
             //   빈 채로 저장되면 사업·직원·제안이 통째로 사라졌다(2026-09-02 03:47 사고).
-            const ARR_KEEP = ['projects', 'employees', 'proposals', 'overheads', 'empLedger', 'receivables'];
+            const ARR_KEEP = ['projects', 'employees', 'proposals', 'overheads', 'empLedger', 'receivables', 'borrowings'];
             let arrLost = false;
             ARR_KEEP.forEach(k => {
               const b = Array.isArray(base3[k]) ? base3[k] : null;
