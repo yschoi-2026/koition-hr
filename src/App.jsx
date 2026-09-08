@@ -3714,6 +3714,7 @@ function App() {
     if (data.overheads) setOverheads(data.overheads);
     if (data.empLedger) setEmpLedger(data.empLedger);
     if (data.loans) setLoans(data.loans);
+    if (data.borrowings) setBorrowings(data.borrowings);
     if (data.receivables) setReceivables(data.receivables);
     if (data.cashCfg) setCashCfg(prev => ({ ...prev, ...data.cashCfg }));
     if (data.fin) {
@@ -3801,7 +3802,7 @@ function App() {
     if (!user) { showToast('로그인 후 저장할 수 있습니다', 'error'); return; }
     if (!serverLoadOkRef.current) { showToast('서버에서 데이터를 받는 중입니다. 잠시 후 다시 시도해 주세요', 'error'); return; }
     try {
-      const payload = JSON.stringify({ employees, policy, scores, scoresBy, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, fin, history, updatedAt: new Date().toISOString() });
+      const payload = JSON.stringify({ employees, policy, scores, scoresBy, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, borrowings, receivables, cashCfg, fin, history, updatedAt: new Date().toISOString() });
       localStorage.setItem('koition_hr_v6', payload);
       serverPut('main', payload);
       showToast('데이터가 저장되었습니다 (서버 포함)');
@@ -3816,7 +3817,7 @@ function App() {
         let payload;
         if (heavyLoaded) {
           // admin/manager: 전체 저장 (중량 데이터를 정상 보유한 상태)
-          payload = JSON.stringify({ employees, policy, scores, scoresBy, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, receivables, cashCfg, fin, history, updatedAt: new Date().toISOString() });
+          payload = JSON.stringify({ employees, policy, scores, scoresBy, selfScores, comments, submissions, projects, proposals, overheads, empLedger, peerEvals, loans, borrowings, receivables, cashCfg, fin, history, updatedAt: new Date().toISOString() });
         } else {
           // 직원·평가자: 기존 저장본을 읽어 본인이 편집 가능한 경량 필드만 덮어씀 (중량 데이터 원본 보존)
           let base = {};
@@ -3968,6 +3969,7 @@ function App() {
         if (data.empLedger) setEmpLedger(data.empLedger);
         if (data.peerEvals) setPeerEvals(data.peerEvals);
         if (data.loans) setLoans(data.loans);
+    if (data.borrowings) setBorrowings(data.borrowings);
         if (data.receivables) setReceivables(data.receivables);
         if (data.cashCfg) setCashCfg(prev => ({ ...prev, ...data.cashCfg }));
         if (data.fin) {
@@ -4259,6 +4261,7 @@ function App() {
     { id: 'report', label: '경영보고서', icon: FileBarChart, roles: ['admin'] },
     { id: 'cms', label: '경영회계 CMS', icon: Layers, roles: ['admin'] },
     { id: 'loans', label: '대여금 관리', icon: Wallet, roles: ['admin'] },
+    { id: 'borrow', label: '차입 관리', icon: TrendingUp, roles: ['admin'] },
     { id: 'receivables', label: '수금 관리', icon: Calendar, roles: ['admin'] },
     { id: 'results', label: '평가 결과', icon: Award, roles: ['admin', 'manager', 'evaluator'] },
     { id: 'salary', label: '급여 산정', icon: Wallet, roles: ['admin'] },
@@ -4384,7 +4387,7 @@ function App() {
             {activeTab === 'evaluation' && <EvaluationView user={user} employees={visibleEmployees} scores={scores} scoresBy={scoresBy} updateScore={updateScore} applyEvaluatorAvg={applyEvaluatorAvg} selfScores={selfScores} comments={comments} updateComment={updateComment} policy={policy} selectedEmp={selectedEmp} setSelectedEmp={setSelectedEmp} results={results} currentYear={currentYear} submissions={submissions} copySelfToEvaluator={copySelfToEvaluator} finalizeEval={finalizeEval} projects={projects} proposals={proposals} peerEvals={peerEvals} />}
             {activeTab === 'projects' && <ProjectProfitView user={user} employees={employees} projects={projects} proposals={proposals} overheads={overheads} upsertProject={upsertProject} deleteProject={deleteProject} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertProposals={bulkUpsertProposals} deleteProposal={deleteProposal} winProposal={winProposal} updateProposal={updateProposal} upsertProposal={upsertProposal} upsertOverhead={upsertOverhead} deleteOverhead={deleteOverhead} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} setPolicy={setPolicy} cashCfg={cashCfg} setCashCfg={setCashCfg} />}
             {activeTab === 'cms' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <AccountingCmsView fin={fin} setFin={setFin} projects={projects} cashCfg={cashCfg} canEdit={user.role === 'admin'} />}
-            {activeTab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} receivables={receivables} cashCfg={cashCfg} setCashCfg={setCashCfg} upsertProject={upsertProject} deleteProject={deleteProject} fin={fin} />}
+            {activeTab === 'report' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ManagementReportView user={user} borrowings={borrowings} projects={projects} proposals={proposals} overheads={overheads} employees={employees} empLedger={empLedger} setEmpLedger={setEmpLedger} currentYear={currentYear} policy={policy} receivables={receivables} cashCfg={cashCfg} setCashCfg={setCashCfg} upsertProject={upsertProject} deleteProject={deleteProject} fin={fin} />}
             {activeTab === 'loans' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <LoansView loans={loans} setLoans={setLoans} employees={employees} />}
             {activeTab === 'receivables' && (user.role === 'admin' || ['K-140401','K-140402'].includes(user.empId)) && <ReceivablesView receivables={receivables} setReceivables={setReceivables} projects={projects} />}
             {activeTab === 'monthclose' && <MonthCloseView projects={projects} employees={employees} bulkUpsertProjects={bulkUpsertProjects} bulkUpsertOverheads={bulkUpsertOverheads} bulkSetEmpLedger={bulkSetEmpLedger} currentYear={currentYear} policy={policy} />}
@@ -5585,6 +5588,179 @@ function ReceivablesView({ receivables, setReceivables, projects }) {
 
 // ============================================================
 // 대여금 관리 (임직원 대여금 원장)
+// ══════════════════════════════════════════════════════════════════════
+//  차입 관리 (회사 차입금) — 직원 대여금(loans)과 별개 데이터(borrowings)
+//   목적: 급여일 자금 부족 시 "얼마를 언제 빌려 언제 갚는가"를 관리하고,
+//         입금·상환 일정이 자금흐름 예측·급여일 판단에 그대로 반영되게 한다.
+//   필드: 종류 · 금융기관 · 원금 · 금리 · 입금일 · 만기 · 상환방식 · 월상환액
+//   상환방식: 만기일시(interest=매월 이자만) · 원리금균등 · 원금균등
+// ══════════════════════════════════════════════════════════════════════
+function BorrowingsView({ borrowings, setBorrowings, cashCfg }) {
+  const [form, setForm] = React.useState(null);
+  const list = borrowings || [];
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  // 상환 진행 계산
+  const calc = (b) => {
+    const P = Number(b.principal) || 0;
+    const r = (Number(b.rate) || 0) / 100 / 12;
+    const n = Number(b.months) || 0;
+    let monthly = 0, interestOnly = 0;
+    if (b.method === 'equal_pi' && n > 0) {
+      monthly = r > 0 ? Math.round(P * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)) : Math.round(P / n);
+    } else if (b.method === 'equal_p' && n > 0) {
+      monthly = Math.round(P / n) + Math.round(P * r);   // 첫 회차 기준
+    } else {
+      interestOnly = Math.round(P * r);                  // 만기일시: 매월 이자만
+      monthly = interestOnly;
+    }
+    const paid = (b.repayments || []).reduce((a, x) => a + (Number(x.amount) || 0), 0);
+    const outstanding = Math.max(0, P - paid);
+    // 만기일
+    let due = '';
+    if (b.drawDate && n > 0) {
+      const d = new Date(b.drawDate);
+      if (!isNaN(d)) { d.setMonth(d.getMonth() + n); due = d.toISOString().slice(0, 10); }
+    }
+    const dday = due ? Math.round((new Date(due) - today) / 86400000) : null;
+    return { P, monthly, interestOnly, paid, outstanding, due, dday };
+  };
+  const totP = list.reduce((a, b) => a + (Number(b.principal) || 0), 0);
+  const totOut = list.reduce((a, b) => a + calc(b).outstanding, 0);
+  const totMonthly = list.filter(b => calc(b).outstanding > 0).reduce((a, b) => a + calc(b).monthly, 0);
+  const save = () => {
+    if (!form || !form.principal) { alert('원금을 입력하세요'); return; }
+    const rec = { id: form.id || ('BR-' + Date.now()), kind: form.kind || '운전자금',
+      lender: form.lender || '', principal: Number(form.principal) || 0, rate: Number(form.rate) || 0,
+      drawDate: form.drawDate || '', months: Number(form.months) || 0, method: form.method || 'bullet',
+      note: form.note || '', repayments: form.repayments || [] };
+    setBorrowings(prev => { const o = (prev || []).filter(x => x.id !== rec.id); return [...o, rec]; });
+    setForm(null);
+  };
+  const del = (id) => { if (window.confirm('삭제할까요?')) setBorrowings(prev => (prev || []).filter(x => x.id !== id)); };
+  const addRepay = (id) => {
+    const amt = window.prompt('상환액(원)');
+    if (!amt) return;
+    const v = Number(String(amt).replace(/[^\d]/g, '')); if (!(v > 0)) return;
+    setBorrowings(prev => (prev || []).map(b => b.id === id
+      ? { ...b, repayments: [...(b.repayments || []), { date: new Date().toISOString().slice(0, 10), amount: v }] } : b));
+  };
+  const inp = { padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', width: '100%', fontFamily: FONT };
+  const METHOD = { bullet: '만기일시(이자만)', equal_pi: '원리금균등', equal_p: '원금균등' };
+  return (
+    <div style={{ maxWidth: 1100 }}>
+      <PageHeader eyebrow="Financing" title="차입 관리"
+        subtitle="급여일 자금 부족에 대비한 차입 현황과 상환 일정을 관리합니다. 입금·상환이 자금흐름 예측에 반영됩니다." />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: S[3], marginBottom: S[4] }}>
+        <div style={{ ...card(), padding: S[4] }}>
+          <div style={{ fontSize: 11, color: T.textMute, fontWeight: 600 }}>차입 총액</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>{fmtMoney(totP)}<span style={{ fontSize: 12 }}>원</span></div>
+        </div>
+        <div style={{ ...card({ borderLeft: `4px solid ${T.warning}` }), padding: S[4] }}>
+          <div style={{ fontSize: 11, color: T.textMute, fontWeight: 600 }}>미상환 잔액</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: T.warning }}>{fmtMoney(totOut)}<span style={{ fontSize: 12 }}>원</span></div>
+        </div>
+        <div style={{ ...card(), padding: S[4] }}>
+          <div style={{ fontSize: 11, color: T.textMute, fontWeight: 600 }}>월 상환 부담</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>{fmtMoney(totMonthly)}<span style={{ fontSize: 12 }}>원</span></div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: S[3] }}>
+        <Button variant="primary" onClick={() => setForm({ kind: '운전자금', method: 'bullet', rate: 5, months: 12, drawDate: new Date().toISOString().slice(0, 10) })}>차입 등록</Button>
+      </div>
+      {list.length === 0 ? (
+        <EmptyState icon={Wallet} title="등록된 차입이 없습니다" desc="급여일 자금이 부족할 때 차입 계획을 등록하면 예측에 반영됩니다" />
+      ) : (
+        <div style={{ ...card(), overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <thead><tr style={{ background: T.surfaceAlt }}>
+              <Th>종류 · 금융기관</Th><Th align="right">원금</Th><Th align="right">금리</Th>
+              <Th>입금일</Th><Th>만기</Th><Th>상환방식</Th><Th align="right">월 상환</Th>
+              <Th align="right">잔액</Th><Th></Th>
+            </tr></thead>
+            <tbody>
+              {list.slice().sort((a, b) => String(b.drawDate).localeCompare(String(a.drawDate))).map(b => {
+                const k = calc(b); const done = k.outstanding <= 0;
+                return (
+                  <tr key={b.id} style={{ borderTop: `1px solid ${T.divider}`, opacity: done ? 0.5 : 1 }}>
+                    <Td><strong>{b.kind}</strong>{b.lender ? <span style={{ color: T.textMute }}> · {b.lender}</span> : null}
+                      {b.note ? <div style={{ fontSize: 11, color: T.textMute }}>{b.note}</div> : null}</Td>
+                    <Td align="right" mono>{fmtMoney(k.P)}</Td>
+                    <Td align="right" mono>{b.rate}%</Td>
+                    <Td>{b.drawDate}</Td>
+                    <Td>{k.due}{k.dday != null && !done ? <span style={{ color: k.dday < 30 ? T.danger : T.textMute, fontSize: 11 }}> (D{k.dday >= 0 ? '-' + k.dday : '+' + Math.abs(k.dday)})</span> : null}</Td>
+                    <Td style={{ fontSize: 11.5 }}>{METHOD[b.method] || b.method}</Td>
+                    <Td align="right" mono>{done ? '—' : fmtMoney(k.monthly)}</Td>
+                    <Td align="right" mono style={{ fontWeight: 700, color: done ? T.success : T.warning }}>{done ? '상환완료' : fmtMoney(k.outstanding)}</Td>
+                    <Td>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {!done && <Button size="sm" variant="outline" onClick={() => addRepay(b.id)}>상환</Button>}
+                        <Button size="sm" variant="ghost" onClick={() => setForm({ ...b })}>수정</Button>
+                        <Button size="sm" variant="ghost" onClick={() => del(b.id)}>삭제</Button>
+                      </div>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {form && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: S[4] }} onClick={() => setForm(null)}>
+          <div style={{ ...card(), padding: S[5], width: 440, maxWidth: '100%' }} onClick={e => e.stopPropagation()}>
+            <SectionTitle>{form.id ? '차입 수정' : '차입 등록'}</SectionTitle>
+            <div style={{ display: 'grid', gap: S[3], marginTop: S[3] }}>
+              <div style={{ display: 'flex', gap: S[2] }}>
+                <select value={form.kind} onChange={e => setForm(f => ({ ...f, kind: e.target.value }))} style={{ ...inp, flex: 1 }}>
+                  {['운전자금', '시설자금', '한도대출(마이너스)', '어음할인', '팩토링', '기타'].map(x => <option key={x} value={x}>{x}</option>)}
+                </select>
+                <input placeholder="금융기관" value={form.lender || ''} onChange={e => setForm(f => ({ ...f, lender: e.target.value }))} style={{ ...inp, flex: 1 }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>원금(원)</div>
+                <input inputMode="numeric" value={fmtInput(form.principal)} onChange={e => setForm(f => ({ ...f, principal: parseInput(e.target.value) }))} style={{ ...inp, textAlign: 'right' }} />
+              </div>
+              <div style={{ display: 'flex', gap: S[2] }}>
+                <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>연 금리(%)</div>
+                  <input inputMode="decimal" value={form.rate ?? ''} onChange={e => setForm(f => ({ ...f, rate: e.target.value }))} style={{ ...inp, textAlign: 'right' }} /></div>
+                <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>기간(개월)</div>
+                  <input inputMode="numeric" value={form.months ?? ''} onChange={e => setForm(f => ({ ...f, months: e.target.value }))} style={{ ...inp, textAlign: 'right' }} /></div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>입금 예정일 (자금흐름에 수입으로 반영)</div>
+                <input type="date" value={form.drawDate || ''} onChange={e => setForm(f => ({ ...f, drawDate: e.target.value }))} style={inp} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>상환 방식</div>
+                <select value={form.method} onChange={e => setForm(f => ({ ...f, method: e.target.value }))} style={inp}>
+                  <option value="bullet">만기일시 — 매월 이자만 납입</option>
+                  <option value="equal_pi">원리금균등 — 매월 같은 금액</option>
+                  <option value="equal_p">원금균등 — 원금 균등 + 이자</option>
+                </select>
+              </div>
+              {form.principal ? (
+                <div style={{ background: T.surfaceAlt, borderRadius: 6, padding: S[3], fontSize: 12, lineHeight: 1.8 }}>
+                  {(() => { const k = calc(form); return (
+                    <>
+                      월 상환 부담 <strong>{fmtMoney(k.monthly)}원</strong>
+                      {form.method === 'bullet' ? <span style={{ color: T.textMute }}> (이자만 · 만기에 원금 {fmtMoney(k.P)}원 일시상환)</span> : null}
+                      <br /><span style={{ color: T.textMute }}>만기 {k.due || '—'}</span>
+                    </>
+                  ); })()}
+                </div>
+              ) : null}
+              <input placeholder="비고 (담보·보증·용도 등)" value={form.note || ''} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={inp} />
+              <div style={{ display: 'flex', gap: S[2], justifyContent: 'flex-end' }}>
+                <Button variant="ghost" onClick={() => setForm(null)}>취소</Button>
+                <Button variant="primary" onClick={save}>저장</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 function LoansView({ loans, setLoans, employees }) {
   const [form, setForm] = React.useState(null); // null | {id?, empId, principal, rate, startDate, monthly, note}
   const [repay, setRepay] = React.useState(null); // {loanId, amount, date, note}
@@ -10939,7 +11115,7 @@ function PayrollCapacityCards({ eng }) {
   );
 }
 
-function ManagementReportView({ user, projects, proposals, overheads, employees, empLedger, setEmpLedger, currentYear, policy, receivables, cashCfg, setCashCfg, upsertProject, deleteProject, fin }) {
+function ManagementReportView({ user, borrowings, projects, proposals, overheads, employees, empLedger, setEmpLedger, currentYear, policy, receivables, cashCfg, setCashCfg, upsertProject, deleteProject, fin }) {
   const [monthDetail, setMonthDetail] = React.useState(null);   // 월별 상세 모달 (클릭한 월의 row)
   // 데이터 기준월: CMS 마감월(fin.period '2026-06') → '1~6월 누계' 라벨
   const cutM = (() => { const m = String((fin || {}).period || '').match(/-(\d{2})/); return m ? Number(m[1]) : null; })();
@@ -11327,10 +11503,23 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
         const due = (receivables || []).filter(r => !r.paidDate && r.dueDate && Number(r.amount) > 0
           && new Date(r.dueDate) >= now && new Date(r.dueDate) <= new Date(ty, tm - 1, payDay));
         const dueSum = due.reduce((a, r) => a + Number(r.amount), 0);
+        // ★ 급여일까지 입금 예정인 차입금도 더한다 (차입 관리에서 등록)
+        const brIn = (borrowings || []).filter(b => b.drawDate && Number(b.principal) > 0
+          && new Date(b.drawDate) >= now && new Date(b.drawDate) <= new Date(ty, tm - 1, payDay));
+        const brSum = brIn.reduce((a, b) => a + Number(b.principal), 0);
+        // 진행 중 차입의 월 상환 부담
+        const brPay = (borrowings || []).reduce((a, b) => {
+          const P = Number(b.principal) || 0, r2 = (Number(b.rate) || 0) / 100 / 12, n2 = Number(b.months) || 0;
+          const paid = (b.repayments || []).reduce((x, y) => x + (Number(y.amount) || 0), 0);
+          if (P - paid <= 0) return a;
+          if (b.method === 'equal_pi' && n2 > 0) return a + (r2 > 0 ? Math.round(P * r2 * Math.pow(1 + r2, n2) / (Math.pow(1 + r2, n2) - 1)) : Math.round(P / n2));
+          if (b.method === 'equal_p' && n2 > 0) return a + Math.round(P / n2) + Math.round(P * r2);
+          return a + Math.round(P * r2);
+        }, 0);
         // 남은 기간 경비(월 경비 × 남은일수/30)
         const opexM = (Number((fin || {}).opexCash) || 0) + (Number((fin || {}).opexPurchase) || 0);
         const opexLeft = Math.round(opexM * Math.max(0, daysLeft) / 30);
-        const room = tb + dueSum - opexLeft - need;
+        const room = tb + dueSum + brSum - opexLeft - need - brPay;
         const ok = room >= 0;
         if (!tb) return (
           <div style={{ ...card({ borderLeft: `4px solid ${T.textMute}` }), padding: S[4], marginBottom: S[4] }}>
@@ -11376,7 +11565,9 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
               <tbody>
                 <tr><Td>{tbDate || '오늘'} 통장 잔고</Td><Td align="right" mono>{fmtMoney(tb)}</Td></tr>
                 <tr><Td>+ 급여일까지 수금 예정 {due.length ? `(${due.length}건)` : ''}</Td><Td align="right" mono style={{ color: T.success }}>{dueSum ? '+' + fmtMoney(dueSum) : '0'}</Td></tr>
+                {brSum > 0 && <tr><Td>+ 차입 입금 예정 ({brIn.length}건)</Td><Td align="right" mono style={{ color: T.brand }}>+{fmtMoney(brSum)}</Td></tr>}
                 <tr><Td>− 남은 기간 운영경비 ({Math.max(0, daysLeft)}일)</Td><Td align="right" mono style={{ color: T.danger }}>−{fmtMoney(opexLeft)}</Td></tr>
+                {brPay > 0 && <tr><Td>− 차입 상환</Td><Td align="right" mono style={{ color: T.danger }}>−{fmtMoney(brPay)}</Td></tr>}
                 <tr><Td>− 급여 필요액</Td><Td align="right" mono style={{ color: T.danger }}>−{fmtMoney(need)}</Td></tr>
                 <tr style={{ borderTop: `2px solid ${T.border}` }}>
                   <Td style={{ fontWeight: 800 }}>여유</Td>
@@ -11391,7 +11582,8 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             )}
             {!ok && (
               <div style={{ fontSize: 11.5, color: T.danger, marginTop: S[2], lineHeight: 1.8, borderTop: `1px dashed ${T.danger}`, paddingTop: S[2] }}>
-                <strong>대응 검토</strong> — 미수금 조기 수금 요청 · 대출 한도 활용 · 지급 분산(정규/계약직 분리) · 경비 집행 연기
+                <strong>대응 검토</strong> — 미수금 조기 수금 요청 · <strong>차입 {fmtMoney(Math.ceil(Math.abs(room) / 10000000) * 10000000)}원</strong>(1천만 단위) · 지급 분산(정규/계약직 분리) · 경비 집행 연기
+                <div style={{ color: T.textMute, marginTop: 2 }}>「차입 관리」에 등록하면 입금일이 이 계산에 바로 반영됩니다.</div>
               </div>
             )}
           </div>
