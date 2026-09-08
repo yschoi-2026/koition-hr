@@ -5424,9 +5424,47 @@ function ReceivablesView({ receivables, setReceivables, projects }) {
   const overdue = openRows.filter(r => r.dday != null && r.dday < 0);
   const overdueAmt = overdue.reduce((a, r) => a + (Number(r.amount) || 0), 0);
   const soon = openRows.filter(r => r.dday != null && r.dday >= 0 && r.dday <= 30).reduce((a, r) => a + (Number(r.amount) || 0), 0);
+  // ★ 사업을 선택하면 선급률에 따라 선급·잔금을 자동으로 채운다.
+  //   계약 시점에 두 건을 등록해 두면 예측그래프·경영보고서·대시보드가 같은 값을 쓴다.
+  const applyProject = (pid) => {
+    const p = (projects || []).find(x => x.id === pid);
+    if (!p) { setForm(f => ({ ...f, projectId: '', project: '', client: '' })); return; }
+    const rev = Number(p.revenue) || 0;
+    const rate = Number(form && form.advRate != null ? form.advRate : 50);
+    const adv = Math.round(rev * rate / 100);
+    // 기간 파싱: 2026.10~2027.02 → 착수 2026-10, 종료 2027-02
+    const m = String(p.period || '').match(/(\d{4})\.(\d{1,2}).*?(\d{4})\.(\d{1,2})/);
+    let sDate = '', eDate = '';
+    if (m) {
+      sDate = `${m[1]}-${String(m[2]).padStart(2, '0')}-15`;
+      let ey = Number(m[3]), em = Number(m[4]) + 1;      // 종료 익월 15일
+      if (em > 12) { ey += 1; em = 1; }
+      eDate = `${ey}-${String(em).padStart(2, '0')}-15`;
+    }
+    // 선급 예정일이 이미 지났으면 '수금 완료'로 표시해 둔다.
+    //   그러지 않으면 과거 선급이 미래 수입으로 잡혀 예측이 부풀려진다.
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const advPaid = sDate && sDate < todayStr ? sDate : '';
+    setForm(f => ({ ...f, projectId: p.id, project: p.name || '', client: p.client || '',
+      contractAmount: rev, advRate: rate, amount: adv, dueDate: sDate, paidDate: advPaid,
+      remainAmount: rev - adv, remainDate: eDate }));
+  };
   const save = () => {
     if (!form || !form.amount) { alert('금액을 입력하세요'); return; }
-    const rec = { id: form.id || ('AR-' + Date.now()), project: form.project || '', client: form.client || '', amount: Number(form.amount) || 0, dueDate: form.dueDate || '', paidDate: form.paidDate || '', note: form.note || '' };
+    const rec = { id: form.id || ('AR-' + Date.now()), projectId: form.projectId || '', project: form.project || '', client: form.client || '', amount: Number(form.amount) || 0, dueDate: form.dueDate || '', paidDate: form.paidDate || '', note: form.note || '', contractAmount: Number(form.contractAmount) || 0, advRate: Number(form.advRate) || 0 };
+    // 잔금이 함께 입력되면 별도 건으로 같이 등록한다(계약 1건 → 선급·잔금 2건)
+    const rem = Number(form.remainAmount) || 0;
+    const remRec = (rem > 0 && form.remainDate) ? {
+      id: (form.id ? form.id + '-R' : 'AR-' + Date.now() + '-R'),
+      projectId: form.projectId || '', project: form.project || '', client: form.client || '',
+      amount: rem, dueDate: form.remainDate, paidDate: '', note: '잔금',
+      contractAmount: Number(form.contractAmount) || 0,
+    } : null;
+    if (remRec) {
+      setReceivables(prev => { const o = (prev || []).filter(x => x.id !== rec.id && x.id !== remRec.id); return [...o, rec, remRec]; });
+      setForm(null);
+      return;
+    }
     setReceivables(prev => { const o = (prev || []).filter(x => x.id !== rec.id); return [...o, rec]; });
     setForm(null);
   };
@@ -5485,14 +5523,53 @@ function ReceivablesView({ receivables, setReceivables, projects }) {
           <div style={{ ...card(), padding: S[5], width: 420, maxWidth: '100%' }} onClick={e => e.stopPropagation()}>
             <SectionTitle>{form.id ? '수금 수정' : '수금 예정 등록'}</SectionTitle>
             <div style={{ display: 'grid', gap: S[3], marginTop: S[3] }}>
-              <input list="ar-proj" placeholder="사업명" value={form.project} onChange={e => setForm(f => ({ ...f, project: e.target.value }))} style={inp} />
-              <datalist id="ar-proj">{(projects || []).map(p => <option key={p.id} value={p.name} />)}</datalist>
+                {/* ★ 사업 선택 → 선급률에 따라 선급·잔금이 자동 계산된다 */}
+                <div>
+                  <div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>사업 선택 (선급·잔금 자동 계산)</div>
+                  <select value={form.projectId || ''} onChange={e => applyProject(e.target.value)} style={inp}>
+                    <option value="">— 직접 입력 —</option>
+                    {(projects || []).filter(p => Number(p.revenue) > 0).sort((a, b) => String(b.id).localeCompare(String(a.id))).map(p => (
+                      <option key={p.id} value={p.id}>{p.id} · {shorten(p.name, 26)} · {fmtEok(Number(p.revenue) || 0)}</option>
+                    ))}
+                  </select>
+                </div>
+                <input placeholder="사업명" value={form.project} onChange={e => setForm(f => ({ ...f, project: e.target.value }))} style={inp} />
+                <input placeholder="발주처" value={form.client} onChange={e => setForm(f => ({ ...f, client: e.target.value }))} style={inp} />
+                {form.projectId ? (
+                  <div style={{ background: T.surfaceAlt, borderRadius: 6, padding: S[3], fontSize: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: S[2], marginBottom: S[2] }}>
+                      <span style={{ color: T.textMute }}>계약금액</span>
+                      <strong style={{ fontFamily: MONO }}>{fmtWon(Number(form.contractAmount) || 0)}</strong>
+                      <div style={{ flex: 1 }} />
+                      <span style={{ color: T.textMute }}>선급률</span>
+                      <input inputMode="numeric" value={form.advRate ?? 50}
+                        onChange={e => { const v = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                          const rev = Number(form.contractAmount) || 0; const a = Math.round(rev * v / 100);
+                          setForm(f => ({ ...f, advRate: v, amount: a, remainAmount: rev - a })); }}
+                        style={{ ...inp, width: 60, textAlign: 'right' }} />
+                      <span style={{ color: T.textMute }}>%</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: T.textMute, lineHeight: 1.7 }}>
+                      선급 {fmtWon(Number(form.amount) || 0)} · 잔금 {fmtWon(Number(form.remainAmount) || 0)}
+                      <br />저장하면 <strong>선급·잔금 2건</strong>이 등록되고 예측·경영보고서에 함께 반영됩니다.
+                    </div>
+                  </div>
+                ) : null}
               <input placeholder="발주처" value={form.client} onChange={e => setForm(f => ({ ...f, client: e.target.value }))} style={inp} />
               <input inputMode="numeric" placeholder="금액(원)" value={fmtInput(form.amount)} onChange={e => setForm(f => ({ ...f, amount: parseInput(e.target.value) }))} style={inp} />
               <div style={{ display: 'flex', gap: S[2] }}>
                 <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>수금 예정일</div><input type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} style={inp} /></div>
                 <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>입금일(완료시)</div><input type="date" value={form.paidDate} onChange={e => setForm(f => ({ ...f, paidDate: e.target.value }))} style={inp} /></div>
               </div>
+              {/* ★ 잔금 예정일 — 사업 선택 시 종료 익월 15일로 자동 설정. 저장하면 잔금 건이 함께 등록된다 */}
+              {form.projectId && Number(form.remainAmount) > 0 ? (
+                <div>
+                  <div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>
+                    잔금 예정일 <span style={{ color: T.warning }}>({fmtWon(Number(form.remainAmount) || 0)} 별도 등록)</span>
+                  </div>
+                  <input type="date" value={form.remainDate || ''} onChange={e => setForm(f => ({ ...f, remainDate: e.target.value }))} style={inp} />
+                </div>
+              ) : null}
               <input placeholder="비고 (검수·계약 단계 등)" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={inp} />
               <div style={{ display: 'flex', gap: S[2], justifyContent: 'flex-end' }}>
                 <Button variant="ghost" onClick={() => setForm(null)}>취소</Button>
@@ -11739,10 +11816,13 @@ function ManagementReportView({ user, projects, proposals, overheads, employees,
             // ★ 자동보정(bias)은 '미래 예측'에만 적용한다.
             //   확정월은 r.bal 이 이미 실제 잔고라, 여기에 bias 를 더하면 과거 구간 전체가
             //   실제선과 일정 간격으로 벌어져 버린다(같은 값에 상수를 더하는 셈).
-            예측잔고: Math.round((r.bal + (r.confirmed ? 0 : bias)) / 1000000),
-            '예측(파이프라인)': Math.round((r.balS + (r.confirmed ? 0 : bias)) / 1000000),
-            낙관: Math.round((r.balOpt + (r.confirmed ? 0 : bias)) / 1000000),
-            보수: Math.round((r.balCons + (r.confirmed ? 0 : bias)) / 1000000),
+            // ★ 급여일 지급여력 카드와 같은 값을 쓴다(카드는 r.bal 을 그대로 사용).
+            //   예전에는 미래월에 bias(과거 예측오차 평균)를 더해 카드와 그래프 숫자가 어긋났다.
+            //   '10일 지급여력'과 그래프·상세표가 같은 기준이어야 판단이 흔들리지 않는다.
+            예측잔고: Math.round(r.bal / 1000000),
+            '예측(파이프라인)': Math.round(r.balS / 1000000),
+            낙관: Math.round(r.balOpt / 1000000),
+            보수: Math.round(r.balCons / 1000000),
             안전선: Math.round(safety / 1000000),
             순증감: Math.round((r.inc - r.exp) / 1000000),   // 그 달 현금 순증감(수입−지출)
             인건비: Math.round((r.expLabor || 0) / 1000000),           // 실제 반영 인건비
