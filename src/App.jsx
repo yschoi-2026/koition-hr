@@ -5529,7 +5529,7 @@ function ReceivablesView({ receivables, setReceivables, projects }) {
                   <select value={form.projectId || ''} onChange={e => applyProject(e.target.value)} style={inp}>
                     <option value="">— 직접 입력 —</option>
                     {(projects || []).filter(p => Number(p.revenue) > 0).sort((a, b) => String(b.id).localeCompare(String(a.id))).map(p => (
-                      <option key={p.id} value={p.id}>{p.id} · {shorten(p.name, 26)} · {fmtEok(Number(p.revenue) || 0)}</option>
+                      <option key={p.id} value={p.id}>{p.id} · {shorten(p.name, 26)} · {fmtMoney(Number(p.revenue) || 0) + "원"}</option>
                     ))}
                   </select>
                 </div>
@@ -5539,7 +5539,7 @@ function ReceivablesView({ receivables, setReceivables, projects }) {
                   <div style={{ background: T.surfaceAlt, borderRadius: 6, padding: S[3], fontSize: 12 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: S[2], marginBottom: S[2] }}>
                       <span style={{ color: T.textMute }}>계약금액</span>
-                      <strong style={{ fontFamily: MONO }}>{fmtWon(Number(form.contractAmount) || 0)}</strong>
+                      <strong style={{ fontFamily: FONT }}>{fmtMoney(Number(form.contractAmount) || 0) + "원"}</strong>
                       <div style={{ flex: 1 }} />
                       <span style={{ color: T.textMute }}>선급률</span>
                       <input inputMode="numeric" value={form.advRate ?? 50}
@@ -5550,7 +5550,7 @@ function ReceivablesView({ receivables, setReceivables, projects }) {
                       <span style={{ color: T.textMute }}>%</span>
                     </div>
                     <div style={{ fontSize: 11, color: T.textMute, lineHeight: 1.7 }}>
-                      선급 {fmtWon(Number(form.amount) || 0)} · 잔금 {fmtWon(Number(form.remainAmount) || 0)}
+                      선급 {fmtMoney(Number(form.amount) || 0) + "원"} · 잔금 {fmtMoney(Number(form.remainAmount) || 0) + "원"}
                       <br />저장하면 <strong>선급·잔금 2건</strong>이 등록되고 예측·경영보고서에 함께 반영됩니다.
                     </div>
                   </div>
@@ -5565,7 +5565,7 @@ function ReceivablesView({ receivables, setReceivables, projects }) {
               {form.projectId && Number(form.remainAmount) > 0 ? (
                 <div>
                   <div style={{ fontSize: 11, color: T.textMute, marginBottom: 2 }}>
-                    잔금 예정일 <span style={{ color: T.warning }}>({fmtWon(Number(form.remainAmount) || 0)} 별도 등록)</span>
+                    잔금 예정일 <span style={{ color: T.warning }}>({fmtMoney(Number(form.remainAmount) || 0) + "원"} 별도 등록)</span>
                   </div>
                   <input type="date" value={form.remainDate || ''} onChange={e => setForm(f => ({ ...f, remainDate: e.target.value }))} style={inp} />
                 </div>
