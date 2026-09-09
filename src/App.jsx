@@ -11067,7 +11067,7 @@ function PayrollCapacityCards({ eng }) {
                         <Td align="right" mono style={{ color: T.textMute }}>−{fmtMoney(x.outX)}</Td>
                         <Td align="right" mono style={{ color: T.textMute }}>−{fmtMoney(x.need)}</Td>
                         <Td align="right" mono><strong>{fmtMoney(v.bal)}</strong></Td>
-                        <Td align="right" mono style={{ fontWeight: 800, color: v.ok ? accent : T.danger }}>{v.ok ? '' : '▲ '}{fmtMoney(v.room)}</Td>
+                        <Td align="right" mono style={{ fontWeight: 800, color: v.ok ? accent : T.danger }}>{v.ok ? '' : '▼ '}{fmtMoney(v.room)}</Td>
                       </tr>
                     );
                   })}
@@ -11655,7 +11655,15 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 {accts.length > 0 && acctAll > acctUsable && (
                   <tr><Td style={{ color: T.textMute, fontSize: 11.5 }}>　(가용 제외 계좌 {fmtMoney(acctAll - acctUsable)})</Td><Td align="right" mono style={{ color: T.textMute, fontSize: 11.5 }}>—</Td></tr>
                 )}
-                {paidSum > 0 && <tr><Td style={{ color: T.textMute, fontSize: 11.5 }}>　(이번 사이클 입금 완료 {paidIn.length}건 — 잔고 포함)</Td><Td align="right" mono style={{ color: T.textMute, fontSize: 11.5 }}>{fmtMoney(paidSum)}</Td></tr>}
+                {paidSum > 0 && (<>
+                  <tr><Td style={{ color: T.textMute, fontSize: 11.5 }}>　(이번 사이클 입금 완료 {paidIn.length}건 — <strong style={{ color: T.caution }}>잔고에 포함돼야 함</strong>)</Td><Td align="right" mono style={{ color: T.textMute, fontSize: 11.5 }}>{fmtMoney(paidSum)}</Td></tr>
+                  {/* ★ 어느 사업의 무슨 돈이 들어왔는지 밝힌다 */}
+                  {paidIn.map((r, k) => (
+                    <tr key={k}><Td style={{ color: T.textMute, fontSize: 10.5, paddingTop: 0, paddingBottom: 1 }}>
+                      　　{r.paidDate ? String(r.paidDate).slice(5) : ''} {shorten(r.label || r.project || r.client, 34)}
+                    </Td><Td align="right" mono style={{ color: T.textMute, fontSize: 10.5, paddingTop: 0, paddingBottom: 1 }}>{fmtMoney(Number(r.amount) || 0)}</Td></tr>
+                  ))}
+                </>)}
                 <tr><Td>+ 급여일까지 수금 예정 {due.length ? `(${due.length}건)` : ''}</Td><Td align="right" mono style={{ color: T.success }}>{dueSum ? '+' + fmtMoney(dueSum) : '0'}</Td></tr>
                 {brSum > 0 && <tr><Td>+ 차입 입금 예정 ({brIn.length}건)</Td><Td align="right" mono style={{ color: T.brand }}>+{fmtMoney(brSum)}</Td></tr>}
                 <tr><Td>− 남은 기간 운영경비 ({Math.max(0, daysLeft)}일)</Td><Td align="right" mono style={{ color: T.alert }}>−{fmtMoney(opexLeft)}</Td></tr>
@@ -11708,6 +11716,12 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                     </div>
                   </div>
                 ))}
+                {/* ★ 잔고 기준일 이후 입금이 있으면 잔고 갱신을 안내 — 이중계상/누락 방지 */}
+                {paidIn.some(r => tbDate && String(r.paidDate) >= tbDate) && (
+                  <div style={{ fontSize: 10.5, color: T.caution, marginBottom: S[2], lineHeight: 1.7 }}>
+                    잔고 기준일({tbDate}) 이후 입금분이 있습니다. 위 잔액이 그 입금을 포함한 금액인지 확인해 주세요.
+                  </div>
+                )}
                 <Button size="sm" variant="ghost" onClick={() => setCashCfg(pv => ({ ...pv, accounts: [...(pv.accounts || []), { name: '', balance: 0, usable: true }] }))}>+ 계좌 추가</Button>
               </div>
             )}
@@ -11780,7 +11794,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 {payPanelOpen && detailBody}
                 {payModal && (
                   <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1400, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: S[4], overflowY: 'auto' }} onClick={() => setPayModal(false)}>
-                    <div style={{ ...card(), padding: S[5], width: 720, maxWidth: '100%', marginTop: S[5] }} onClick={e => e.stopPropagation()}>
+                    <div style={{ ...card(), padding: S[5], width: 1080, maxWidth: '96vw', marginTop: S[5] }} onClick={e => e.stopPropagation()}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: S[3], marginBottom: S[4] }}>
                         <div>
                           <div style={{ fontSize: 11, color: T.textMute, fontWeight: 600, letterSpacing: '0.1em' }}>PAYDAY CHECK</div>
@@ -12217,8 +12231,47 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
         });
         const expCons = months.map((mo, i) => laborOf(mo, i) + fixedOf(i) + Math.round(projOpexUse * activeRatioOf(i) * 1.1) + taxOf(mo) + extraExpArr[i]);   // 보수: 프로젝트성경비 +10%
         const rows = months.map((mo, i) => {
-          const isConfirmed = i <= startAfterIdx;   // 실제 잔고가 있는 확정 월
+// ★ '확정 월' 판정 — 급여일이 지난 달만 확정으로 본다.
+          //   급여일 전인 이번 달을 확정으로 처리하면 앞으로 들어올 차입·수금이 무시되어
+          //   급여일 판단 패널(앞으로 들어올 것을 더함)과 숫자가 어긋난다.
+          //   기준일은 cashCfg.todayBalanceDate(없으면 시스템 날짜).
+          const _rd = String(cfg.todayBalanceDate || '').match(/(\d{4})-(\d{2})-(\d{2})/);
+          const _ry = _rd ? +_rd[1] : new Date().getFullYear();
+          const _rm = _rd ? +_rd[2] : new Date().getMonth() + 1;
+          const _rdd = _rd ? +_rd[3] : new Date().getDate();
+          const _refIdx = (_ry - y0) * 12 + (_rm - 1 - m0);
+          const _payPassed = _rdd > (Number((policy && policy.payDay) || 10));
+          const isConfirmed = i <= startAfterIdx && (i < _refIdx || (i === _refIdx && _payPassed));
           const aVal = actualBalMapInit[mo.key];
+          // ★ 이번 달(급여일 전)은 '오늘 실측 잔고'에서 출발한다.
+          //   8월 이월 + 9월 한 달 예측으로 굴리면 이미 지난 8일간의 실제 입출금이 무시되고
+          //   급여일 판단 패널(오늘 잔고 기준)과 숫자가 어긋난다.
+          //   오늘 이후 남은 기간의 수입·경비만 더해 인출 직전 잔고를 만든다.
+          const _isThisPay = (i === _refIdx) && !_payPassed && aVal != null && aVal !== '';
+          if (_isThisPay) {
+            const today0 = Number(aVal);                      // 계좌 합산(전용 유휴 제외) 주입값
+            const daysLeft0 = Math.max(0, (Number((policy && policy.payDay) || 10)) - _rdd);
+            // 오늘 이후 ~ 급여일 사이 입금 예정(수금 + 차입)
+            let inLeft = 0;
+            (receivables || []).forEach(r => {
+              if (r.paidDate || !r.dueDate) return;
+              const dt = String(r.dueDate);
+              if (dt >= String(cfg.todayBalanceDate || '') && dt <= `${_ry}-${String(_rm).padStart(2, '0')}-${String(Number((policy && policy.payDay) || 10)).padStart(2, '0')}`) inLeft += Number(r.amount) || 0;
+            });
+            (borrowings || []).forEach(b => {
+              const dt = String(b.drawDate || '');
+              if (dt >= String(cfg.todayBalanceDate || '') && dt <= `${_ry}-${String(_rm).padStart(2, '0')}-${String(Number((policy && policy.payDay) || 10)).padStart(2, '0')}`) inLeft += Number(b.principal) || 0;
+            });
+            const opexLeft0 = Math.round(((Number((fin || {}).opexCash) || 0) + (Number((fin || {}).opexPurchase) || 0)) * daysLeft0 / 30);
+            const balNow = today0 + inLeft - opexLeft0 - brMonthly;
+            const drawn0 = payrollAtRaw(i);
+            bal = balNow - Math.max(0, drawn0); balS = bal; balOpt = bal; balCons = bal;
+            return { ...mo, confirmed: false, thisPay: true, inc: inLeft, incS: inLeft, exp: opexLeft0 + brMonthly + drawn0,
+              expLabor: laborOf(mo, i), expOpex: opexLeft0, expTax: taxOf(mo), expEtc: extraExpArr[i], expFixed: fixedOf(i),
+              expProj: 0, incColl: incColl[i], incSched: incSched[i], incManual: incManual[i], incExtra: incExtra[i],
+              incPipe: incPipe[i], pipeNotes: pipeNote[i].slice(), prevBal: today0,
+              bal: balNow, balS: balNow, balOpt: balNow, balCons: balNow, allNotes: incNote[i].slice() };
+          }
           // ★ 확정 구간의 실제값은 '10일 인출 직전' 잔고다. 다음 달로 굴릴 때는 그 달 급여일 인출을
           //   먼저 빼야 한다. 안 빼면 이미 나간 급여가 남아 있는 것처럼 계산되어 이후 예측이 통째로 과대해진다.
           if (isConfirmed && aVal != null && aVal !== '') {
@@ -12480,7 +12533,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                             <Td align="right" mono>{fmtMoney(x.bal)}</Td>
                             <Td align="right" mono><strong>{fmtMoney(x.need)}</strong></Td>
                             <Td align="center" style={{ fontSize: 10, color: x.src === '실측' ? T.success : T.textMute }}>{x.src}</Td>
-                            <Td align="right" mono style={{ color: x.ok ? T.success : T.alert, fontWeight: 700 }}>{x.ok ? '' : '▲ '}{fmtMoney(x.room)}</Td>
+                            <Td align="right" mono style={{ color: x.ok ? T.success : T.alert, fontWeight: 700 }}>{x.ok ? '' : '▼ '}{fmtMoney(x.room)}</Td>
                           </tr>
                         ))}
                       </tbody>
