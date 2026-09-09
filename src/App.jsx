@@ -5487,7 +5487,7 @@ function ReceivablesView({ receivables, setReceivables, projects }) {
   const inp = { padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12.5, boxSizing: 'border-box', width: '100%' };
   const sorted = rows.slice().sort((a, b) => { if (a.paid !== b.paid) return a.paid ? 1 : -1; return String(a.dueDate).localeCompare(String(b.dueDate)); });
   return (
-    <div style={{ maxWidth: 1000 }}>
+    <div style={{ maxWidth: 1320 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: S[4], flexWrap: 'wrap', gap: S[3] }}>
         <div>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>수금 관리 (자금 캘린더)</h2>
@@ -5503,7 +5503,7 @@ function ReceivablesView({ receivables, setReceivables, projects }) {
       <div style={{ ...card(), padding: 0, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 780 }}>
           <thead><tr style={{ background: T.surfaceAlt }}>
-            <Th>사업/발주처</Th><Th align="right">금액</Th><Th align="center">수금예정일</Th><Th align="center">상태</Th><Th>비고</Th><Th align="center">관리</Th>
+            <Th>사업/발주처</Th><Th align="right">금액</Th><Th align="center">수금예정일</Th><Th align="center">상태</Th><Th>비고</Th><Th align="center" style={{ minWidth: 210 }}>관리</Th>
           </tr></thead>
           <tbody>
             {sorted.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: T.textLight, padding: 24 }}>등록된 수금 예정이 없습니다</td></tr>}
@@ -5526,12 +5526,13 @@ function ReceivablesView({ receivables, setReceivables, projects }) {
                     : r.dday != null ? <Badge color={r.dday <= 30 ? T.warning : T.textMute} size="sm">D-{r.dday}</Badge>
                     : <Badge color={T.textMute} size="sm">미정</Badge>}
                 </Td>
-                <Td style={{ fontSize: 11.5, color: T.textMute }}>{r.note}</Td>
+                <Td style={{ fontSize: 11.5, color: T.textMute, maxWidth: 260 }}>{r.note}</Td>
                 <Td align="center">
-                  <span style={{ display: 'inline-flex', gap: 4 }}>
+                  {/* ★ 입금확인·편집·삭제를 한 줄에 나란히 — 라벨을 붙여 무슨 버튼인지 바로 알 수 있게 */}
+                  <span style={{ display: 'inline-flex', gap: 4, whiteSpace: 'nowrap' }}>
                     <Button size="sm" variant={r.paid ? 'ghost' : 'outline'} onClick={() => togglePaid(r.id)}>{r.paid ? '입금취소' : '입금확인'}</Button>
-                    <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setForm({ ...r })} />
-                    <Button size="sm" variant="ghost" icon={Trash2} onClick={() => del(r.id)} />
+                    <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setForm({ ...r })}>편집</Button>
+                    <Button size="sm" variant="ghost" icon={Trash2} onClick={() => del(r.id)}>삭제</Button>
                   </span>
                 </Td>
               </tr>
