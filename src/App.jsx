@@ -11139,6 +11139,8 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
   const [acctOpen, setAcctOpen] = React.useState(false);   // 계좌별 잔고 편집 패널
   const [payPanelOpen, setPayPanelOpen] = React.useState(false);   // 급여일 판단 상세 — 기본 접힘
   const [payModal, setPayModal] = React.useState(false);           // 급여일 판단 모달
+  const [ppOpen, setPpOpen] = React.useState(false);               // 선지급 등록 폼
+  const [ppForm, setPpForm] = React.useState({});
   const [monthDetail, setMonthDetail] = React.useState(null);   // 월별 상세 모달 (클릭한 월의 row)
   // 데이터 기준월: CMS 마감월(fin.period '2026-06') → '1~6월 누계' 라벨
   const cutM = (() => { const m = String((fin || {}).period || '').match(/-(\d{2})/); return m ? Number(m[1]) : null; })();
@@ -11680,10 +11682,55 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                   <tr><Td style={{ fontSize: 10.5, color: T.textMute, paddingTop: 0, paddingBottom: 1 }}>　　급여 총액 {fmtMoney(needRaw)} − 선지급 {fmtMoney(prepaidSum)}</Td><Td /></tr>
                   {prepaidList.map((x, k) => (
                     <tr key={k}><Td style={{ fontSize: 10.5, color: T.textMute, paddingTop: 0, paddingBottom: 1 }}>
-                      　　　{x.date ? String(x.date).slice(5) : ''} {shorten(x.label || '선지급', 32)} (잔고에서 이미 인출)
+                      　　　{x.date ? String(x.date).slice(5) : ''} {shorten(x.label || '선지급', 30)} (잔고에서 이미 인출)
+                      {setCashCfg && <button onClick={() => setCashCfg(pv => ({ ...pv, prepaid: { ...(pv.prepaid || {}), [mk]: ((pv.prepaid || {})[mk] || []).filter((_, j) => j !== k) } }))}
+                        style={{ border: 'none', background: 'none', color: T.alert, cursor: 'pointer', fontSize: 12, marginLeft: 4 }}>×</button>}
                     </Td><Td align="right" mono style={{ fontSize: 10.5, color: T.textMute, paddingTop: 0, paddingBottom: 1 }}>{fmtMoney(Number(x.amount) || 0)}</Td></tr>
                   ))}
                 </>)}
+                {/* ★ 선지급 등록 — 급여일 전에 이미 나간 인건비를 여기서 입력한다.
+                     입력하면 급여 필요액에서 차감되어 자금예측·지급판단에 즉시 반영된다. */}
+                {setCashCfg && (
+                  <tr><Td colSpan={2} style={{ paddingTop: 4 }}>
+                    {ppOpen ? (
+                      <div style={{ background: T.surfaceAlt, borderRadius: 6, padding: S[3] }}>
+                        <div style={{ fontSize: 10.5, color: T.textMute, marginBottom: S[2] }}>
+                          급여일 전에 이미 인출된 인건비를 등록하세요 (계약직·작업자 선지급 등)
+                        </div>
+                        <div style={{ display: 'flex', gap: S[2], flexWrap: 'wrap', alignItems: 'center' }}>
+                          <input type="date" value={ppForm.date || ''} onChange={e => setPpForm(f => ({ ...f, date: e.target.value }))}
+                            style={{ padding: '5px 8px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5 }} />
+                          <select value={ppForm.projectId || ''} onChange={e => {
+                              const q = (projects || []).find(z => z.id === e.target.value);
+                              setPpForm(f => ({ ...f, projectId: e.target.value, label: q ? `${q.name} 인건비` : f.label }));
+                            }} style={{ padding: '5px 8px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, maxWidth: 220 }}>
+                            <option value="">사업 선택(선택)</option>
+                            {(projects || []).filter(z => z.status !== 'completed').sort((a, b) => String(b.id).localeCompare(String(a.id)))
+                              .map(z => <option key={z.id} value={z.id}>{z.id} · {shorten(z.name, 20)}</option>)}
+                          </select>
+                          <input placeholder="내용" value={ppForm.label || ''} onChange={e => setPpForm(f => ({ ...f, label: e.target.value }))}
+                            style={{ padding: '5px 8px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, flex: 1, minWidth: 120 }} />
+                          <input inputMode="numeric" placeholder="금액(원)" value={fmtInput(ppForm.amount)}
+                            onChange={e => setPpForm(f => ({ ...f, amount: parseInput(e.target.value) }))}
+                            style={{ padding: '5px 8px', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11.5, width: 130, textAlign: 'right' }} />
+                          <Button size="sm" variant="primary" onClick={() => {
+                            if (!(Number(ppForm.amount) > 0)) return;
+                            setCashCfg(pv => ({ ...pv, prepaid: { ...(pv.prepaid || {}),
+                              [mk]: [...((pv.prepaid || {})[mk] || []), { date: ppForm.date || tbDate, label: ppForm.label || '선지급', amount: Number(ppForm.amount), projectId: ppForm.projectId || '' }] } }));
+                            setPpForm({}); setPpOpen(false);
+                          }}>추가</Button>
+                          <Button size="sm" variant="ghost" onClick={() => { setPpForm({}); setPpOpen(false); }}>취소</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button onClick={() => { setPpForm({ date: tbDate }); setPpOpen(true); }}
+                        style={{ border: `1px dashed ${T.border}`, background: 'none', borderRadius: 5, padding: '3px 10px',
+                          fontSize: 10.5, cursor: 'pointer', fontFamily: FONT, color: T.textMute }}>
+                        + 선지급 인건비 등록 (급여일 전 이미 인출된 금액)
+                      </button>
+                    )}
+                  </Td></tr>
+                )}
                 <tr style={{ borderTop: `2px solid ${T.border}` }}>
                   <Td style={{ fontWeight: 800 }}>여유</Td>
                   <Td align="right" mono style={{ fontWeight: 800, color: ok ? T.success : T.alert }}>{room >= 0 ? '+' : ''}{fmtMoney(room)}</Td>
