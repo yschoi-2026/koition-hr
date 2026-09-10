@@ -11543,7 +11543,13 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
           ? Math.round((new Date(ty, tm - 1, payDay) - now) / 86400000)
           : (payDay - dd);
         // 급여 필요액: 실측 우선, 없으면 기준선
-        const need = Number(((cashCfg || {}).payrollActual || {})[mk]) || Number((cashCfg || {}).payrollBase) || 0;
+        const needRaw = Number(((cashCfg || {}).payrollActual || {})[mk]) || Number((cashCfg || {}).payrollBase) || 0;
+        // ★ 선지급분 — 급여일 전에 이미 나간 인건비(계약직·작업자 등)는 잔고에서 이미 빠졌다.
+        //   그대로 두면 '잔고에서 한 번, 급여 필요액에서 또 한 번' 이중 계상된다.
+        //   cashCfg.prepaid[YYYY-MM] = [{date, label, amount}]
+        const prepaidList = (((cashCfg || {}).prepaid || {})[mk] || []).filter(x => x && Number(x.amount) > 0);
+        const prepaidSum = prepaidList.reduce((a, x) => a + Number(x.amount), 0);
+        const need = Math.max(0, needRaw - prepaidSum);
         // 급여일까지 입금 예정인 수금(미입금분)
         const due = (receivables || []).filter(r => !r.paidDate && r.dueDate && Number(r.amount) > 0
           && new Date(r.dueDate) >= now && new Date(r.dueDate) <= new Date(ty, tm - 1, payDay));
@@ -11669,7 +11675,15 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
                 {brSum > 0 && <tr><Td>+ 차입 입금 예정 ({brIn.length}건)</Td><Td align="right" mono style={{ color: T.brand }}>+{fmtMoney(brSum)}</Td></tr>}
                 <tr><Td>− 남은 기간 운영경비 ({Math.max(0, daysLeft)}일)</Td><Td align="right" mono style={{ color: T.alert }}>−{fmtMoney(opexLeft)}</Td></tr>
                 {brPay > 0 && <tr><Td>− 차입 상환</Td><Td align="right" mono style={{ color: T.alert }}>−{fmtMoney(brPay)}</Td></tr>}
-                <tr><Td>− 급여 필요액</Td><Td align="right" mono style={{ color: T.alert }}>−{fmtMoney(need)}</Td></tr>
+                <tr><Td>− 급여 필요액{prepaidSum > 0 ? <span style={{ fontSize: 10.5, color: T.textMute }}> (선지급 제외 후)</span> : null}</Td><Td align="right" mono style={{ color: T.alert }}>−{fmtMoney(need)}</Td></tr>
+                {prepaidSum > 0 && (<>
+                  <tr><Td style={{ fontSize: 10.5, color: T.textMute, paddingTop: 0, paddingBottom: 1 }}>　　급여 총액 {fmtMoney(needRaw)} − 선지급 {fmtMoney(prepaidSum)}</Td><Td /></tr>
+                  {prepaidList.map((x, k) => (
+                    <tr key={k}><Td style={{ fontSize: 10.5, color: T.textMute, paddingTop: 0, paddingBottom: 1 }}>
+                      　　　{x.date ? String(x.date).slice(5) : ''} {shorten(x.label || '선지급', 32)} (잔고에서 이미 인출)
+                    </Td><Td align="right" mono style={{ fontSize: 10.5, color: T.textMute, paddingTop: 0, paddingBottom: 1 }}>{fmtMoney(Number(x.amount) || 0)}</Td></tr>
+                  ))}
+                </>)}
                 <tr style={{ borderTop: `2px solid ${T.border}` }}>
                   <Td style={{ fontWeight: 800 }}>여유</Td>
                   <Td align="right" mono style={{ fontWeight: 800, color: ok ? T.success : T.alert }}>{room >= 0 ? '+' : ''}{fmtMoney(room)}</Td>
@@ -12265,7 +12279,11 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
             });
             const opexLeft0 = Math.round(((Number((fin || {}).opexCash) || 0) + (Number((fin || {}).opexPurchase) || 0)) * daysLeft0 / 30);
             const balNow = today0 + inLeft - opexLeft0 - brMonthly;
-            const drawn0 = payrollAtRaw(i);
+            // ★ 선지급분 차감 — 급여일 전에 이미 나간 인건비는 잔고에서 빠졌으므로
+            //   급여일에 추가로 나갈 금액에서 제외한다(이중 계상 방지).
+            const _ppList = ((cfg.prepaid || {})[mo.key] || []).filter(x => x && Number(x.amount) > 0);
+            const _ppSum = _ppList.reduce((a, x) => a + Number(x.amount), 0);
+            const drawn0 = Math.max(0, payrollAtRaw(i) - _ppSum);
             bal = balNow - Math.max(0, drawn0); balS = bal; balOpt = bal; balCons = bal;
             return { ...mo, confirmed: false, thisPay: true, inc: inLeft, incS: inLeft, exp: opexLeft0 + brMonthly + drawn0,
               expLabor: laborOf(mo, i), expOpex: opexLeft0, expTax: taxOf(mo), expEtc: extraExpArr[i], expFixed: fixedOf(i),
@@ -12337,12 +12355,20 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
             return sum + Math.max(0, bal0 - need0);   // 그 사업에 쓰고도 남는 = 묶인 돈
           }, 0);
         };
+        // ★ 그 달 급여일에 '실제로 나갈' 금액 — 선지급분은 이미 잔고에서 빠졌으므로 제외한다.
+        //   (예: 9/5 국가기록물 정리사업 계약직 인건비 74,299,520 선지급)
+        const prepaidAt = (i) => {
+          const r = rows[i]; if (!r) return 0;
+          return ((cfg.prepaid || {})[r.key] || []).reduce((a, x) => a + (Number(x && x.amount) || 0), 0);
+        };
         const payrollAt = (i) => {
           const r = rows[i]; if (!r) return 0;
           const av = payActual[r.key];
-          if (av != null && av !== '' && Number(av) > 0) return Math.round(Number(av));
-          if (payBase > 0) return Math.round(payBase);
-          return Math.round((Number(r.expLabor) || 0) + socialInsAt(i));
+          let base;
+          if (av != null && av !== '' && Number(av) > 0) base = Math.round(Number(av));
+          else if (payBase > 0) base = Math.round(payBase);
+          else base = Math.round((Number(r.expLabor) || 0) + socialInsAt(i));
+          return Math.max(0, base - prepaidAt(i));
         };
         const payrollSrc = (i) => {
           const r = rows[i]; if (!r) return '추정';
