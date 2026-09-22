@@ -12020,6 +12020,12 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
           const i = idxOfPay(d.getFullYear(), d.getMonth() + 1, d.getDate());
           const at = i < 0 ? 0 : i;   // 연체분은 이번 달 수금 가정
           if (at < FC_MONTHS) { inc[at] += Number(r.amount); incColl[at] += Number(r.amount); incNote[at].push((r.project || '수금') + (i < 0 ? '(연체)' : '')); if (r.project) covered.add(String(r.project).trim()); }
+          // ★ 이 사업은 수금 관리에서 직접 관리 중 → 아래 자동 선급/잔금 계산에서 제외한다.
+          //   covered 를 채우지 않아 수금관리 등록분과 자동계산이 이중 계상되고 있었다
+          //   (화면에는 '수금관리 등록분으로 반영 중'이라 안내하면서 실제로는 양쪽 다 더했다).
+          const _cvName = String(r.project || '').trim();
+          if (_cvName) covered.add(_cvName);
+          if (r.projectId) covered.add(String(r.projectId).trim());
         });
         // ② 진행 사업: 선급금(착수월) + 잔금(종료 익월) — 수금관리 등록 사업은 제외(중복 방지)
         //    선급은 착수월이 예측창 안일 때만 계상. 착수가 과거면 이미 수령해 통장잔고에 반영된 것으로 보고,
@@ -12027,7 +12033,7 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
         const fmtEok = (v) => v >= 100000000 ? (v / 100000000).toFixed(1) + '억' : Math.round(v / 10000).toLocaleString() + '만';
         const incomeOff = cfg.incomeOff || {};   // 사업별 [예측 제외] 토글 (이미 전액 수금 등)
         const paySched = cfg.paySched || {};   // 사업별 수동 지급 스케줄: {pid: [{month:'2026.09', amount, memo}]}
-        (projects || []).filter(p => !isEtcProject(p) && p.status !== 'completed' && Number(p.revenue) > 0 && !covered.has(String(p.name || '').trim()) && !incomeOff[p.id]).forEach(p => {
+        (projects || []).filter(p => !isEtcProject(p) && p.status !== 'completed' && Number(p.revenue) > 0 && !covered.has(String(p.name || '').trim()) && !covered.has(String(p.id || '').trim()) && !incomeOff[p.id]).forEach(p => {
           const sched = (paySched[p.id] || []).filter(e => Number(e.amount) > 0);
           if (sched.length > 0) {
             // 수동 회차 우선 (선급·기성·잔금을 직접 입력한 경우 자동 계산 대체)
@@ -12344,8 +12350,13 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
             // 확정 월: 실제 통장잔고를 그대로 사용 (예측 아님)
             const av = Number(aVal);
             // 다음 달로 굴릴 기준(carry)은 '급여일 인출 후' 잔고. 표시값(av)은 인출 직전 그대로 둔다.
-            const drawn = (cfg.payrollDrawn && cfg.payrollDrawn[mo.key] != null && cfg.payrollDrawn[mo.key] !== '')
-              ? Number(cfg.payrollDrawn[mo.key]) : payrollAtRaw(i);
+            // ★ 잔고 기준일이 그 달 급여일보다 뒤면 급여는 이미 인출된 뒤의 잔고다.
+            //   그대로 또 빼면 급여가 두 번 나간 것으로 계산되어 이후 예측이 통째로 낮아진다.
+            //   (예: 9/21 잔고 1.80억을 '9/10 인출 직전'으로 보고 급여를 또 차감)
+            const _balAfterPay = (i === _refIdx) && _payPassed;
+            const drawn = _balAfterPay ? 0
+              : ((cfg.payrollDrawn && cfg.payrollDrawn[mo.key] != null && cfg.payrollDrawn[mo.key] !== '')
+                  ? Number(cfg.payrollDrawn[mo.key]) : payrollAtRaw(i));
             const carry = av - Math.max(0, drawn);
             bal = carry; balS = carry; balOpt = carry; balCons = carry;
             return { ...mo, confirmed: true, inc: inc[i], incS: incS[i], exp: exp[i], expLabor: laborOf(mo, i), expOpex: opexOf(i), expTax: taxOf(mo), expEtc: extraExpArr[i], expFixed: fixedOf(i), expProj: Math.round(projOpexUse * activeRatioOf(i)), incColl: incColl[i], incSched: incSched[i], incManual: incManual[i], incExtra: incExtra[i], incPipe: incPipe[i], pipeNotes: pipeNote[i].slice(), prevBal: av, prevBalS: av, activeRatio: activeRatioOf(i), bal: av, balS: av, balOpt: av, balCons: av, carry, drawn: Math.max(0, drawn), allNotes: [`실제 잔고 (10일 인출 직전) · 급여일 인출 ${fmtMoney(Math.max(0, drawn))} 차감 후 ${fmtMoney(carry)} 로 이월`], notes: '실제 잔고' };
@@ -12393,12 +12404,17 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
           const py = mm === 1 ? yy - 1 : yy, pm = mm === 1 ? 12 : mm - 1;
           return `${String(pm).padStart(2, '0')}/${String(payDayN + 1).padStart(2, '0')} ~ ${String(mm).padStart(2, '0')}/${String(payDayN).padStart(2, '0')}`;
         };
+        // ★ 경과 개월은 '예측창 시작'이 아니라 '잔고 기준일'부터 센다.
+        //   idx 를 그대로 쓰면 9월(idx 8)에 인건비×8 을 빼 잔액이 0 이 되어
+        //   유휴분이 사라지고 급여일 판단 패널(현재 잔액 기준)과 어긋난다.
+        const _dedRef = String((cashCfg || {}).todayBalanceDate || '').match(/(\d{4})-(\d{2})/);
+        const _dedRefIdx = _dedRef ? ((+_dedRef[1] - y0) * 12 + (+_dedRef[2] - 1 - m0)) : 0;
         const dedIdleAt = (idx) => {
           if (!dedAccts.length) return 0;
+          const elapsed = Math.max(0, idx - _dedRefIdx);   // 기준일로부터 몇 달 뒤인가
           return dedAccts.reduce((sum, a) => {
             const need0 = a.projectIds.reduce((x, pid) => x + (Number(dedLab[pid]) || 0), 0);
-            // idx 개월 경과 후 잔액 추정 (그 사업 인건비만큼 매월 감소, 0 이하로는 안 내려감)
-            const bal0 = Math.max(0, (Number(a.balance) || 0) - need0 * Math.max(0, idx));
+            const bal0 = Math.max(0, (Number(a.balance) || 0) - need0 * elapsed);
             return sum + Math.max(0, bal0 - need0);   // 그 사업에 쓰고도 남는 = 묶인 돈
           }, 0);
         };
@@ -12432,8 +12448,16 @@ function ManagementReportView({ user, borrowings, projects, proposals, overheads
             if (need <= 0) continue;
             // ★ 계좌 분리 반영 — 전용통장 자금은 그 사업 인건비에만 쓸 수 있다.
             //   dedIdleAt(i): 그 달 전용통장에 묶여 다른 급여에 못 쓰는 금액
-            const idleI = dedIdleAt(i);
-            const balUse = r.bal - idleI;
+            // ★ 이번 달 행(thisPay)의 bal 은 이미 '전용 유휴 제외' 잔고에서 출발한다.
+            //   여기서 또 빼면 이중 차감 → 그 행은 유휴 차감을 건너뛴다.
+            // ★ '급여일 인출 직전 잔고'로 환산한다.
+            //   r.bal 은 그 달 인건비를 전액 차감한 월말 기준값이다. 급여일 판단은
+            //   '인출 직전'이 기준이므로 인건비를 되돌리고, 선지급분(이미 나간 것)만 뺀다.
+            //   이렇게 해야 이번 달 행(오늘 실측 기준)과 다음 달 이후가 같은 의미를 갖는다.
+            const idleI = r.thisPay ? 0 : dedIdleAt(i);
+            const balUse = r.thisPay
+              ? r.bal - idleI
+              : r.bal + Math.round(Number(r.expLabor) || 0) - prepaidAt(i) - idleI;
             const room = balUse - need;
             list.push({ i, month: r, payFull: r.payFull, fundedBy: r.payFull,
                         bal: balUse, balRaw: r.bal, dedIdle: idleI,
