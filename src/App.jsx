@@ -498,6 +498,42 @@ const FONT_DISPLAY = '"Cormorant Garamond", "Georgia", serif';
 // ============================================================
 // 코이션 로고 (SVG 인라인 - 외부 파일 불필요)
 // ============================================================
+// ══════════════════════════════════════════════════════════════════
+//  koition-hr 상징 아이콘 — 브라우저 전용
+//   『코이션 연구보고서』 표지의 회색 블록 모티프를 따른 '블록 K'.
+//   직각(radius 0), 그림자·그라데이션 없음, 포인트는 로고 스우시 색 #e10003 한 칸.
+//   브라우저 탭·북마크·홈 화면에만 쓴다 — 시스템 화면 안에는 넣지 않는다
+//   (헤더·로그인 화면은 코이션 로고 하나로 유지).
+//   data URI 로 코드 안에 두므로 외부 이미지처럼 끊길 일이 없다.
+// ══════════════════════════════════════════════════════════════════
+// 브라우저 탭·북마크·홈 화면 아이콘 — 같은 도형을 data URI 로 심는다.
+const HR_FAVICON_SVG = [
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">',
+  '<rect width="10" height="10" fill="#ffffff"/>',
+  '<rect x="1" y="1" width="2" height="2" fill="#4c4c4c"/>',
+  '<rect x="1" y="3" width="2" height="2" fill="#4c4c4c"/>',
+  '<rect x="1" y="5" width="2" height="2" fill="#4c4c4c"/>',
+  '<rect x="1" y="7" width="2" height="2" fill="#4c4c4c"/>',
+  '<rect x="5" y="1" width="2" height="2" fill="#e10003"/>',
+  '<rect x="3" y="3" width="2" height="2" fill="#7f7f7f"/>',
+  '<rect x="3" y="5" width="2" height="2" fill="#7f7f7f"/>',
+  '<rect x="5" y="7" width="2" height="2" fill="#999999"/>',
+  '<rect x="7" y="7" width="2" height="2" fill="#b2b2b2"/>',
+  '</svg>',
+].join('');
+function applyFavicon() {
+  try {
+    const href = 'data:image/svg+xml,' + encodeURIComponent(HR_FAVICON_SVG);
+    [['icon', 'image/svg+xml'], ['shortcut icon', 'image/svg+xml'], ['apple-touch-icon', null]].forEach(([rel, type]) => {
+      document.querySelectorAll(`link[rel="${rel}"]`).forEach(n => n.parentNode && n.parentNode.removeChild(n));
+      const el = document.createElement('link');
+      el.rel = rel; el.href = href;
+      if (type) el.type = type;
+      document.head.appendChild(el);
+    });
+  } catch (e) { /* 아이콘은 표시용 — 실패해도 앱 동작에 영향 없음 */ }
+}
+
 function KoitionLogo({ size = 28, showText = true, variant = 'dark' }) {
   // 4분할 K 심볼 + KOITION 텍스트
   // dark variant: 밝은 배경용 (헤더, 시스템 내부)
@@ -3425,6 +3461,8 @@ function App() {
   const currentYear = new Date().getFullYear();   // 당해년도 자동 (매해 그 해 사업이 기본 표출)
   
   // 매뉴얼 콘텐츠 localStorage 동기화
+  // ★ 브라우저 탭·북마크·홈 화면 아이콘 — 마운트 시 한 번 심는다.
+  useEffect(() => { applyFavicon(); }, []);
   useEffect(() => {
     try {
       const stored = localStorage.getItem('koition_hr_manual');
